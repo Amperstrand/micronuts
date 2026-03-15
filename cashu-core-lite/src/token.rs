@@ -1,5 +1,14 @@
+#[cfg(not(feature = "std"))]
 use alloc::string::String;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::string::String;
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
+use core::convert::Infallible;
 use minicbor::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -65,9 +74,7 @@ pub fn decode_token(data: &[u8]) -> Result<TokenV4, minicbor::decode::Error> {
     }
 }
 
-pub fn encode_token(
-    token: &TokenV4,
-) -> Result<Vec<u8>, minicbor::encode::Error<core::convert::Infallible>> {
+pub fn encode_token(token: &TokenV4) -> Result<Vec<u8>, minicbor::encode::Error<Infallible>> {
     let mut buf = Vec::new();
     minicbor::encode(token, &mut buf)?;
     Ok(buf)
