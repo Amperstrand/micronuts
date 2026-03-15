@@ -1,12 +1,547 @@
+//! Micronuts Firmware - Cashu Hardware Wallet POC
+//!
+//! Main firmware loop for STM32F469I-Discovery board.
+//! Handles USB CDC communication and Cashu blind signature operations.
+
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use cortex_m_rt::entry;
+use defmt_rtt as _;
 use panic_probe as _;
+
+use cashu_core_lite::{
+    blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, TokenV4,
+    TokenV4Token,
+};
+use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::*};
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::{PublicKey, SecretKey};
+use static_cell::ConstStaticCell;
+use stm32f469i_disc::{
+    hal,
+    hal::gpio::alt::fmc as alt,
+    hal::ltdc::{Layer, LtdcFramebuffer, PixelFormat},
+    hal::pac::{self, CorePeripherals},
+    hal::prelude::*,
+    hal::rcc,
+    lcd, sdram, usb,
+};
+
+use hal::otg_fs::UsbBus;
+use usb_device::prelude::*;
+
+mod firmware_state;
+mod prng;
+
+use crate::firmware_state::{FirmwareState, SwapState};
+use crate::prng::Prng;
+use firmware::usb::{CdcPort, Command, Response, Status};
+
+static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
+
+#[global_allocator]
+static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
 
 #[entry]
 fn main() -> ! {
+    let dp = pac::Peripherals::take().unwrap();
+    let cp = CorePeripherals::take().unwrap();
+
+    let mut rcc = dp.RCC.freeze(
+        rcc::Config::hse(8.MHz())
+            .pclk2(32.MHz())
+            .sysclk(180.MHz())
+            .require_pll48clk(),
+    );
+    let mut delay = cp.SYST.delay(&rcc.clocks);
+
+    defmt::info!("Micronuts firmware starting...");
+
+    let mut dwt = cp.DWT;
+    unsafe { dwt.enable_cycle_counter() };
+    let seed = DWT::cycle_count();
+    let mut prng = Prng::new(seed);
+
+    let gpioa = dp.GPIOA.split(&mut rcc);
+    let gpioc = dp.GPIOC.split(&mut rcc);
+    let gpiod = dp.GPIOD.split(&mut rcc);
+    let gpioe = dp.GPIOE.split(&mut rcc);
+    let gpiof = dp.GPIOF.split(&mut rcc);
+    let gpiog = dp.GPIOG.split(&mut rcc);
+    let gpioh = dp.GPIOH.split(&mut rcc);
+    let gpioi = dp.GPIOI.split(&mut rcc);
+
+    let mut lcd_reset = gpioh.ph7.into_push_pull_output();
+    lcd_reset.set_low();
+    delay.delay_ms(20u32);
+    lcd_reset.set_high();
+    delay.delay_ms(10u32);
+
+    defmt::info!("Initializing SDRAM...");
+
+    let sdram = sdram::Sdram::new(
+        dp.FMC,
+        sdram::sdram_pins!(gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi),
+        &rcc.clocks,
+        &mut delay,
+    );
+
+    {
+        const HEAP_SIZE: usize = 128 * 1024;
+        let heap_start = sdram.mem as *mut u8;
+        unsafe {
+            let heap_ptr = heap_start.add(lcd::FB_SIZE * 2);
+            ALLOCATOR.lock().init(heap_ptr as *mut u8, HEAP_SIZE);
+        }
+    }
+
+    let fb_buffer: &'static mut [u16] =
+        unsafe { &mut *core::ptr::slice_from_raw_parts_mut(sdram.mem as *mut u16, lcd::FB_SIZE) };
+    let mut fb = LtdcFramebuffer::new(fb_buffer, lcd::WIDTH, lcd::HEIGHT);
+
+    defmt::info!("Initializing display...");
+
+    let (mut display_ctrl, _controller) = lcd::init_display_full(
+        dp.DSI,
+        dp.LTDC,
+        dp.DMA2D,
+        &mut rcc,
+        &mut delay,
+        lcd::BoardHint::Unknown,
+        PixelFormat::RGB565,
+    );
+
+    fb.clear(Rgb565::CSS_BLACK).ok();
+    firmware::display::render_status(&mut fb, "Micronuts Ready");
+
+    let fb_buffer = fb.into_inner();
+    display_ctrl.config_layer(Layer::L1, fb_buffer, PixelFormat::RGB565);
+    display_ctrl.enable_layer(Layer::L1);
+    display_ctrl.reload();
+
+    let fb_ptr = display_ctrl
+        .layer_buffer_mut(Layer::L1)
+        .expect("layer L1 buffer");
+    let fb: &mut LtdcFramebuffer<u16> =
+        unsafe { &mut *(fb_ptr as *mut [u16] as *mut LtdcFramebuffer<u16>) };
+
+    defmt::info!("Display initialized");
+
+    defmt::info!("Initializing USB...");
+    let usb_periph = usb::init(
+        (dp.OTG_FS_GLOBAL, dp.OTG_FS_DEVICE, dp.OTG_FS_PWRCLK),
+        gpioa.pa11,
+        gpioa.pa12,
+        &rcc.clocks,
+    );
+
+    let usb_bus = UsbBus::new(usb_periph, EP_MEMORY.take());
+
+    let serial = usbd_serial::SerialPort::new(&usb_bus);
+
+    let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
+        .device_class(usbd_serial::USB_CLASS_CDC)
+        .strings(&[StringDescriptors::default()
+            .manufacturer("Micronuts")
+            .product("Cashu Hardware Wallet")
+            .serial_number("F4691")])
+        .unwrap()
+        .build();
+
+    let mut cdc_port = CdcPort::new(serial);
+
+    defmt::info!("USB initialized, entering main loop");
+
+    let mut state = FirmwareState::new();
+
     loop {
-        cortex_m::asm::wfi();
+        if usb_dev.poll(&mut [cdc_port.serial_mut()]) {
+            if let Some(frame) = cdc_port.receive_frame() {
+                let response =
+                    handle_command(frame.command, frame.payload(), &mut state, &mut prng, fb);
+                cdc_port.send_response(&response);
+            }
+        }
     }
 }
+
+fn handle_command(
+    command: Command,
+    payload: &[u8],
+    state: &mut FirmwareState,
+    prng: &mut Prng,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    match command {
+        Command::ImportToken => handle_import_token(payload, state, fb),
+        Command::GetTokenInfo => handle_get_token_info(state),
+        Command::GetBlinded => handle_get_blinded(state, prng, fb),
+        Command::SendSignatures => handle_send_signatures(payload, state, fb),
+        Command::GetProofs => handle_get_proofs(state),
+    }
+}
+
+fn handle_import_token(
+    payload: &[u8],
+    state: &mut FirmwareState,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    defmt::info!("IMPORT_TOKEN: {} bytes", payload.len());
+
+    let token = match decode_token(payload) {
+        Ok(t) => t,
+        Err(_) => {
+            defmt::error!("Token decode failed");
+            firmware::display::render_error(fb, "Invalid token");
+            return Response::new(Status::InvalidPayload);
+        }
+    };
+
+    firmware::display::render_token_info(fb, &token);
+
+    state.imported_token = Some(token);
+    state.swap_state = SwapState::TokenImported;
+
+    defmt::info!("Token imported successfully");
+    Response::new(Status::Ok)
+}
+
+fn handle_get_token_info(state: &mut FirmwareState) -> Response {
+    defmt::info!("GET_TOKEN_INFO");
+
+    match &state.imported_token {
+        Some(token) => {
+            let mint = token.mint.as_bytes();
+            let unit = token.unit.as_bytes();
+            let total_len = 1 + mint.len() + 1 + unit.len() + 8 + 4;
+
+            if total_len > firmware::usb::MAX_PAYLOAD_SIZE {
+                return Response::new(Status::BufferOverflow);
+            }
+
+            let mut payload = [0u8; firmware::usb::MAX_PAYLOAD_SIZE];
+            let mut offset = 0;
+
+            payload[offset] = mint.len() as u8;
+            offset += 1;
+            payload[offset..offset + mint.len()].copy_from_slice(mint);
+            offset += mint.len();
+
+            payload[offset] = unit.len() as u8;
+            offset += 1;
+            payload[offset..offset + unit.len()].copy_from_slice(unit);
+            offset += unit.len();
+
+            let amount = token.total_amount();
+            payload[offset..offset + 8].copy_from_slice(&amount.to_be_bytes());
+            offset += 8;
+
+            let count = token.proof_count() as u32;
+            payload[offset..offset + 4].copy_from_slice(&count.to_be_bytes());
+            offset += 4;
+
+            Response::with_payload(Status::Ok, &payload[..offset])
+                .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+        }
+        None => {
+            defmt::warn!("No token imported");
+            Response::new(Status::Error)
+        }
+    }
+}
+
+fn handle_get_blinded(
+    state: &mut FirmwareState,
+    prng: &mut Prng,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    defmt::info!("GET_BLINDED");
+
+    let token = match &state.imported_token {
+        Some(t) => t,
+        None => {
+            defmt::warn!("No token imported");
+            return Response::new(Status::Error);
+        }
+    };
+
+    let mut blinded_messages: Vec<BlindedMessage> = Vec::new();
+    let mut secrets: Vec<Vec<u8>> = Vec::new();
+    let mut amounts: Vec<u64> = Vec::new();
+
+    for token_part in &token.tokens {
+        for proof in &token_part.proofs {
+            let secret_bytes = match decode_hex(&proof.secret) {
+                Some(s) => s,
+                None => {
+                    defmt::error!("Invalid secret hex");
+                    continue;
+                }
+            };
+
+            let mut blinder_bytes = [0u8; 32];
+            prng.fill_bytes(&mut blinder_bytes);
+            let blinder = match SecretKey::from_slice(&blinder_bytes) {
+                Ok(sk) => sk,
+                Err(_) => {
+                    defmt::error!("Invalid blinder");
+                    continue;
+                }
+            };
+
+            let blinded = match blind_message(&secret_bytes, Some(blinder)) {
+                Ok(b) => b,
+                Err(_) => {
+                    defmt::error!("Blinding failed");
+                    continue;
+                }
+            };
+
+            secrets.push(secret_bytes);
+            amounts.push(proof.amount);
+            blinded_messages.push(blinded);
+        }
+    }
+
+    if blinded_messages.is_empty() {
+        defmt::error!("No valid proofs to blind");
+        return Response::new(Status::CryptoError);
+    }
+
+    let total_len = blinded_messages.len() * 33;
+    if total_len > firmware::usb::MAX_PAYLOAD_SIZE {
+        defmt::error!("Too many blinded outputs");
+        return Response::new(Status::BufferOverflow);
+    }
+
+    let mut payload = [0u8; firmware::usb::MAX_PAYLOAD_SIZE];
+    let mut offset = 0;
+
+    for blinded in &blinded_messages {
+        let bytes = blinded.blinded.to_encoded_point(false);
+        let bytes = bytes.as_bytes();
+        if bytes.len() == 65 {
+            payload[offset..offset + 33].copy_from_slice(&bytes[1..34]);
+        } else {
+            payload[offset..offset + 33].copy_from_slice(&bytes[..33]);
+        }
+        offset += 33;
+    }
+
+    state.blinded_messages = Some(blinded_messages);
+    state.swap_secrets = Some(secrets);
+    state.swap_amounts = Some(amounts);
+    state.swap_state = SwapState::BlindedGenerated;
+
+    firmware::display::render_status(fb, "Blinded outputs ready");
+
+    defmt::info!("Generated {} blinded outputs", offset / 33);
+    Response::with_payload(Status::Ok, &payload[..offset])
+        .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+}
+
+fn handle_send_signatures(
+    payload: &[u8],
+    state: &mut FirmwareState,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    defmt::info!("SEND_SIGNATURES: {} bytes", payload.len());
+
+    let blinded_messages = match &state.blinded_messages {
+        Some(bm) => bm.clone(),
+        None => {
+            defmt::error!("No blinded messages stored");
+            return Response::new(Status::Error);
+        }
+    };
+
+    if payload.len() % 33 != 0 {
+        defmt::error!("Invalid signature payload length");
+        return Response::new(Status::InvalidPayload);
+    }
+
+    let sig_count = payload.len() / 33;
+    if sig_count != blinded_messages.len() {
+        defmt::error!(
+            "Signature count mismatch: expected {}, got {}",
+            blinded_messages.len(),
+            sig_count
+        );
+        return Response::new(Status::InvalidPayload);
+    }
+
+    let mint_pubkey = match derive_demo_mint_key(&state.imported_token) {
+        Ok(pk) => pk,
+        Err(_) => {
+            defmt::error!("Failed to derive mint key");
+            return Response::new(Status::CryptoError);
+        }
+    };
+
+    let mut proofs: Vec<Proof> = Vec::new();
+    let keyset_id = state
+        .imported_token
+        .as_ref()
+        .and_then(|t| t.tokens.first())
+        .map(|t| t.keyset_id.clone())
+        .unwrap_or_else(|| "00".to_string());
+
+    for (i, blinded) in blinded_messages.iter().enumerate() {
+        let sig_bytes = &payload[i * 33..(i + 1) * 33];
+        let mut full_bytes = [0u8; 65];
+        full_bytes[0] = 0x04;
+        full_bytes[1..34].copy_from_slice(sig_bytes);
+        full_bytes[34..].copy_from_slice(&sig_bytes[1..32]);
+
+        let blinded_sig = match PublicKey::from_sec1_bytes(&full_bytes[..65]) {
+            Ok(pk) => pk,
+            Err(_) => {
+                let compressed: [u8; 33] = {
+                    let mut arr = [0u8; 33];
+                    arr.copy_from_slice(sig_bytes);
+                    arr
+                };
+                match PublicKey::from_sec1_bytes(&compressed) {
+                    Ok(pk) => pk,
+                    Err(_) => {
+                        defmt::error!("Invalid signature at index {}", i);
+                        continue;
+                    }
+                }
+            }
+        };
+
+        let unblinded = match unblind_signature(&blinded_sig, &blinded.blinder, &mint_pubkey) {
+            Ok(pk) => pk,
+            Err(_) => {
+                defmt::error!("Unblind failed at index {}", i);
+                continue;
+            }
+        };
+
+        let secret = &state.swap_secrets.as_ref().unwrap()[i];
+        let amount = state.swap_amounts.as_ref().unwrap()[i];
+
+        let c_bytes = unblinded.to_encoded_point(false);
+        let c_vec = c_bytes.as_bytes().to_vec();
+
+        proofs.push(Proof {
+            amount,
+            keyset_id: keyset_id.clone(),
+            secret: encode_hex(secret),
+            c: c_vec,
+        });
+    }
+
+    if proofs.is_empty() {
+        defmt::error!("No valid proofs generated");
+        return Response::new(Status::CryptoError);
+    }
+
+    state.new_proofs = Some(proofs);
+    state.swap_state = SwapState::ProofsReady;
+
+    firmware::display::render_status(fb, "Proofs ready");
+
+    defmt::info!("Unblinded {} signatures successfully", sig_count);
+    Response::new(Status::Ok)
+}
+
+fn handle_get_proofs(state: &mut FirmwareState) -> Response {
+    defmt::info!("GET_PROOFS");
+
+    let proofs = match &state.new_proofs {
+        Some(p) => p,
+        None => {
+            defmt::warn!("No proofs ready");
+            return Response::new(Status::Error);
+        }
+    };
+
+    let token = match &state.imported_token {
+        Some(t) => t,
+        None => {
+            defmt::warn!("No token imported");
+            return Response::new(Status::Error);
+        }
+    };
+
+    let new_token = TokenV4 {
+        mint: token.mint.clone(),
+        unit: token.unit.clone(),
+        memo: Some("Swapped via Micronuts".to_string()),
+        tokens: alloc::vec![TokenV4Token {
+            keyset_id: proofs
+                .first()
+                .map(|p| p.keyset_id.clone())
+                .unwrap_or_else(|| "00".to_string()),
+            proofs: proofs.clone(),
+        }],
+    };
+
+    let encoded = match encode_token(&new_token) {
+        Ok(e) => e,
+        Err(_) => {
+            defmt::error!("Token encoding failed");
+            return Response::new(Status::Error);
+        }
+    };
+
+    if encoded.len() > firmware::usb::MAX_PAYLOAD_SIZE {
+        defmt::error!("Encoded token too large");
+        return Response::new(Status::BufferOverflow);
+    }
+
+    defmt::info!(
+        "Exporting {} proofs ({} bytes)",
+        proofs.len(),
+        encoded.len()
+    );
+    Response::with_payload(Status::Ok, &encoded)
+        .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+}
+
+fn derive_demo_mint_key(token: &Option<TokenV4>) -> Result<PublicKey, ()> {
+    let mint_url = token
+        .as_ref()
+        .map(|t| t.mint.as_str())
+        .unwrap_or("demo://micronuts");
+
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    Digest::update(&mut hasher, mint_url.as_bytes());
+    let seed = Digest::finalize(hasher);
+
+    let sk = SecretKey::from_slice(&seed).map_err(|_| ())?;
+    Ok(sk.public_key())
+}
+
+fn decode_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    let mut result = Vec::with_capacity(s.len() / 2);
+    for i in (0..s.len()).step_by(2) {
+        let byte = u8::from_str_radix(&s[i..i + 2], 16).ok()?;
+        result.push(byte);
+    }
+    Some(result)
+}
+
+fn encode_hex(bytes: &[u8]) -> alloc::string::String {
+    const HEX_CHARS: &[u8] = b"0123456789abcdef";
+    let mut result = alloc::string::String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(HEX_CHARS[(*byte >> 4) as usize] as char);
+        result.push(HEX_CHARS[(*byte & 0x0F) as usize] as char);
+    }
+    result
+}
+
+use cortex_m::peripheral::DWT;

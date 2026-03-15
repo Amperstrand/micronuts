@@ -379,6 +379,10 @@ impl<'a> CdcPort<'a> {
             None => self.send_error(Status::BufferOverflow),
         }
     }
+
+    pub fn serial_mut(&mut self) -> &mut usbd_serial::SerialPort<'a, UsbBusType> {
+        &mut self.serial
+    }
 }
 
 #[cfg(test)]

@@ -19,6 +19,11 @@ cashu-core-lite = { path = "../cashu-core-lite" }
 static_cell = "2.1"
 usb-device = "0.3"
 usbd-serial = "0.2"
+critical-section = "1.2"
+k256 = { workspace = true }
+sha2 = { workspace = true }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+linked_list_allocator = "0.10"
 
 [features]
 default = ["defmt"]
