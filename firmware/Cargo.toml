@@ -1,0 +1,25 @@
+[package]
+name = "firmware"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cortex-m = { workspace = true }
+cortex-m-rt = { workspace = true }
+defmt = { workspace = true, optional = true }
+defmt-rtt = { workspace = true, optional = true }
+panic-probe = { workspace = true, optional = true }
+embedded-hal = { workspace = true }
+embedded-graphics = { workspace = true }
+stm32f469i-disc = { workspace = true }
+cashu-core-lite = { path = "../cashu-core-lite" }
+
+[features]
+default = ["defmt"]
+defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "stm32f469i-disc/defmt"]
+
+[profile.release]
+debug = true
+lto = true
+opt-level = "s"

@@ -1,0 +1,15 @@
+[package]
+name = "cashu-core-lite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Minimal Cashu library for embedded systems (no_std + alloc)"
+
+[dependencies]
+k256 = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+minicbor = { workspace = true }
+
+[features]
+default = []
