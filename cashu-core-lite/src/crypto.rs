@@ -1,8 +1,10 @@
 use k256::{
-    elliptic_curve::{sec1::FromEncodedPoint, Field},
-    EncodedPoint, ProjectivePoint, PublicKey, Scalar, SecretKey,
+    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, SecretKey,
 };
 use sha2::{Digest, Sha256};
+
+#[cfg(feature = "std")]
+use rand_core::OsRng;
 
 const DOMAIN_SEPARATOR: &[u8; 28] = b"Secp256k1_HashToCurve_Cashu_";
 
@@ -63,10 +65,12 @@ pub fn blind_message(
     let y = hash_to_curve(secret)?;
     let y_projective: ProjectivePoint = y.into();
 
-    let r_scalar = if let Some(sk) = blinder {
-        *sk.to_nonzero_scalar()
-    } else {
-        Scalar::random(&mut rand_core::OsRng)
+    let r_scalar = match blinder {
+        Some(sk) => *sk.to_nonzero_scalar(),
+        #[cfg(feature = "std")]
+        None => Scalar::random(&mut OsRng),
+        #[cfg(not(feature = "std"))]
+        None => panic!("blinder required for no_std"),
     };
 
     let r_sk = SecretKey::new(r_scalar.into());

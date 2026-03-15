@@ -14,7 +14,7 @@
 //! - 0x04 SEND_SIGNATURES - Send blind signatures
 //! - 0x05 GET_PROOFS      - Request unblinded proofs
 
-use embedded_hal::serial::Write;
+use stm32f469i_disc::hal::otg_fs::UsbBusType;
 
 /// Maximum payload size (256 bytes)
 pub const MAX_PAYLOAD_SIZE: usize = 256;
@@ -297,14 +297,14 @@ impl Default for FrameDecoder {
 ///
 /// Manages the USB serial port and handles frame encoding/decoding.
 pub struct CdcPort<'a> {
-    serial: usbd_serial::SerialPort<'a, stm32f469i_disc::hal::otg_fs::UsbBus>,
+    serial: usbd_serial::SerialPort<'a, UsbBusType>,
     decoder: FrameDecoder,
     tx_buf: [u8; RX_BUF_SIZE],
 }
 
 impl<'a> CdcPort<'a> {
     /// Create a new CDC port wrapper
-    pub fn new(serial: usbd_serial::SerialPort<'a, stm32f469i_disc::hal::otg_fs::UsbBus>) -> Self {
+    pub fn new(serial: usbd_serial::SerialPort<'a, UsbBusType>) -> Self {
         Self {
             serial,
             decoder: FrameDecoder::new(),

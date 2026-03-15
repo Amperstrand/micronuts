@@ -11,8 +11,10 @@ defmt = { workspace = true, optional = true }
 defmt-rtt = { workspace = true, optional = true }
 panic-probe = { workspace = true, optional = true }
 embedded-hal = { workspace = true }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 embedded-graphics = { workspace = true }
-stm32f469i-disc = { workspace = true, features = ["usb_fs"] }
+heapless = "0.8"
+stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer"] }
 cashu-core-lite = { path = "../cashu-core-lite" }
 static_cell = "2.1"
 usb-device = "0.3"
