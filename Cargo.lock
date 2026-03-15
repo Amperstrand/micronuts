@@ -136,6 +136,7 @@ version = "0.1.0"
 dependencies = [
  "k256",
  "minicbor",
+ "rand",
  "rand_core 0.6.4",
  "sha2",
 ]
