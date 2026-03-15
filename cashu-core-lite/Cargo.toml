@@ -13,3 +13,4 @@ minicbor = { workspace = true }
 
 [features]
 default = []
+std = []

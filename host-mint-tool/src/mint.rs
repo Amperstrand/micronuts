@@ -18,10 +18,12 @@ impl DemoMint {
     }
 
     pub fn sign(&self, blinded: &PublicKey) -> PublicKey {
-        let scalar = self.key_1.to_scalar();
-        let blinded_affine = blinded.to_affine();
-        let sig_affine = blinded_affine * scalar;
-        PublicKey::from_affine(sig_affine).expect("Invalid signature")
+        use k256::ProjectivePoint;
+
+        let scalar = self.key_1.to_nonzero_scalar();
+        let blinded_projective: ProjectivePoint = blinded.into();
+        let sig_projective = blinded_projective * *scalar;
+        PublicKey::from_affine(sig_projective.into()).expect("Invalid signature")
     }
 }
 
