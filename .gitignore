@@ -60,3 +60,8 @@ Thumbs.db
 
 # Embed.toml is for probe-rs
 Embed.toml
+
+# Gas Town runtime directories
+.beads/
+.opencode/
+.runtime/
