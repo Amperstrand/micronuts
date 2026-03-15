@@ -1,7 +1,5 @@
-use alloc::vec::Vec;
 use k256::{
-    elliptic_curve::{sec1::FromEncodedPoint, AffinePoint, Field},
-    AffinePoint as Secp256k1Affine, EncodedPoint, PublicKey, Scalar, SecretKey,
+    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, SecretKey,
 };
 use sha2::{Digest, Sha256};
 
@@ -47,23 +45,20 @@ pub struct BlindedMessage {
 
 pub fn blind_message(
     secret: &[u8],
-    blinder: Option<SecretKey>,
+    blinder: SecretKey,
 ) -> Result<BlindedMessage, HashToCurveError> {
     let y = hash_to_curve(secret)?;
-    let y_affine = y.to_affine();
+    let y_proj: ProjectivePoint = y.into();
 
-    let r = blinder.unwrap_or_else(|| Scalar::random(&mut rand_core::OsRng));
+    let r_pk = blinder.public_key();
+    let r_proj: ProjectivePoint = r_pk.into();
 
-    let r_sk = SecretKey::new(r);
-    let r_pk = r_sk.public_key();
-    let r_affine = r_pk.to_affine();
-
-    let blinded_affine = y_affine + r_affine;
-    let blinded = PublicKey::from_affine(blinded_affine).map_err(|_| HashToCurveError)?;
+    let blinded_proj = y_proj + r_proj;
+    let blinded = blinded_proj.to_affine();
 
     Ok(BlindedMessage {
-        blinded,
-        blinder: r_sk,
+        blinded: PublicKey::from_affine(blinded).map_err(|_| HashToCurveError)?,
+        blinder,
     })
 }
 
@@ -72,29 +67,26 @@ pub fn unblind_signature(
     blinder: &SecretKey,
     mint_pubkey: &PublicKey,
 ) -> Result<PublicKey, ()> {
-    let c_prime_affine = blinded_sig.to_affine();
-    let r_pk = blinder.public_key();
-    let r_k_affine = {
-        let r = blinder.to_scalar();
-        let k = mint_pubkey.to_affine();
-        let r_scalar = r;
-        let result = k * r_scalar;
-        result
-    };
+    let c_prime_proj: ProjectivePoint = (*blinded_sig).into();
 
-    let unblinded_affine = c_prime_affine - r_k_affine;
-    PublicKey::from_affine(unblinded_affine).map_err(|_| ())
+    let r_scalar = blinder.to_nonzero_scalar();
+    let k_proj: ProjectivePoint = (*mint_pubkey).into();
+    let r_k_proj = k_proj * r_scalar.as_ref();
+
+    let unblinded_proj = c_prime_proj - r_k_proj;
+    let unblinded = unblinded_proj.to_affine();
+
+    PublicKey::from_affine(unblinded).map_err(|_| ())
 }
 
 pub fn verify_signature(
     secret: &[u8],
     unblinded_sig: &PublicKey,
-    mint_pubkey: &PublicKey,
+    _mint_pubkey: &PublicKey,
 ) -> Result<bool, HashToCurveError> {
     let y = hash_to_curve(secret)?;
-    let y_affine = y.to_affine();
-    let sig_affine = unblinded_sig.to_affine();
-    let mint_affine = mint_pubkey.to_affine();
+    let y_affine = y.as_affine();
+    let sig_affine = unblinded_sig.as_affine();
 
-    Ok(y_affine == sig_affine || y_affine == -sig_affine)
+    Ok(y_affine == sig_affine || y_affine == &-*sig_affine)
 }

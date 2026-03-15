@@ -35,7 +35,6 @@ pub struct TokenV4 {
     pub unit: String,
 
     #[n(2)]
-    #[cbor(n)]
     pub memo: Option<String>,
 
     #[n(3)]
@@ -66,7 +65,9 @@ pub fn decode_token(data: &[u8]) -> Result<TokenV4, minicbor::decode::Error> {
     }
 }
 
-pub fn encode_token(token: &TokenV4) -> Result<Vec<u8>, minicbor::encode::Error> {
+pub fn encode_token(
+    token: &TokenV4,
+) -> Result<Vec<u8>, minicbor::encode::Error<core::convert::Infallible>> {
     let mut buf = Vec::new();
     minicbor::encode(token, &mut buf)?;
     Ok(buf)
