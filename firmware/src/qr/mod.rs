@@ -33,8 +33,8 @@ pub mod protocol;
 
 pub use decoder::{decode_qr, is_qr_payload, QrPayload, UrDecoder};
 pub use driver::{
-    BaudRate, ScanBuffer, ScanMode, ScannerConfig, ScannerDriver, ScannerError, ScannerModel,
-    ScannerState, ScannerStatus, MAX_SCAN_SIZE,
+    BaudRate, Gm65Scanner, ScanBuffer, ScanMode, ScannerConfig, ScannerDriver, ScannerError,
+    ScannerModel, ScannerState, ScannerStatus, MAX_SCAN_SIZE,
 };
 pub use protocol::{
     calculate_crc, commands, BaudRate as Gm65BaudRate, Gm65CommandBuilder, Gm65Response, Register,

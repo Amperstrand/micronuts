@@ -274,4 +274,104 @@ pub trait ScannerDriver {
     fn data_ready(&self) -> bool;
 }
 
+/// Baud rates supported by GM65 scanner
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaudRate {
+    Bps9600 = 9600,
+    Bps115200 = 115200,
+}
+
+impl BaudRate {
+    pub fn as_u32(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// GM65 scanner driver using UART
+pub struct Gm65Scanner<UART> {
+    uart: UART,
+    config: ScannerConfig,
+    state: ScannerState,
+    buffer: ScanBuffer,
+    initialized: bool,
+    detected_model: ScannerModel,
+    last_scan_len: Option<usize>,
+}
+
+impl<UART> Gm65Scanner<UART> {
+    pub fn new(uart: UART, config: ScannerConfig) -> Self {
+        Self {
+            uart,
+            config,
+            state: ScannerState::Uninitialized,
+            buffer: ScanBuffer::new(),
+            initialized: false,
+            detected_model: ScannerModel::Unknown,
+            last_scan_len: None,
+        }
+    }
+
+    pub fn with_default_config(uart: UART) -> Self {
+        Self::new(uart, ScannerConfig::default())
+    }
+
+    pub fn uart(&self) -> &UART {
+        &self.uart
+    }
+
+    pub fn uart_mut(&mut self) -> &mut UART {
+        &mut self.uart
+    }
+
+    pub fn into_uart(self) -> UART {
+        self.uart
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfigStep {
+    Start,
+    QueryVersion,
+    EnableSerialOutput,
+    EnableRawMode,
+    SetBaudRate,
+    ReinitUart,
+    Done,
+}
+
+fn build_version_query() -> [u8; 7] {
+    [0x7E, 0x00, 0x01, 0x00, 0x01, 0x01, 0x55]
+}
+
+fn build_enable_serial() -> [u8; 8] {
+    [0x7E, 0x00, 0x08, 0x01, 0x00, 0x00, 0x01, 0x55]
+}
+
+fn build_enable_raw() -> [u8; 8] {
+    [0x7E, 0x00, 0x08, 0x01, 0x00, 0xBC, 0x08, 0x55]
+}
+
+fn build_set_baud_115200() -> [u8; 8] {
+    [0x7E, 0x00, 0x08, 0x01, 0x00, 0x2A, 0x1A, 0x55]
+}
+
+fn build_trigger_scan() -> [u8; 7] {
+    [0x7E, 0x00, 0x04, 0x00, 0x04, 0x00, 0x55]
+}
+
+fn is_ack_response(data: &[u8]) -> bool {
+    data.len() >= 6
+        && data[0] == 0x7E
+        && data[1] == 0x00
+        && data[data.len() - 1] == 0x55
+        && data[3] == 0x00
+}
+
+fn parse_version_response(data: &[u8]) -> Option<(u8, u8)> {
+    if data.len() >= 8 && data[0] == 0x7E && data[1] == 0x00 {
+        Some((data.get(4)?, data.get(5)?))
+    } else {
+        None
+    }
+}
 
