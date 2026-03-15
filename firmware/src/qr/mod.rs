@@ -31,7 +31,7 @@ pub mod decoder;
 pub mod driver;
 pub mod protocol;
 
-pub use decoder::{decode_qr, is_qr_payload, QrPayload, UrDecoder};
+pub use decoder::{decode_qr, is_qr_payload, DecodedPayload, QrPayload, UrDecoder};
 pub use driver::{
     BaudRate, Gm65Scanner, ScanBuffer, ScanMode, ScannerConfig, ScannerDriver, ScannerError,
     ScannerModel, ScannerState, ScannerStatus, MAX_SCAN_SIZE,

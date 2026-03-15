@@ -7,6 +7,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use cashu_core_lite::TokenV4;
 use core::fmt;
 
 /// Cashu V4 token prefix
@@ -18,51 +19,54 @@ const CASHU_V3_PREFIX: &[u8] = b"cashuA";
 /// UR protocol prefix
 const UR_PREFIX: &[u8] = b"ur:";
 
-/// UR Cashu type
-const UR_CASHU_TYPE: &[u8] = b"cashu";
-
 /// Decoded QR payload types
 #[derive(Debug, Clone)]
 pub enum QrPayload {
     /// Cashu V4 token (cashuB...)
     CashuV4 {
-        /// Raw encoded token string
         encoded: Vec<u8>,
     },
     /// Cashu V3 token (JSON format)
     CashuV3 {
-        /// Raw JSON token string
         json: Vec<u8>,
     },
     /// UR animated QR fragment
     UrFragment {
-        /// Fragment index (1-based)
         index: u32,
-        /// Total fragments
         total: u32,
-        /// Message hash (for matching)
         hash: String,
-        /// Fragment data
         data: Vec<u8>,
     },
-    /// Plain text (unknown format)
     PlainText(Vec<u8>),
-    /// Binary data (non-text)
+    Binary(Vec<u8>),
+}
+
+/// Fully decoded payload with parsed token data
+#[derive(Debug, Clone)]
+pub enum DecodedPayload {
+    /// Successfully decoded Cashu V4 token
+    CashuToken(TokenV4),
+    /// Cashu V4 token data that failed to decode
+    CashuV4Raw { encoded: Vec<u8>, error: String },
+    /// UR fragment (not yet complete)
+    UrFragment { index: u32, total: u32 },
+    /// UR complete and decoded
+    UrComplete(TokenV4),
+    /// Plain text data
+    PlainText(Vec<u8>),
+    /// Binary data
     Binary(Vec<u8>),
 }
 
 impl QrPayload {
-    /// Check if this is a Cashu token
     pub fn is_cashu(&self) -> bool {
         matches!(self, QrPayload::CashuV4 { .. } | QrPayload::CashuV3 { .. })
     }
 
-    /// Check if this is a UR fragment
     pub fn is_ur(&self) -> bool {
         matches!(self, QrPayload::UrFragment { .. })
     }
 
-    /// Get the raw data for this payload
     pub fn raw_data(&self) -> &[u8] {
         match self {
             QrPayload::CashuV4 { encoded } => encoded,
@@ -73,7 +77,6 @@ impl QrPayload {
         }
     }
 
-    /// Get a display name for this payload type
     pub fn type_name(&self) -> &'static str {
         match self {
             QrPayload::CashuV4 { .. } => "Cashu V4 Token",
@@ -81,6 +84,26 @@ impl QrPayload {
             QrPayload::UrFragment { .. } => "UR Fragment",
             QrPayload::PlainText(_) => "Plain Text",
             QrPayload::Binary(_) => "Binary Data",
+        }
+    }
+
+    /// Try to fully decode this payload into a DecodedPayload
+    pub fn decode(&self) -> DecodedPayload {
+        match self {
+            QrPayload::CashuV4 { encoded } => match cashu_core_lite::decode_token(encoded) {
+                Ok(token) => DecodedPayload::CashuToken(token),
+                Err(e) => DecodedPayload::CashuV4Raw {
+                    encoded: encoded.clone(),
+                    error: alloc::format!("{:?}", e),
+                },
+            },
+            QrPayload::CashuV3 { json } => DecodedPayload::PlainText(json.clone()),
+            QrPayload::UrFragment { index, total, .. } => DecodedPayload::UrFragment {
+                index: *index,
+                total: *total,
+            },
+            QrPayload::PlainText(data) => DecodedPayload::PlainText(data.clone()),
+            QrPayload::Binary(data) => DecodedPayload::Binary(data.clone()),
         }
     }
 }
@@ -101,6 +124,41 @@ impl fmt::Display for QrPayload {
                 write!(f, "PlainText({} bytes)", data.len())
             }
             QrPayload::Binary(data) => {
+                write!(f, "Binary({} bytes)", data.len())
+            }
+        }
+    }
+}
+
+impl fmt::Display for DecodedPayload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecodedPayload::CashuToken(token) => {
+                write!(
+                    f,
+                    "CashuToken(mint={}, amount={})",
+                    token.mint,
+                    token.total_amount()
+                )
+            }
+            DecodedPayload::CashuV4Raw { encoded, error } => {
+                write!(f, "CashuV4Raw({} bytes, error={})", encoded.len(), error)
+            }
+            DecodedPayload::UrFragment { index, total } => {
+                write!(f, "UrFragment({}/{})", index, total)
+            }
+            DecodedPayload::UrComplete(token) => {
+                write!(
+                    f,
+                    "UrComplete(mint={}, amount={})",
+                    token.mint,
+                    token.total_amount()
+                )
+            }
+            DecodedPayload::PlainText(data) => {
+                write!(f, "PlainText({} bytes)", data.len())
+            }
+            DecodedPayload::Binary(data) => {
                 write!(f, "Binary({} bytes)", data.len())
             }
         }
