@@ -1,45 +1,31 @@
 //! USB CDC communication layer
 //!
-//! Handles serial communication with the host mint tool using a frame-based protocol.
+//! Protocol: `[Cmd:1][Len:2][Payload:N]` / `[Status:1][Len:2][Payload:N]`
 //!
-//! # Protocol
-//!
-//! Request:  `[Cmd:1][Len:2][Payload:N]`
-//! Response: `[Status:1][Len:2][Payload:N]`
-//!
-//! ## Commands
-//! - 0x01 IMPORT_TOKEN    - Send V4 token to device
-//! - 0x02 GET_TOKEN_INFO  - Request token summary
-//! - 0x03 GET_BLINDED     - Request blinded outputs
-//! - 0x04 SEND_SIGNATURES - Send blind signatures
-//! - 0x05 GET_PROOFS      - Request unblinded proofs
+//! Commands:
+//! - 0x01-0x05: Token operations
+//! - 0x10-0x12: QR scanner operations
 
 use stm32f469i_disc::hal::otg_fs::UsbBusType;
 
-/// Maximum payload size (256 bytes)
 pub const MAX_PAYLOAD_SIZE: usize = 256;
 
-/// Receive buffer size (header + max payload)
 const RX_BUF_SIZE: usize = 3 + MAX_PAYLOAD_SIZE;
 
-/// Command opcodes for device-host protocol
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
-    /// Import a V4 token to device
     ImportToken = 0x01,
-    /// Request token info from device
     GetTokenInfo = 0x02,
-    /// Request blinded outputs from device
     GetBlinded = 0x03,
-    /// Send blind signatures to device
     SendSignatures = 0x04,
-    /// Request unblinded proofs from device
     GetProofs = 0x05,
+    ScannerStatus = 0x10,
+    ScannerTrigger = 0x11,
+    ScannerData = 0x12,
 }
 
 impl Command {
-    /// Try to convert a byte to a Command
     pub fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x01 => Some(Command::ImportToken),
@@ -47,6 +33,45 @@ impl Command {
             0x03 => Some(Command::GetBlinded),
             0x04 => Some(Command::SendSignatures),
             0x05 => Some(Command::GetProofs),
+            0x10 => Some(Command::ScannerStatus),
+            0x11 => Some(Command::ScannerTrigger),
+            0x12 => Some(Command::ScannerData),
+            _ => None,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Ok = 0x00,
+    Error = 0xFF,
+    InvalidCommand = 0x01,
+    InvalidPayload = 0x02,
+    BufferOverflow = 0x03,
+    CryptoError = 0x04,
+    ScannerNotConnected = 0x10,
+    ScannerBusy = 0x11,
+    NoScanData = 0x12,
+}
+
+impl Status {
+    pub fn to_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+impl Command {
+    pub fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x01 => Some(Command::ImportToken),
+            0x02 => Some(Command::GetTokenInfo),
+            0x03 => Some(Command::GetBlinded),
+            0x04 => Some(Command::SendSignatures),
+            0x05 => Some(Command::GetProofs),
+            0x10 => Some(Command::ScannerStatus),
+            0x11 => Some(Command::ScannerTrigger),
+            0x12 => Some(Command::ScannerData),
             _ => None,
         }
     }
@@ -56,22 +81,18 @@ impl Command {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
-    /// Success
     Ok = 0x00,
-    /// Generic error
     Error = 0xFF,
-    /// Unknown/invalid command
     InvalidCommand = 0x01,
-    /// Malformed payload
     InvalidPayload = 0x02,
-    /// Buffer overflow
     BufferOverflow = 0x03,
-    /// Cryptographic operation failed
     CryptoError = 0x04,
+    ScannerNotConnected = 0x10,
+    ScannerBusy = 0x11,
+    NoScanData = 0x12,
 }
 
 impl Status {
-    /// Convert to byte
     pub fn to_byte(self) -> u8 {
         self as u8
     }
