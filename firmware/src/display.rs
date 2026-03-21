@@ -137,6 +137,48 @@ pub fn render_status(fb: &mut LtdcFramebuffer<u16>, message: &str) {
     .ok();
 }
 
+pub fn render_home(fb: &mut LtdcFramebuffer<u16>, scanner_connected: bool) {
+    fb.clear(Rgb565::BLACK).ok();
+
+    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
+    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    let ok_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_GREEN);
+    let err_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_RED);
+    let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
+
+    Text::with_text_style("Micronuts", Point::new(400, 80), title_style, center_text)
+        .draw(fb)
+        .ok();
+
+    Text::with_text_style("Ready", Point::new(400, 120), style, center_text)
+        .draw(fb)
+        .ok();
+
+    let scanner_label = "QR Scanner:";
+    Text::new(scanner_label, Point::new(20, 200), style)
+        .draw(fb)
+        .ok();
+
+    if scanner_connected {
+        Text::new("GM65  OK", Point::new(180, 200), ok_style)
+            .draw(fb)
+            .ok();
+    } else {
+        Text::new("NOT FOUND", Point::new(180, 200), err_style)
+            .draw(fb)
+            .ok();
+    }
+
+    Text::with_text_style(
+        "Waiting for USB commands...",
+        Point::new(400, 350),
+        style,
+        center_text,
+    )
+    .draw(fb)
+    .ok();
+}
+
 pub fn render_error(fb: &mut LtdcFramebuffer<u16>, message: &str) {
     fb.clear(Rgb565::BLACK).ok();
     let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
@@ -194,8 +236,11 @@ pub fn render_scan_result(fb: &mut LtdcFramebuffer<u16>, data: &[u8]) {
         y += 22;
     }
 
+    let mut size_str = heapless::String::<32>::new();
+    let _ = size_str.push_str(&u64_to_string(data.len() as u64));
+    let _ = size_str.push_str(" bytes");
     Text::with_text_style(
-        truncate_str(&u64_to_string(data.len() as u64), 20),
+        truncate_str(&size_str, 30),
         Point::new(400, (HEIGHT - 10) as i32),
         label_style,
         center_text,

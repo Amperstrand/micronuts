@@ -131,8 +131,8 @@ fn main() -> ! {
     let fb_ptr = display_ctrl
         .layer_buffer_mut(Layer::L1)
         .expect("layer L1 buffer");
-    let fb: &mut LtdcFramebuffer<u16> =
-        unsafe { &mut *(fb_ptr as *mut [u16] as *mut LtdcFramebuffer<u16>) };
+    let fb_buf: &'static mut [u16] = unsafe { core::mem::transmute(fb_ptr) };
+    let mut fb = LtdcFramebuffer::new(fb_buf, lcd::WIDTH, lcd::HEIGHT);
 
     defmt::info!("Display initialized");
 
@@ -226,6 +226,9 @@ fn main() -> ! {
 
     defmt::info!("USB initialized, entering main loop");
 
+    let scanner_connected = scanner.state() == gm65_scanner::ScannerState::Ready;
+    firmware::display::render_home(&mut fb, scanner_connected);
+
     let mut state = FirmwareState::new();
     let mut last_scan_data: Option<Vec<u8>> = None;
     let mut scan_active = false;
@@ -238,7 +241,7 @@ fn main() -> ! {
                     frame.payload(),
                     &mut state,
                     &mut prng,
-                    fb,
+                    &mut fb,
                     &mut scanner,
                     &mut last_scan_data,
                 );
@@ -254,7 +257,7 @@ fn main() -> ! {
             for _ in 0..256 {
                 if let Some(data) = scanner.try_read_scan() {
                     defmt::info!("Scan data received: {} bytes", data.len());
-                    firmware::display::render_scan_result(fb, &data);
+                    firmware::display::render_scan_result(&mut fb, &data);
                     last_scan_data = Some(data);
                     scan_active = false;
                     break;
