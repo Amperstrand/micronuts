@@ -41,7 +41,7 @@ mod prng;
 
 use crate::prng::Prng;
 use firmware::firmware_state::{FirmwareState, SwapState};
-use firmware::qr::driver::{Gm65Scanner, ScannerDriver};
+use firmware::qr::{Gm65Scanner, ScannerDriverSync};
 use firmware::usb::{CdcPort, Command, Response, Status};
 
 static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
@@ -597,10 +597,10 @@ fn handle_scanner_status(scanner: &mut Gm65Scanner<Serial6>) -> Response {
     offset += 1;
 
     let model_byte: u8 = match status.model {
-        firmware::qr::driver::ScannerModel::Gm65 => 0x01,
-        firmware::qr::driver::ScannerModel::M3Y => 0x02,
-        firmware::qr::driver::ScannerModel::Generic => 0x03,
-        firmware::qr::driver::ScannerModel::Unknown => 0x00,
+        firmware::qr::ScannerModel::Gm65 => 0x01,
+        firmware::qr::ScannerModel::M3Y => 0x02,
+        firmware::qr::ScannerModel::Generic => 0x03,
+        firmware::qr::ScannerModel::Unknown => 0x00,
     };
     payload[offset] = model_byte;
     offset += 1;
