@@ -37,11 +37,10 @@ use hal::otg_fs::UsbBus;
 use hal::serial::Serial6;
 use usb_device::prelude::*;
 
-mod firmware_state;
 mod prng;
 
-use crate::firmware_state::{FirmwareState, SwapState};
 use crate::prng::Prng;
+use firmware::firmware_state::{FirmwareState, SwapState};
 use firmware::qr::driver::{Gm65Scanner, ScannerDriver};
 use firmware::usb::{CdcPort, Command, Response, Status};
 

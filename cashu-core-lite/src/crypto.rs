@@ -1,5 +1,6 @@
 use k256::{
-    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, SecretKey,
+    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, Scalar,
+    SecretKey,
 };
 use sha2::{Digest, Sha256};
 
@@ -68,7 +69,7 @@ pub fn blind_message(
     let r_scalar = match blinder {
         Some(sk) => *sk.to_nonzero_scalar(),
         #[cfg(feature = "std")]
-        None => Scalar::random(&mut OsRng),
+        None => Scalar::generate_vartime(&mut OsRng),
         #[cfg(not(feature = "std"))]
         None => panic!("blinder required for no_std"),
     };
