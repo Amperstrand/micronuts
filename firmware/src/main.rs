@@ -36,11 +36,8 @@ use stm32f469i_disc::{
 use hal::otg_fs::UsbBus;
 use usb_device::prelude::*;
 
-mod firmware_state;
-mod prng;
-
-use crate::firmware_state::{FirmwareState, SwapState};
-use crate::prng::Prng;
+use firmware::firmware_state::{FirmwareState, SwapState};
+use firmware::prng::Prng;
 use firmware::usb::{CdcPort, Command, Response, Status};
 
 static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
@@ -184,6 +181,9 @@ fn handle_command(
         Command::GetBlinded => handle_get_blinded(state, prng, fb),
         Command::SendSignatures => handle_send_signatures(payload, state, fb),
         Command::GetProofs => handle_get_proofs(state),
+        Command::ScannerStatus => handle_scanner_status(state),
+        Command::ScannerTrigger => handle_scanner_trigger(state, fb),
+        Command::ScannerData => handle_scanner_data(state),
     }
 }
 
@@ -505,6 +505,51 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
     );
     Response::with_payload(Status::Ok, &encoded)
         .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+}
+
+fn handle_scanner_status(state: &mut FirmwareState) -> Response {
+    defmt::info!("SCANNER_STATUS");
+
+    let status_byte = if state.scanner.connected { 0x01 } else { 0x00 };
+    let state_byte = match state.scanner.state {
+        firmware::qr::ScannerState::Uninitialized => 0x00,
+        firmware::qr::ScannerState::Detecting => 0x01,
+        firmware::qr::ScannerState::Configuring => 0x02,
+        firmware::qr::ScannerState::Ready => 0x03,
+        firmware::qr::ScannerState::Scanning => 0x04,
+        firmware::qr::ScannerState::ScanComplete => 0x05,
+        firmware::qr::ScannerState::Error(_) => 0x06,
+    };
+
+    let payload = [status_byte, state_byte];
+    Response::with_payload(Status::Ok, &payload).unwrap_or_else(|| Response::new(Status::Error))
+}
+
+fn handle_scanner_trigger(state: &mut FirmwareState, _fb: &mut LtdcFramebuffer<u16>) -> Response {
+    defmt::info!("SCANNER_TRIGGER");
+
+    if !state.scanner.connected {
+        return Response::new(Status::ScannerNotConnected);
+    }
+
+    state.scanner.state = firmware::qr::ScannerState::Scanning;
+    Response::new(Status::Ok)
+}
+
+fn handle_scanner_data(state: &mut FirmwareState) -> Response {
+    defmt::info!("SCANNER_DATA");
+
+    match &state.last_scan_data {
+        Some(data) => {
+            if data.len() > firmware::usb::MAX_PAYLOAD_SIZE {
+                Response::new(Status::BufferOverflow)
+            } else {
+                Response::with_payload(Status::Ok, data)
+                    .unwrap_or_else(|| Response::new(Status::Error))
+            }
+        }
+        None => Response::new(Status::NoScanData),
+    }
 }
 
 fn derive_demo_mint_key(token: &Option<TokenV4>) -> Result<PublicKey, ()> {

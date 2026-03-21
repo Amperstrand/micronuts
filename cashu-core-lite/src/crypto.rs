@@ -1,5 +1,6 @@
 use k256::{
-    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, SecretKey,
+    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, Scalar,
+    SecretKey,
 };
 use sha2::{Digest, Sha256};
 

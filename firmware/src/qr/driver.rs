@@ -369,7 +369,7 @@ fn is_ack_response(data: &[u8]) -> bool {
 
 fn parse_version_response(data: &[u8]) -> Option<(u8, u8)> {
     if data.len() >= 8 && data[0] == 0x7E && data[1] == 0x00 {
-        Some((data.get(4)?, data.get(5)?))
+        Some((*data.get(4)?, *data.get(5)?))
     } else {
         None
     }

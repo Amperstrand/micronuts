@@ -17,6 +17,7 @@
 
 extern crate alloc;
 
+use alloc::vec;
 use alloc::vec::Vec;
 
 /// GM65 command header bytes
