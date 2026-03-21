@@ -10,8 +10,8 @@ mod usb;
 
 use mint::DemoMint;
 use protocol::{
-    Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_IMPORT_TOKEN, CMD_SCANNER_DATA, CMD_SCANNER_STATUS,
-    CMD_SCANNER_TRIGGER, CMD_SEND_SIGNATURES, STATUS_OK,
+    payload_type_name, Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_IMPORT_TOKEN, CMD_SCANNER_DATA,
+    CMD_SCANNER_STATUS, CMD_SCANNER_TRIGGER, CMD_SEND_SIGNATURES, STATUS_OK,
 };
 use usb::UsbConnection;
 
@@ -204,9 +204,16 @@ fn main() -> Result<()> {
                 let data_resp = usb.send_and_receive(&data_frame)?;
 
                 if data_resp.command == STATUS_OK && !data_resp.payload.is_empty() {
-                    let data = String::from_utf8_lossy(&data_resp.payload);
-                    println!("Scan result ({} bytes):", data_resp.payload.len());
-                    println!("{}", data);
+                    let payload = &data_resp.payload;
+                    let (type_label, raw_data) = if payload.len() > 1 {
+                        let ptype = payload[0];
+                        let data = &payload[1..];
+                        (payload_type_name(ptype), data)
+                    } else {
+                        ("Text", payload.as_slice())
+                    };
+                    let text = String::from_utf8_lossy(raw_data);
+                    println!("[{}] {} ({} bytes)", type_label, text, raw_data.len());
                     break;
                 }
 

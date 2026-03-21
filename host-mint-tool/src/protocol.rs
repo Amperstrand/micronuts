@@ -11,6 +11,23 @@ pub const STATUS_OK: u8 = 0x00;
 pub const STATUS_ERROR: u8 = 0xFF;
 pub const STATUS_NO_SCAN_DATA: u8 = 0x12;
 
+pub const PAYLOAD_TYPE_TEXT: u8 = 0x00;
+pub const PAYLOAD_TYPE_CASHU_V4: u8 = 0x01;
+pub const PAYLOAD_TYPE_CASHU_V3: u8 = 0x02;
+pub const PAYLOAD_TYPE_UR: u8 = 0x03;
+pub const PAYLOAD_TYPE_BINARY: u8 = 0x04;
+
+pub fn payload_type_name(t: u8) -> &'static str {
+    match t {
+        PAYLOAD_TYPE_TEXT => "Text",
+        PAYLOAD_TYPE_CASHU_V4 => "Cashu V4",
+        PAYLOAD_TYPE_CASHU_V3 => "Cashu V3",
+        PAYLOAD_TYPE_UR => "UR",
+        PAYLOAD_TYPE_BINARY => "Binary",
+        _ => "Unknown",
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub command: u8,

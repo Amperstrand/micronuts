@@ -268,11 +268,11 @@ pub fn render_decoded_scan(fb: &mut LtdcFramebuffer<u16>, payload: &QrPayload) {
                 .ok();
             y += 30;
         }
-        QrPayload::UrFragment { index, total, .. } => {
+        QrPayload::UrFragment { parsed } => {
             let mut frag_str = heapless::String::<32>::new();
-            let _ = frag_str.push_str(&format_u32_len(*index as usize));
+            let _ = frag_str.push_str(&format_u32_len(parsed.index as usize));
             let _ = frag_str.push('/');
-            let _ = frag_str.push_str(&format_u32_len(*total as usize));
+            let _ = frag_str.push_str(&format_u32_len(parsed.total as usize));
             Text::new("Progress:", Point::new(20, y as i32), label_style)
                 .draw(fb)
                 .ok();
