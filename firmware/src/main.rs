@@ -253,15 +253,14 @@ fn main() -> ! {
             }
         }
 
-        if scan_active {
-            for _ in 0..256 {
-                if let Some(data) = scanner.try_read_scan() {
-                    defmt::info!("Scan data received: {} bytes", data.len());
-                    firmware::display::render_scan_result(&mut fb, &data);
-                    last_scan_data = Some(data);
-                    scan_active = false;
-                    break;
-                }
+        for _ in 0..256 {
+            if let Some(data) = scanner.try_read_scan() {
+                defmt::info!("Scan data received: {} bytes", data.len());
+                let payload = firmware::qr::decode_qr(&data);
+                firmware::display::render_decoded_scan(&mut fb, &payload);
+                last_scan_data = Some(data);
+                scan_active = false;
+                break;
             }
         }
     }
@@ -658,14 +657,21 @@ fn handle_scanner_data(
     match last_scan_data.take() {
         Some(data) => {
             defmt::info!("Returning buffered scan data: {} bytes", data.len());
-            firmware::display::render_scan_result(fb, &data);
-            if data.len() > firmware::usb::MAX_PAYLOAD_SIZE {
-                Response::with_payload(Status::Ok, &data[..firmware::usb::MAX_PAYLOAD_SIZE])
-                    .unwrap_or_else(|| Response::new(Status::BufferOverflow))
-            } else {
-                Response::with_payload(Status::Ok, &data)
-                    .unwrap_or_else(|| Response::new(Status::Error))
-            }
+            let payload = firmware::qr::decode_qr(&data);
+            firmware::display::render_decoded_scan(fb, &payload);
+            let type_byte: u8 = match &payload {
+                firmware::qr::QrPayload::CashuV4 { .. } => 0x01,
+                firmware::qr::QrPayload::CashuV3 { .. } => 0x02,
+                firmware::qr::QrPayload::UrFragment { .. } => 0x03,
+                firmware::qr::QrPayload::PlainText(_) => 0x00,
+                firmware::qr::QrPayload::Binary(_) => 0x04,
+            };
+            let max_payload = firmware::usb::MAX_PAYLOAD_SIZE;
+            let total = 1 + data.len().min(max_payload - 1);
+            let mut buf = alloc::vec![type_byte; total];
+            buf[1..].copy_from_slice(&data[..total - 1]);
+            Response::with_payload(Status::Ok, &buf)
+                .unwrap_or_else(|| Response::new(Status::BufferOverflow))
         }
         None => {
             defmt::info!("No scan data available");
