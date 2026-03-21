@@ -618,7 +618,7 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?branch=main#7a2d44a37fdeed6259f6a7fc96ef859196a3cae2"
+source = "git+https://github.com/Amperstrand/gm65-scanner?branch=main#6be7890537b688adbc0a37a004fc04610ec152db"
 dependencies = [
  "defmt 1.0.1",
  "embedded-hal 0.2.7",
