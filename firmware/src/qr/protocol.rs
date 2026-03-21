@@ -219,6 +219,7 @@ impl Gm65Response {
 /// Factory functions for common GM65 commands
 pub mod commands {
     use super::*;
+    use alloc::vec;
 
     /// Build factory reset command
     pub fn factory_reset() -> Vec<u8> {

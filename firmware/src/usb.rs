@@ -61,43 +61,6 @@ impl Status {
     }
 }
 
-impl Command {
-    pub fn from_byte(byte: u8) -> Option<Self> {
-        match byte {
-            0x01 => Some(Command::ImportToken),
-            0x02 => Some(Command::GetTokenInfo),
-            0x03 => Some(Command::GetBlinded),
-            0x04 => Some(Command::SendSignatures),
-            0x05 => Some(Command::GetProofs),
-            0x10 => Some(Command::ScannerStatus),
-            0x11 => Some(Command::ScannerTrigger),
-            0x12 => Some(Command::ScannerData),
-            _ => None,
-        }
-    }
-}
-
-/// Response status codes
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Status {
-    Ok = 0x00,
-    Error = 0xFF,
-    InvalidCommand = 0x01,
-    InvalidPayload = 0x02,
-    BufferOverflow = 0x03,
-    CryptoError = 0x04,
-    ScannerNotConnected = 0x10,
-    ScannerBusy = 0x11,
-    NoScanData = 0x12,
-}
-
-impl Status {
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
-}
-
 /// Protocol frame structure for requests
 #[derive(Debug, Clone)]
 pub struct Frame {

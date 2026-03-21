@@ -34,6 +34,7 @@ use stm32f469i_disc::{
 };
 
 use hal::otg_fs::UsbBus;
+use hal::serial::Serial6;
 use usb_device::prelude::*;
 
 mod firmware_state;
@@ -41,6 +42,7 @@ mod prng;
 
 use crate::firmware_state::{FirmwareState, SwapState};
 use crate::prng::Prng;
+use firmware::qr::driver::{Gm65Scanner, ScannerDriver};
 use firmware::usb::{CdcPort, Command, Response, Status};
 
 static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
@@ -73,7 +75,9 @@ fn main() -> ! {
     let gpiod = dp.GPIOD.split(&mut rcc);
     let gpioe = dp.GPIOE.split(&mut rcc);
     let gpiof = dp.GPIOF.split(&mut rcc);
-    let gpiog = dp.GPIOG.split(&mut rcc);
+    let mut gpiog = dp.GPIOG.split(&mut rcc);
+    let scanner_tx = gpiog.pg14;
+    let scanner_rx = gpiog.pg9;
     let gpioh = dp.GPIOH.split(&mut rcc);
     let gpioi = dp.GPIOI.split(&mut rcc);
 
@@ -156,6 +160,52 @@ fn main() -> ! {
 
     let mut cdc_port = CdcPort::new(serial);
 
+    defmt::info!("Initializing QR scanner (USART6)...");
+    let baud_rates: [u32; 3] = [9600, 57600, 115200];
+    let mut scanner: Option<Gm65Scanner<Serial6>> = None;
+    let mut scanner_usart = Some(dp.USART6);
+    let mut scanner_pins = Some((scanner_tx, scanner_rx));
+
+    for &baud in &baud_rates {
+        let (usart, pins) = match (scanner_usart.take(), scanner_pins.take()) {
+            (Some(u), Some(p)) => (u, p),
+            _ => break,
+        };
+        let uart = usart.serial(pins, baud.bps(), &mut rcc).unwrap();
+        let mut s = Gm65Scanner::with_default_config(uart);
+        defmt::info!("Probing scanner at {} bps...", baud);
+        if s.ping() {
+            defmt::info!("Scanner found at {} bps", baud);
+            scanner = Some(s);
+            break;
+        }
+        defmt::info!("No response at {} bps, trying next...", baud);
+        let (raw_usart, raw_pins) = s.release().release();
+        scanner_usart = Some(raw_usart);
+        let tx_pin: hal::gpio::Pin<'G', 14> = raw_pins.0.unwrap().try_into().ok().unwrap();
+        let rx_pin: hal::gpio::Pin<'G', 9> = raw_pins.1.unwrap().try_into().ok().unwrap();
+        scanner_pins = Some((tx_pin, rx_pin));
+    }
+
+    let mut scanner = match scanner {
+        Some(s) => s,
+        None => {
+            let (usart, pins) = match (scanner_usart.take(), scanner_pins.take()) {
+                (Some(u), Some(p)) => (u, p),
+                _ => panic!("No USART6 available"),
+            };
+            let uart = usart.serial(pins, 9600.bps(), &mut rcc).unwrap();
+            let mut s = Gm65Scanner::with_default_config(uart);
+            defmt::warn!("QR scanner not found at any baud rate, using 9600 default");
+            s
+        }
+    };
+
+    match scanner.init() {
+        Ok(model) => defmt::info!("QR scanner ready: {}", model),
+        Err(e) => defmt::warn!("QR scanner init failed: {}", e),
+    }
+
     defmt::info!("USB initialized, entering main loop");
 
     let mut state = FirmwareState::new();
@@ -163,8 +213,14 @@ fn main() -> ! {
     loop {
         if usb_dev.poll(&mut [cdc_port.serial_mut()]) {
             if let Some(frame) = cdc_port.receive_frame() {
-                let response =
-                    handle_command(frame.command, frame.payload(), &mut state, &mut prng, fb);
+                let response = handle_command(
+                    frame.command,
+                    frame.payload(),
+                    &mut state,
+                    &mut prng,
+                    fb,
+                    &mut scanner,
+                );
                 cdc_port.send_response(&response);
             }
         }
@@ -177,6 +233,7 @@ fn handle_command(
     state: &mut FirmwareState,
     prng: &mut Prng,
     fb: &mut LtdcFramebuffer<u16>,
+    scanner: &mut Gm65Scanner<Serial6>,
 ) -> Response {
     match command {
         Command::ImportToken => handle_import_token(payload, state, fb),
@@ -184,6 +241,9 @@ fn handle_command(
         Command::GetBlinded => handle_get_blinded(state, prng, fb),
         Command::SendSignatures => handle_send_signatures(payload, state, fb),
         Command::GetProofs => handle_get_proofs(state),
+        Command::ScannerStatus => handle_scanner_status(scanner),
+        Command::ScannerTrigger => handle_scanner_trigger(scanner, fb),
+        Command::ScannerData => handle_scanner_data(scanner, fb),
     }
 }
 
@@ -505,6 +565,71 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
     );
     Response::with_payload(Status::Ok, &encoded)
         .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+}
+
+fn handle_scanner_status(scanner: &mut Gm65Scanner<Serial6>) -> Response {
+    defmt::info!("SCANNER_STATUS");
+    let status = scanner.status();
+    let mut payload = [0u8; firmware::usb::MAX_PAYLOAD_SIZE];
+    let mut offset = 0;
+
+    payload[offset] = if status.connected { 1 } else { 0 };
+    offset += 1;
+    payload[offset] = if status.initialized { 1 } else { 0 };
+    offset += 1;
+
+    let model_byte: u8 = match status.model {
+        firmware::qr::driver::ScannerModel::Gm65 => 0x01,
+        firmware::qr::driver::ScannerModel::M3Y => 0x02,
+        firmware::qr::driver::ScannerModel::Generic => 0x03,
+        firmware::qr::driver::ScannerModel::Unknown => 0x00,
+    };
+    payload[offset] = model_byte;
+    offset += 1;
+
+    Response::with_payload(Status::Ok, &payload[..offset])
+        .unwrap_or_else(|| Response::new(Status::Error))
+}
+
+fn handle_scanner_trigger(
+    scanner: &mut Gm65Scanner<Serial6>,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    defmt::info!("SCANNER_TRIGGER");
+    match scanner.trigger_scan() {
+        Ok(()) => {
+            firmware::display::render_status(fb, "Scanning...");
+            Response::new(Status::Ok)
+        }
+        Err(_) => {
+            firmware::display::render_error(fb, "Scanner error");
+            Response::new(Status::ScannerNotConnected)
+        }
+    }
+}
+
+fn handle_scanner_data(
+    scanner: &mut Gm65Scanner<Serial6>,
+    fb: &mut LtdcFramebuffer<u16>,
+) -> Response {
+    defmt::info!("SCANNER_DATA");
+    match scanner.read_scan() {
+        Some(data) => {
+            defmt::info!("Scan data received: {} bytes", data.len());
+            firmware::display::render_scan_result(fb, &data);
+            if data.len() > firmware::usb::MAX_PAYLOAD_SIZE {
+                Response::with_payload(Status::Ok, &data[..firmware::usb::MAX_PAYLOAD_SIZE])
+                    .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+            } else {
+                Response::with_payload(Status::Ok, &data)
+                    .unwrap_or_else(|| Response::new(Status::Error))
+            }
+        }
+        None => {
+            defmt::info!("No scan data available");
+            Response::new(Status::NoScanData)
+        }
+    }
 }
 
 fn derive_demo_mint_key(token: &Option<TokenV4>) -> Result<PublicKey, ()> {

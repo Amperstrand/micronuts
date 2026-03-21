@@ -32,4 +32,4 @@ embedded-hal = "1.0"
 embedded-graphics = "0.8"
 
 # BSP - pinned to working commit
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "c71065da588b9256e26557c57c103954cf7915fe" }
+stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "fa6dc86" }

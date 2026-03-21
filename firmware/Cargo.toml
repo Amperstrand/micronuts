@@ -24,6 +24,7 @@ k256 = { workspace = true }
 sha2 = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 linked_list_allocator = "0.10"
+nb = "1.1"
 
 [features]
 default = ["defmt"]

@@ -6,6 +6,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use cashu_core_lite::TokenV4;
 use core::fmt;
@@ -308,7 +309,7 @@ impl UrDecoder {
         // First fragment - initialize
         if self.total.is_none() {
             self.total = Some(total);
-            self.hash = Some(hash);
+            self.hash = Some(hash.clone());
             self.fragments = vec![None; total as usize];
         }
 

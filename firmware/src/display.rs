@@ -154,3 +154,52 @@ pub fn render_error(fb: &mut LtdcFramebuffer<u16>, message: &str) {
     .draw(fb)
     .ok();
 }
+
+pub fn render_scan_result(fb: &mut LtdcFramebuffer<u16>, data: &[u8]) {
+    fb.clear(Rgb565::BLACK).ok();
+
+    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
+    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_YELLOW);
+    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
+
+    Text::with_text_style(
+        "QR Scan Result",
+        Point::new(400, 30),
+        title_style,
+        center_text,
+    )
+    .draw(fb)
+    .ok();
+
+    let data_str = core::str::from_utf8(data).unwrap_or("<binary data>");
+    let display_str = truncate_str(data_str, 800);
+
+    Text::new("Data:", Point::new(20, 80), label_style)
+        .draw(fb)
+        .ok();
+
+    let chars_per_line = 80;
+    let mut y = 110u32;
+    let mut offset = 0;
+    while offset < display_str.len() && y < HEIGHT - 30 {
+        let end = core::cmp::min(offset + chars_per_line, display_str.len());
+        let line = &display_str[offset..end];
+        if let Ok(line_str) = core::str::from_utf8(line.as_bytes()) {
+            Text::new(line_str, Point::new(20, y as i32), value_style)
+                .draw(fb)
+                .ok();
+        }
+        offset = end;
+        y += 22;
+    }
+
+    Text::with_text_style(
+        truncate_str(&u64_to_string(data.len() as u64), 20),
+        Point::new(400, (HEIGHT - 10) as i32),
+        label_style,
+        center_text,
+    )
+    .draw(fb)
+    .ok();
+}
