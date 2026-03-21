@@ -227,6 +227,8 @@ fn main() -> ! {
     defmt::info!("USB initialized, entering main loop");
 
     let mut state = FirmwareState::new();
+    let mut last_scan_data: Option<Vec<u8>> = None;
+    let mut scan_active = false;
 
     loop {
         if usb_dev.poll(&mut [cdc_port.serial_mut()]) {
@@ -238,8 +240,25 @@ fn main() -> ! {
                     &mut prng,
                     fb,
                     &mut scanner,
+                    &mut last_scan_data,
                 );
+                if frame.command == Command::ScannerTrigger {
+                    scan_active = true;
+                    last_scan_data = None;
+                }
                 cdc_port.send_response(&response);
+            }
+        }
+
+        if scan_active {
+            for _ in 0..256 {
+                if let Some(data) = scanner.try_read_scan() {
+                    defmt::info!("Scan data received: {} bytes", data.len());
+                    firmware::display::render_scan_result(fb, &data);
+                    last_scan_data = Some(data);
+                    scan_active = false;
+                    break;
+                }
             }
         }
     }
@@ -252,6 +271,7 @@ fn handle_command(
     prng: &mut Prng,
     fb: &mut LtdcFramebuffer<u16>,
     scanner: &mut Gm65Scanner<Serial6>,
+    last_scan_data: &mut Option<Vec<u8>>,
 ) -> Response {
     match command {
         Command::ImportToken => handle_import_token(payload, state, fb),
@@ -261,7 +281,7 @@ fn handle_command(
         Command::GetProofs => handle_get_proofs(state),
         Command::ScannerStatus => handle_scanner_status(scanner),
         Command::ScannerTrigger => handle_scanner_trigger(scanner, fb),
-        Command::ScannerData => handle_scanner_data(scanner, fb),
+        Command::ScannerData => handle_scanner_data(scanner, fb, last_scan_data),
     }
 }
 
@@ -627,13 +647,14 @@ fn handle_scanner_trigger(
 }
 
 fn handle_scanner_data(
-    scanner: &mut Gm65Scanner<Serial6>,
+    _scanner: &mut Gm65Scanner<Serial6>,
     fb: &mut LtdcFramebuffer<u16>,
+    last_scan_data: &mut Option<Vec<u8>>,
 ) -> Response {
     defmt::info!("SCANNER_DATA");
-    match scanner.read_scan() {
+    match last_scan_data.take() {
         Some(data) => {
-            defmt::info!("Scan data received: {} bytes", data.len());
+            defmt::info!("Returning buffered scan data: {} bytes", data.len());
             firmware::display::render_scan_result(fb, &data);
             if data.len() > firmware::usb::MAX_PAYLOAD_SIZE {
                 Response::with_payload(Status::Ok, &data[..firmware::usb::MAX_PAYLOAD_SIZE])
