@@ -35,4 +35,4 @@ embedded-graphics = "0.8"
 stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "fa6dc86" }
 
 # QR Scanner
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", branch = "feat/dual-mode-scanner", features = ["embedded-hal", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", branch = "main", features = ["embedded-hal", "defmt"] }
