@@ -164,6 +164,7 @@ fn main() -> ! {
     let mut scanner: Option<Gm65Scanner<Serial6>> = None;
     let mut scanner_usart = Some(dp.USART6);
     let mut scanner_pins = Some((scanner_tx, scanner_rx));
+    let mut probe_baud: u32 = 9600;
 
     for &baud in &baud_rates {
         let (usart, pins) = match (scanner_usart.take(), scanner_pins.take()) {
@@ -175,6 +176,7 @@ fn main() -> ! {
         defmt::info!("Probing scanner at {} bps...", baud);
         if s.ping() {
             defmt::info!("Scanner found at {} bps", baud);
+            probe_baud = baud;
             scanner = Some(s);
             break;
         }
@@ -201,7 +203,24 @@ fn main() -> ! {
     };
 
     match scanner.init() {
-        Ok(model) => defmt::info!("QR scanner ready: {}", model),
+        Ok(model) => {
+            defmt::info!("QR scanner ready: {}", model);
+            if probe_baud != 115200 {
+                defmt::info!("Re-initializing UART at 115200 bps...");
+                let (raw_usart, raw_pins) = scanner.release().release();
+                let tx_pin: hal::gpio::Pin<'G', 14> = raw_pins.0.unwrap().try_into().ok().unwrap();
+                let rx_pin: hal::gpio::Pin<'G', 9> = raw_pins.1.unwrap().try_into().ok().unwrap();
+                let uart = raw_usart
+                    .serial((tx_pin, rx_pin), 115200.bps(), &mut rcc)
+                    .unwrap();
+                scanner = Gm65Scanner::with_default_config(uart);
+                if scanner.ping() {
+                    defmt::info!("UART re-init at 115200 bps confirmed");
+                } else {
+                    defmt::warn!("UART re-init at 115200 bps failed");
+                }
+            }
+        }
         Err(e) => defmt::warn!("QR scanner init failed: {}", e),
     }
 

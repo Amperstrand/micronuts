@@ -3,9 +3,13 @@ pub const CMD_GET_TOKEN_INFO: u8 = 0x02;
 pub const CMD_GET_BLINDED: u8 = 0x03;
 pub const CMD_SEND_SIGNATURES: u8 = 0x04;
 pub const CMD_GET_PROOFS: u8 = 0x05;
+pub const CMD_SCANNER_STATUS: u8 = 0x10;
+pub const CMD_SCANNER_TRIGGER: u8 = 0x11;
+pub const CMD_SCANNER_DATA: u8 = 0x12;
 
 pub const STATUS_OK: u8 = 0x00;
 pub const STATUS_ERROR: u8 = 0xFF;
+pub const STATUS_NO_SCAN_DATA: u8 = 0x12;
 
 #[derive(Debug, Clone)]
 pub struct Frame {

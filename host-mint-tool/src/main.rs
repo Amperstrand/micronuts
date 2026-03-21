@@ -10,7 +10,8 @@ mod usb;
 
 use mint::DemoMint;
 use protocol::{
-    Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_IMPORT_TOKEN, CMD_SEND_SIGNATURES, STATUS_OK,
+    Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_IMPORT_TOKEN, CMD_SCANNER_DATA, CMD_SCANNER_STATUS,
+    CMD_SCANNER_TRIGGER, CMD_SEND_SIGNATURES, STATUS_OK,
 };
 use usb::UsbConnection;
 
@@ -39,6 +40,8 @@ enum Commands {
     Sign,
     Export,
     Monitor,
+    ScannerStatus,
+    Scan,
 }
 
 fn main() -> Result<()> {
@@ -152,6 +155,71 @@ fn main() -> Result<()> {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                 }
+            }
+        }
+        Commands::ScannerStatus => {
+            let port = cli.port.context("--port is required for this command")?;
+            let mut usb = UsbConnection::open(&port, cli.baud)?;
+
+            let frame = Frame::new(CMD_SCANNER_STATUS, vec![]);
+            let response = usb.send_and_receive(&frame)?;
+
+            if response.command == STATUS_OK && response.payload.len() >= 3 {
+                let connected = response.payload[0] != 0;
+                let initialized = response.payload[1] != 0;
+                let model = match response.payload[2] {
+                    0x01 => "GM65",
+                    0x02 => "M3Y",
+                    0x03 => "Generic",
+                    _ => "Unknown",
+                };
+                println!(
+                    "Scanner: {} | Connected: {} | Initialized: {}",
+                    model, connected, initialized
+                );
+            } else {
+                println!("Scanner status error: 0x{:02X}", response.command);
+            }
+        }
+        Commands::Scan => {
+            let port = cli.port.context("--port is required for this command")?;
+            let mut usb = UsbConnection::open(&port, cli.baud)?;
+
+            println!("Triggering scan...");
+            let trigger_frame = Frame::new(CMD_SCANNER_TRIGGER, vec![]);
+            let trigger_resp = usb.send_and_receive(&trigger_frame)?;
+
+            if trigger_resp.command != STATUS_OK {
+                println!("Trigger failed: 0x{:02X}", trigger_resp.command);
+                return Ok(());
+            }
+
+            println!("Waiting for scan data (point scanner at a QR code)...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            let mut attempts = 0u32;
+            let max_attempts = 60;
+            loop {
+                let data_frame = Frame::new(CMD_SCANNER_DATA, vec![]);
+                let data_resp = usb.send_and_receive(&data_frame)?;
+
+                if data_resp.command == STATUS_OK && !data_resp.payload.is_empty() {
+                    let data = String::from_utf8_lossy(&data_resp.payload);
+                    println!("Scan result ({} bytes):", data_resp.payload.len());
+                    println!("{}", data);
+                    break;
+                }
+
+                attempts += 1;
+                if attempts >= max_attempts {
+                    println!("No scan data received after {} attempts", max_attempts);
+                    break;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                print!(".");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
             }
         }
     }
