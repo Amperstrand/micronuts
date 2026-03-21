@@ -540,6 +540,7 @@ dependencies = [
  "linked_list_allocator",
  "nb 1.1.0",
  "panic-probe 1.0.0",
+ "qrcodegen-no-heap",
  "sha2",
  "static_cell",
  "stm32f469i-disc",
@@ -998,6 +999,12 @@ checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "qrcodegen-no-heap"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0e2c0bf8be8a1c4a4f48973dabf26943f05da2bfc2d3180aae62409dbba6f0c"
 
 [[package]]
 name = "quote"

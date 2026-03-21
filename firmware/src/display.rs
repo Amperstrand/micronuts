@@ -3,14 +3,20 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
+    primitives::Rectangle,
     text::{Alignment, Text, TextStyleBuilder},
 };
+use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
 use stm32f469i_disc::hal::ltdc::LtdcFramebuffer;
 
 use crate::qr::QrPayload;
 
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 480;
+
+const BLACK: Rgb565 = Rgb565::BLACK;
+const WHITE: Rgb565 = Rgb565::WHITE;
+const QR_BUF_SIZE: usize = Version::MAX.buffer_len();
 
 pub fn render_token_info(fb: &mut LtdcFramebuffer<u16>, token: &TokenV4) {
     fb.clear(Rgb565::BLACK).ok();
@@ -373,4 +379,85 @@ fn render_token_fields(fb: &mut LtdcFramebuffer<u16>, token: &TokenV4, start_y: 
     Text::new(&proof_str, Point::new(120, y as i32), value_style)
         .draw(fb)
         .ok();
+}
+
+pub fn render_qr_code(fb: &mut LtdcFramebuffer<u16>, text: &str) -> bool {
+    let mut temp_buf = [0u8; QR_BUF_SIZE];
+    let mut out_buf = [0u8; QR_BUF_SIZE];
+
+    let qr = match QrCode::encode_text(
+        text,
+        &mut temp_buf,
+        &mut out_buf,
+        QrCodeEcc::Medium,
+        Version::MIN,
+        Version::MAX,
+        None,
+        true,
+    ) {
+        Ok(qr) => qr,
+        Err(_) => return false,
+    };
+
+    let border = 2;
+    let qr_size = qr.size();
+    let total = qr_size + border * 2;
+
+    let max_scale_x = (WIDTH - 40) / total as u32;
+    let max_scale_y = (HEIGHT - 80) / total as u32;
+    let scale = max_scale_x.min(max_scale_y).max(1);
+
+    let qr_pixel_w = total as u32 * scale;
+    let qr_pixel_h = total as u32 * scale;
+    let offset_x = (WIDTH - qr_pixel_w) / 2;
+    let offset_y = 20 + (HEIGHT - qr_pixel_h - 40) / 2;
+
+    fb.clear(BLACK).ok();
+
+    for qr_y in 0..qr_size {
+        for qr_x in 0..qr_size {
+            let dark = qr.get_module(qr_x, qr_y);
+            let color = if dark { BLACK } else { WHITE };
+
+            let px = offset_x + (qr_x + border) as u32 * scale;
+            let py = offset_y + (qr_y + border) as u32 * scale;
+
+            if px + scale <= WIDTH && py + scale <= HEIGHT {
+                let _ = fb.fill_solid(
+                    &Rectangle::new(Point::new(px as i32, py as i32), Size::new(scale, scale)),
+                    color,
+                );
+            }
+        }
+    }
+
+    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+    let label = truncate_str(text, 50);
+    Text::with_text_style(
+        label,
+        Point::new(WIDTH as i32 / 2, (offset_y + qr_pixel_h + 10) as i32),
+        style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+
+    true
+}
+
+pub fn render_qr_mirror(fb: &mut LtdcFramebuffer<u16>, data: &[u8]) {
+    match core::str::from_utf8(data) {
+        Ok(text) if data.len() <= 200 => {
+            if !render_qr_code(fb, text) {
+                render_status(fb, "QR encode failed");
+            }
+        }
+        Ok(_) => {
+            render_status(fb, "Data too long for QR");
+        }
+        Err(_) => {
+            render_status(fb, "Binary data");
+        }
+    }
 }

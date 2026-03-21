@@ -16,6 +16,7 @@ embedded-graphics = { workspace = true }
 heapless = "0.8"
 stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer"] }
 gm65-scanner = { workspace = true }
+qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
 static_cell = "2.1"
 usb-device = "0.3"

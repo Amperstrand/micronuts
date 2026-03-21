@@ -36,3 +36,6 @@ stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev 
 
 # QR Scanner
 gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", branch = "main", features = ["embedded-hal", "defmt"] }
+
+# QR Code Generation
+qrcodegen-no-heap = "1.8"

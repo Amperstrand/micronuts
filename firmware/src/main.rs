@@ -232,10 +232,14 @@ fn main() -> ! {
     let mut state = FirmwareState::new();
     let mut last_scan_data: Option<Vec<u8>> = None;
     let mut scan_active = false;
+    let mut auto_scan = scanner_connected;
 
     loop {
         if usb_dev.poll(&mut [cdc_port.serial_mut()]) {
             if let Some(frame) = cdc_port.receive_frame() {
+                if frame.command == Command::ScannerTrigger {
+                    auto_scan = false;
+                }
                 let response = handle_command(
                     frame.command,
                     frame.payload(),
@@ -253,11 +257,19 @@ fn main() -> ! {
             }
         }
 
+        if auto_scan && !scan_active && scanner.state() == gm65_scanner::ScannerState::Ready {
+            let _ = scanner.trigger_scan();
+            scan_active = true;
+        }
+
         for _ in 0..256 {
             if let Some(data) = scanner.try_read_scan() {
                 defmt::info!("Scan data received: {} bytes", data.len());
                 let payload = firmware::qr::decode_qr(&data);
                 firmware::display::render_decoded_scan(&mut fb, &payload);
+                if data.len() <= 200 && core::str::from_utf8(&data).is_ok() {
+                    firmware::display::render_qr_mirror(&mut fb, &data);
+                }
                 last_scan_data = Some(data);
                 scan_active = false;
                 break;
