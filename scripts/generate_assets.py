@@ -55,7 +55,7 @@ BG_COLOR = (0, 0, 0, 255)
 # ---------------------------------------------------------------------------
 
 def rgb888_to_rgb565(r: int, g: int, b: int) -> int:
-    """Convert 8-bit RGB to 16-bit RGB565 (little-endian stored)."""
+    """Convert 8-bit RGB to 16-bit RGB565 value (packed, not byte-ordered)."""
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
 
 

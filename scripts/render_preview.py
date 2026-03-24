@@ -155,7 +155,11 @@ def add_label(img, text, position="bottom-right"):
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
     except (IOError, OSError):
-        font = ImageFont.load_default()
+        try:
+            # macOS fallback
+            font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", 14)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
 
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -237,7 +241,10 @@ def main():
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 18)
     except (IOError, OSError):
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", 18)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
 
     for i, (frame, vcfg) in enumerate(zip(composite_frames, VARIANTS)):
         x = margin + i * (WIDTH + margin)

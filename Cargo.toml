@@ -34,7 +34,7 @@ embedded-graphics = "0.8"
 # BSP - pinned to working commit
 stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "a412876" }
 
-# QR code generation (no_std, no heap)
+# QR code generation (no_std, no heap) — was missing from workspace, required by firmware/Cargo.toml
 qrcodegen-no-heap = "1.8"
 
 # QR Scanner - latest main (pre-merge cleanup, Sans-IO architecture)

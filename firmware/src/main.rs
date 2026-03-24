@@ -151,6 +151,8 @@ fn main() -> ! {
         defmt::info!("Running boot splash...");
         let mut splash_state = firmware::boot_splash::SplashState::new();
         let mut splash_done = false;
+        // Auto-exit after 2 full variant cycles (2 × 3 variants × 90 frames/variant)
+        const MAX_SPLASH_FRAMES: u32 = 2 * 3 * 90;
         // Run splash: cycle through variants, touch to exit
         while !splash_done {
             // Extract raw buffer for direct pixel writes
@@ -177,9 +179,7 @@ fn main() -> ! {
                 }
             }
 
-            // Auto-exit after cycling through all variants 2 times
-            // (2 cycles × 3 variants × 90 frames = 540 frames ≈ 18 seconds)
-            if splash_state.global_frame >= 540 {
+            if splash_state.global_frame >= MAX_SPLASH_FRAMES {
                 defmt::info!("Splash timeout, continuing boot");
                 splash_done = true;
             }
