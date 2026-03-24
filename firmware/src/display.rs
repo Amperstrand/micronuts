@@ -3,7 +3,7 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::Rectangle,
+    primitives::{PrimitiveStyle, Rectangle, RoundedRectangle},
     text::{Alignment, Text, TextStyleBuilder},
 };
 use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
@@ -16,7 +16,145 @@ pub const HEIGHT: u32 = 480;
 
 const BLACK: Rgb565 = Rgb565::BLACK;
 const WHITE: Rgb565 = Rgb565::WHITE;
+const DARK_GRAY: Rgb565 = Rgb565::new(0x18, 0x18, 0x18);
+const MID_GRAY: Rgb565 = Rgb565::new(0x40, 0x40, 0x40);
+const ACCENT: Rgb565 = Rgb565::new(0x00, 0x7A, 0xCC);
+const ACCENT_DIM: Rgb565 = Rgb565::new(0x00, 0x4A, 0x80);
+const GREEN: Rgb565 = Rgb565::new(0x00, 0xCC, 0x66);
+const YELLOW: Rgb565 = Rgb565::new(0xCC, 0xAA, 0x00);
 const QR_BUF_SIZE: usize = Version::MAX.buffer_len();
+
+pub struct Button {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub label: &'static str,
+}
+
+impl Button {
+    pub fn hit(&self, tx: u16, ty: u16) -> bool {
+        let tx = tx as u32;
+        let ty = ty as u32;
+        tx >= self.x && tx < self.x + self.w && ty >= self.y && ty < self.y + self.h
+    }
+}
+
+pub fn home_buttons() -> [Button; 3] {
+    [
+        Button {
+            x: 40,
+            y: 60,
+            w: WIDTH - 80,
+            h: 110,
+            label: "SCAN QR CODE",
+        },
+        Button {
+            x: 40,
+            y: 190,
+            w: WIDTH - 80,
+            h: 110,
+            label: "IMPORT TOKEN",
+        },
+        Button {
+            x: 40,
+            y: 320,
+            w: WIDTH - 80,
+            h: 110,
+            label: "SHOW PROOFS",
+        },
+    ]
+}
+
+pub fn back_button() -> Button {
+    Button {
+        x: 10,
+        y: 8,
+        w: 120,
+        h: 36,
+        label: "< BACK",
+    }
+}
+
+pub fn draw_button(fb: &mut LtdcFramebuffer<u16>, btn: &Button) {
+    let rect = Rectangle::new(
+        Point::new(btn.x as i32, btn.y as i32),
+        Size::new(btn.w, btn.h),
+    );
+    rect.into_styled(PrimitiveStyle::with_fill(DARK_GRAY))
+        .draw(fb)
+        .ok();
+
+    let border = Rectangle::new(
+        Point::new(btn.x as i32, btn.y as i32),
+        Size::new(btn.w, btn.h),
+    );
+    border
+        .into_styled(PrimitiveStyle::with_stroke(ACCENT, 2))
+        .draw(fb)
+        .ok();
+
+    let label_style = MonoTextStyle::new(&FONT_10X20, ACCENT);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+    Text::with_text_style(
+        btn.label,
+        Point::new((btn.x + btn.w / 2) as i32, (btn.y + btn.h / 2 - 10) as i32),
+        label_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+}
+
+pub fn draw_status_bar(fb: &mut LtdcFramebuffer<u16>, right_text: &str) {
+    let bar = Rectangle::new(Point::new(0, 0), Size::new(WIDTH, 44));
+    bar.into_styled(PrimitiveStyle::with_fill(MID_GRAY))
+        .draw(fb)
+        .ok();
+
+    let title_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+    Text::new("MICRONUTS", Point::new(140, 14), title_style)
+        .draw(fb)
+        .ok();
+
+    let right_style = MonoTextStyle::new(&FONT_10X20, ACCENT);
+    let right_len = right_text.len() as i32 * 12;
+    Text::new(
+        right_text,
+        Point::new(WIDTH as i32 - right_len - 10, 14),
+        right_style,
+    )
+    .draw(fb)
+    .ok();
+}
+
+pub fn draw_scanning(fb: &mut LtdcFramebuffer<u16>) {
+    fb.clear(BLACK).ok();
+    draw_status_bar(fb, "SCANNING...");
+
+    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+
+    Text::with_text_style(
+        "Scanning for QR code...",
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 - 10),
+        label_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+
+    Text::with_text_style(
+        "Point the scanner at a QR code",
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 + 30),
+        MonoTextStyle::new(&FONT_10X20, MID_GRAY),
+        center,
+    )
+    .draw(fb)
+    .ok();
+
+    draw_button(fb, &back_button());
+}
 
 pub fn render_token_info(fb: &mut LtdcFramebuffer<u16>, token: &TokenV4) {
     fb.clear(Rgb565::BLACK).ok();
@@ -94,45 +232,18 @@ pub fn render_status(fb: &mut LtdcFramebuffer<u16>, message: &str) {
 }
 
 pub fn render_home(fb: &mut LtdcFramebuffer<u16>, scanner_connected: bool) {
-    fb.clear(Rgb565::BLACK).ok();
+    fb.clear(BLACK).ok();
 
-    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
-    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-    let ok_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_GREEN);
-    let err_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_RED);
-    let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
-
-    Text::with_text_style("Micronuts", Point::new(400, 80), title_style, center_text)
-        .draw(fb)
-        .ok();
-
-    Text::with_text_style("Ready", Point::new(400, 120), style, center_text)
-        .draw(fb)
-        .ok();
-
-    let scanner_label = "QR Scanner:";
-    Text::new(scanner_label, Point::new(20, 200), style)
-        .draw(fb)
-        .ok();
-
-    if scanner_connected {
-        Text::new("GM65  OK", Point::new(180, 200), ok_style)
-            .draw(fb)
-            .ok();
+    let right_text = if scanner_connected {
+        "GM65 OK"
     } else {
-        Text::new("NOT FOUND", Point::new(180, 200), err_style)
-            .draw(fb)
-            .ok();
-    }
+        "NO SCANNER"
+    };
+    draw_status_bar(fb, right_text);
 
-    Text::with_text_style(
-        "Waiting for USB commands...",
-        Point::new(400, 350),
-        style,
-        center_text,
-    )
-    .draw(fb)
-    .ok();
+    for btn in &home_buttons() {
+        draw_button(fb, btn);
+    }
 }
 
 pub fn render_error(fb: &mut LtdcFramebuffer<u16>, message: &str) {
@@ -206,33 +317,25 @@ pub fn render_scan_result(fb: &mut LtdcFramebuffer<u16>, data: &[u8]) {
 }
 
 pub fn render_decoded_scan(fb: &mut LtdcFramebuffer<u16>, payload: &QrPayload) {
-    fb.clear(Rgb565::BLACK).ok();
+    fb.clear(BLACK).ok();
 
-    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
-    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_YELLOW);
-    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-    let ok_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_GREEN);
-    let dim_style = MonoTextStyle::new(&FONT_10X20, Rgb565::new(0x40, 0x40, 0x40));
-    let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
+    draw_status_bar(fb, "SCAN RESULT");
+    draw_button(fb, &back_button());
 
-    Text::with_text_style(
-        "QR Scan Result",
-        Point::new(400, 30),
-        title_style,
-        center_text,
-    )
-    .draw(fb)
-    .ok();
+    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+    let value_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+    let ok_style = MonoTextStyle::new(&FONT_10X20, GREEN);
+    let dim_style = MonoTextStyle::new(&FONT_10X20, MID_GRAY);
 
     let type_name = payload.type_name();
-    Text::with_text_style(type_name, Point::new(400, 60), ok_style, center_text)
+    Text::new(type_name, Point::new(20, 54), ok_style)
         .draw(fb)
         .ok();
 
     let raw = payload.raw_data();
     let len_label = format_u32_len(raw.len());
 
-    let mut y = 100u32;
+    let mut y = 80u32;
 
     Text::new("Size:", Point::new(20, y as i32), label_style)
         .draw(fb)
@@ -254,7 +357,7 @@ pub fn render_decoded_scan(fb: &mut LtdcFramebuffer<u16>, payload: &QrPayload) {
 
             match cashu_core_lite::decode_token(encoded) {
                 Ok(token) => {
-                    render_token_fields(fb, &token, y);
+                    render_token_fields_pretty(fb, &token, y);
                     y = y + 120;
                 }
                 Err(_) => {
@@ -296,7 +399,7 @@ pub fn render_decoded_scan(fb: &mut LtdcFramebuffer<u16>, payload: &QrPayload) {
     y += 25;
 
     let data_str = core::str::from_utf8(raw).unwrap_or("<binary data>");
-    let chars_per_line = 76;
+    let chars_per_line = 90;
     let mut offset = 0;
     while offset < data_str.len() && y < HEIGHT - 20 {
         let end = core::cmp::min(offset + chars_per_line, data_str.len());
@@ -379,6 +482,75 @@ fn render_token_fields(fb: &mut LtdcFramebuffer<u16>, token: &TokenV4, start_y: 
     Text::new(&proof_str, Point::new(120, y as i32), value_style)
         .draw(fb)
         .ok();
+}
+
+fn render_token_fields_pretty(fb: &mut LtdcFramebuffer<u16>, token: &TokenV4, start_y: u32) {
+    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+    let value_style = MonoTextStyle::new(&FONT_10X20, WHITE);
+    let amount_style = MonoTextStyle::new(&FONT_10X20, GREEN);
+
+    let mut y = start_y;
+
+    let sep = "--------------------------------------------------------";
+    Text::new(
+        sep,
+        Point::new(20, y as i32),
+        MonoTextStyle::new(&FONT_10X20, MID_GRAY),
+    )
+    .draw(fb)
+    .ok();
+    y += 22;
+
+    Text::new("Mint:", Point::new(20, y as i32), label_style)
+        .draw(fb)
+        .ok();
+    Text::new(
+        truncate_url(&token.mint, 55),
+        Point::new(100, y as i32),
+        value_style,
+    )
+    .draw(fb)
+    .ok();
+    y += 30;
+
+    Text::new("Unit:", Point::new(20, y as i32), label_style)
+        .draw(fb)
+        .ok();
+    Text::new(&token.unit, Point::new(100, y as i32), value_style)
+        .draw(fb)
+        .ok();
+    y += 35;
+
+    let amount_str = format_amount(token.total_amount(), &token.unit);
+    Text::new("Amount:", Point::new(20, y as i32), label_style)
+        .draw(fb)
+        .ok();
+    Text::new(&amount_str, Point::new(120, y as i32), amount_style)
+        .draw(fb)
+        .ok();
+    y += 35;
+
+    let proof_str = u64_to_string(token.proof_count() as u64);
+    Text::new("Proofs:", Point::new(20, y as i32), label_style)
+        .draw(fb)
+        .ok();
+    Text::new(&proof_str, Point::new(120, y as i32), value_style)
+        .draw(fb)
+        .ok();
+    y += 25;
+
+    if let Some(first_token) = token.tokens.first() {
+        Text::new("Keyset:", Point::new(20, y as i32), label_style)
+            .draw(fb)
+            .ok();
+        Text::new(
+            &first_token.keyset_id,
+            Point::new(140, y as i32),
+            value_style,
+        )
+        .draw(fb)
+        .ok();
+    }
 }
 
 pub fn render_qr_code(fb: &mut LtdcFramebuffer<u16>, text: &str) -> bool {

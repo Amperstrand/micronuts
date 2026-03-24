@@ -34,7 +34,7 @@ use stm32f469i_disc::{
     lcd, sdram, touch, usb,
 };
 
-use embedded_graphics::primitives::{Circle, PrimitiveStyle};
+use firmware::display::{self, Button};
 use firmware::firmware_state::{FirmwareState, SwapState};
 use firmware::qr::{Gm65Scanner, ScannerDriverSync};
 use firmware::usb::{CdcPort, Command, Response, Status};
@@ -43,6 +43,12 @@ use hal::rng::Rng;
 use hal::serial::Serial6;
 use rand_core::RngCore as _;
 use usb_device::prelude::*;
+
+enum Screen {
+    Home,
+    Scanning,
+    ScanResult,
+}
 
 static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
 
@@ -88,7 +94,7 @@ fn main() -> ! {
 
     defmt::info!("Initializing SDRAM...");
 
-    let sdram = sdram::Sdram::new(
+    let mut sdram = sdram::Sdram::new(
         dp.FMC,
         sdram::sdram_pins!(gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi),
         &rcc.clocks,
@@ -104,13 +110,9 @@ fn main() -> ! {
         }
     }
 
-    let fb_buffer: &'static mut [u16] =
-        unsafe { &mut *core::ptr::slice_from_raw_parts_mut(sdram.mem as *mut u16, lcd::FB_SIZE) };
-    let mut fb = LtdcFramebuffer::new(fb_buffer, lcd::WIDTH, lcd::HEIGHT);
-
     defmt::info!("Initializing display...");
 
-    let (mut display_ctrl, _controller) = lcd::init_display_full(
+    let (display_ctrl, _controller) = lcd::init_display_full(
         dp.DSI,
         dp.LTDC,
         dp.DMA2D,
@@ -120,19 +122,12 @@ fn main() -> ! {
         PixelFormat::RGB565,
     );
 
-    fb.clear(Rgb565::CSS_BLACK).ok();
-    firmware::display::render_status(&mut fb, "Micronuts Ready");
-
-    let fb_buffer = fb.into_inner();
-    display_ctrl.config_layer(Layer::L1, fb_buffer, PixelFormat::RGB565);
-    display_ctrl.enable_layer(Layer::L1);
-    display_ctrl.reload();
-
-    let fb_ptr = display_ctrl
-        .layer_buffer_mut(Layer::L1)
-        .expect("layer L1 buffer");
-    let fb_buf: &'static mut [u16] = unsafe { core::mem::transmute(fb_ptr) };
-    let mut fb = LtdcFramebuffer::new(fb_buf, lcd::WIDTH, lcd::HEIGHT);
+    let mut dbl_fb = lcd::DoubleFramebuffer::new(
+        &mut sdram,
+        display_ctrl,
+        lcd::BoardHint::Unknown,
+        PixelFormat::RGB565,
+    );
 
     defmt::info!("Display initialized");
 
@@ -155,16 +150,13 @@ fn main() -> ! {
         const MAX_SPLASH_FRAMES: u32 = 2 * 3 * 90;
         // Run splash: cycle through variants, touch to exit
         while !splash_done {
-            // Extract raw buffer for direct pixel writes
-            let raw_buf = fb.into_inner();
             firmware::boot_splash::render_frame(
-                raw_buf,
+                dbl_fb.back_buffer(),
                 lcd::WIDTH as u32,
                 lcd::HEIGHT as u32,
                 &mut splash_state,
             );
-            // Reconstruct framebuffer wrapper
-            fb = LtdcFramebuffer::new(raw_buf, lcd::WIDTH, lcd::HEIGHT);
+            dbl_fb.swap();
 
             // Simple frame pacing: ~33ms delay for ~30 FPS
             delay.delay_ms(33u32);
@@ -186,6 +178,8 @@ fn main() -> ! {
         }
         defmt::info!("Boot splash complete");
     }
+
+    let mut fb = LtdcFramebuffer::new(dbl_fb.into_front_buffer(), lcd::WIDTH, lcd::HEIGHT);
 
     defmt::info!("Initializing USB...");
     let usb_periph = usb::init(
@@ -278,19 +272,19 @@ fn main() -> ! {
     defmt::info!("USB initialized, entering main loop");
 
     let scanner_connected = scanner.state() == gm65_scanner::ScannerState::Ready;
+    let mut screen = Screen::Home;
+    let mut touch_active = false;
     firmware::display::render_home(&mut fb, scanner_connected);
 
+    let buttons = display::home_buttons();
+    let back_btn = display::back_button();
     let mut state = FirmwareState::new();
     let mut last_scan_data: Option<Vec<u8>> = None;
     let mut scan_active = false;
-    let mut auto_scan = scanner_connected;
 
     loop {
         if usb_dev.poll(&mut [cdc_port.serial_mut()]) {
             if let Some(frame) = cdc_port.receive_frame() {
-                if frame.command == Command::ScannerTrigger {
-                    auto_scan = false;
-                }
                 let response = handle_command(
                     frame.command,
                     frame.payload(),
@@ -308,41 +302,85 @@ fn main() -> ! {
             }
         }
 
-        if auto_scan && !scan_active && scanner.state() == gm65_scanner::ScannerState::Ready {
-            let _ = scanner.trigger_scan();
-            scan_active = true;
-        }
-
-        for _ in 0..256 {
-            if let Some(data) = scanner.try_read_scan() {
-                defmt::info!("Scan data received: {} bytes", data.len());
-                let payload = firmware::qr::decode_qr(&data);
-                firmware::display::render_decoded_scan(&mut fb, &payload);
-                if data.len() <= 200 && core::str::from_utf8(&data).is_ok() {
-                    firmware::display::render_qr_mirror(&mut fb, &data);
+        match screen {
+            Screen::Home => {
+                if let Some(ref mut t) = touch_ctrl {
+                    if let Ok(status) = t.td_status(&mut touch_i2c) {
+                        if status > 0 && !touch_active {
+                            touch_active = true;
+                            if let Ok(tp) = t.get_touch(&mut touch_i2c, 1) {
+                                if tp.detected {
+                                    if buttons[0].hit(tp.x, tp.y) {
+                                        defmt::info!("SCAN QR button pressed");
+                                        screen = Screen::Scanning;
+                                        scan_active = true;
+                                        last_scan_data = None;
+                                        let _ = scanner.trigger_scan();
+                                        firmware::display::draw_scanning(&mut fb);
+                                    }
+                                }
+                            }
+                        } else if status == 0 {
+                            touch_active = false;
+                        }
+                    }
                 }
-                last_scan_data = Some(data);
-                scan_active = false;
-                break;
-            }
-        }
 
-        if let Some(ref mut t) = touch_ctrl {
-            if let Ok(status) = t.td_status(&mut touch_i2c) {
-                if status > 0 {
-                    if let Ok(touch_point) = t.get_touch(&mut touch_i2c, 1) {
-                        if touch_point.detected {
-                            defmt::info!(
-                                "Touch: x={}, y={}, weight={}",
-                                touch_point.x,
-                                touch_point.y,
-                                touch_point.weight
-                            );
-                            let center = Point::new(touch_point.x as i32, touch_point.y as i32);
-                            Circle::with_center(center, 20)
-                                .into_styled(PrimitiveStyle::with_fill(Rgb565::CSS_WHITE))
-                                .draw(&mut fb)
-                                .ok();
+                for _ in 0..256 {
+                    if let Some(data) = scanner.try_read_scan() {
+                        defmt::info!("Scan data received: {} bytes", data.len());
+                        let payload = firmware::qr::decode_qr(&data);
+                        screen = Screen::ScanResult;
+                        firmware::display::render_decoded_scan(&mut fb, &payload);
+                        last_scan_data = Some(data);
+                        scan_active = false;
+                        break;
+                    }
+                }
+            }
+            Screen::Scanning => {
+                for _ in 0..256 {
+                    if let Some(data) = scanner.try_read_scan() {
+                        defmt::info!("Scan data received: {} bytes", data.len());
+                        let payload = firmware::qr::decode_qr(&data);
+                        screen = Screen::ScanResult;
+                        firmware::display::render_decoded_scan(&mut fb, &payload);
+                        last_scan_data = Some(data);
+                        scan_active = false;
+                        break;
+                    }
+                }
+
+                if let Some(ref mut t) = touch_ctrl {
+                    if let Ok(status) = t.td_status(&mut touch_i2c) {
+                        if status > 0 && !touch_active {
+                            touch_active = true;
+                            if let Ok(tp) = t.get_touch(&mut touch_i2c, 1) {
+                                if tp.detected && back_btn.hit(tp.x, tp.y) {
+                                    screen = Screen::Home;
+                                    scan_active = false;
+                                    firmware::display::render_home(&mut fb, scanner_connected);
+                                }
+                            }
+                        } else if status == 0 {
+                            touch_active = false;
+                        }
+                    }
+                }
+            }
+            Screen::ScanResult => {
+                if let Some(ref mut t) = touch_ctrl {
+                    if let Ok(status) = t.td_status(&mut touch_i2c) {
+                        if status > 0 && !touch_active {
+                            touch_active = true;
+                            if let Ok(tp) = t.get_touch(&mut touch_i2c, 1) {
+                                if tp.detected && back_btn.hit(tp.x, tp.y) {
+                                    screen = Screen::Home;
+                                    firmware::display::render_home(&mut fb, scanner_connected);
+                                }
+                            }
+                        } else if status == 0 {
+                            touch_active = false;
                         }
                     }
                 }

@@ -1244,7 +1244,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=2278cdd#2278cdd79da432b0563657d5fda62d9d221e4408"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=feat%2Fdouble-framebuffer#1306f7906b67a0eb6588d69df32249d078f4dfe7"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
