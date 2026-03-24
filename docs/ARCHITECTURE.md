@@ -24,7 +24,7 @@ Micronuts is a **Cashu hardware wallet proof of concept** demonstrating blind si
 │  │  ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐     │  │
 │  │  │ USB CDC     │   │ cashu-core-  │   │   BSP / HAL     │     │  │
 │  │  │ Receiver    │──▶│ lite         │──▶│   (display,     │     │  │
-│  │  └─────────────┘   │ (no_std)     │   │    sdram, etc)  │     │  │
+│  │  └─────────────┘   │ (no_std)     │   │    sdram, rng)  │     │  │
 │  │                    └──────────────┘   └─────────────────┘     │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                       │
@@ -40,16 +40,18 @@ The embedded firmware running on the STM32F469I-Discovery.
 
 **Dependencies:**
 - `stm32f469i-disc` BSP (git dependency, pinned commit)
+- `gm65-scanner` (git dependency, pinned commit)
 - `cashu-core-lite` (workspace member)
-- `cortex-m`, `cortex-m-rt`, `defmt`
+- `cortex-m`, `cortex-m-rt`, `defmt`, `rand_core`
 
 **Responsibilities:**
-- Initialize hardware (display, USB, SDRAM)
+- Initialize hardware (display, USB, SDRAM, RNG, QR scanner)
 - Receive commands via USB CDC
 - Decode Cashu tokens
-- Generate blinded outputs
+- Generate blinded outputs using hardware RNG for blinder entropy
 - Unblind signatures
-- Display token info
+- Display token info and scan results
+- QR code scanning via GM65 module
 
 **Build target:** `thumbv7em-none-eabihf`
 
@@ -66,6 +68,7 @@ The embedded firmware running on the STM32F469I-Discovery.
 **Dependencies:**
 - `k256` — secp256k1 elliptic curve
 - `sha2` — SHA-256
+- `rand_core` — RngCore trait (no_std)
 - `minicbor` — CBOR parsing
 
 ### 3. `host-mint-tool/` (Demo Mint Signer)
@@ -85,7 +88,7 @@ DEVICE                                HOST (Demo Mint)
   │                                        │
   │  1. Generate secret x                  │
   │  2. Y = hash_to_curve(x)               │
-  │  3. Pick random blinder r              │
+  │  3. Pick random blinder r (HW RNG)     │
   │  4. B' = Y + r*G  (blinded)            │
   │                                        │
   │──── B' (blinded message) ─────────────▶│
@@ -96,6 +99,8 @@ DEVICE                                HOST (Demo Mint)
   │  7. Store (x, C) as proof              │
   │                                        │
 ```
+
+Blinder entropy comes from the STM32F469 hardware RNG peripheral (analog ring oscillators, not a PRNG). See [issue #1](https://github.com/Amperstrand/micronuts/issues/1) for security analysis.
 
 ## Communication Protocol
 
@@ -111,15 +116,41 @@ Commands:
   0x03 GET_BLINDED     - Request blinded outputs
   0x04 SEND_SIGNATURES - Send blind signatures
   0x05 GET_PROOFS      - Request unblinded proofs
+  0x10 SCANNER_STATUS  - QR scanner connection status
+  0x11 SCANNER_TRIGGER - Trigger QR scan
+  0x12 SCANNER_DATA    - Read last scanned data
 ```
 
 ## Memory Layout
 
 ```
-Flash (2MB): Code + rodata
-SRAM (384KB): Stack + heap + USB buffers
-SDRAM (16MB): Framebuffer + token storage + large allocs
+Flash (2MB):   Code + rodata
+SRAM (384KB):  Stack + heap + USB buffers
+SDRAM (16MB):  Framebuffer (768KB) + heap allocator (128KB) + large allocs
 ```
+
+## Random Number Generation
+
+The STM32F469NI has a hardware RNG peripheral (reference manual section 24):
+
+- **Source**: Analog ring oscillators — true physical entropy, not a PRNG
+- **Output**: 32-bit words via `RNG->DR` register
+- **Health checks**: CECS (clock error) and SECS (seed error) detection
+- **HAL**: `stm32f4xx-hal::rng::Rng` implements `rand_core::RngCore`
+- **Requirement**: `PLL48CLK` must be active (already enabled for USB)
+- **Throughput**: ~40 cycles per word at 48 MHz
+
+See [issue #1](https://github.com/Amperstrand/micronuts/issues/1) for remaining security audit items.
+
+## Pinned Dependencies
+
+All git dependencies are pinned to specific commits for reproducibility:
+
+| Crate | Pin | Why |
+|-------|-----|-----|
+| `stm32f469i-disc` | `a412876` | Sync BSP with `rng` feature forward. Based on `fa6dc86` which has working display/SDRAM/SDIO/USB. Upstream `main` diverged to a different HAL version. |
+| `stm32f4xx-hal` | `789e5e86` | Pinned by BSP. Includes DSI, SDRAM, SDIO, USB FS, RNG support for STM32F469. |
+| `gm65-scanner` | `5b1cf56` | Post-merge main with async+sync dual-mode driver, HIL-tested on hardware. Removed `embedded-hal` feature (replaced by `sync`). |
 
 ## Baseline
 
@@ -127,7 +158,7 @@ The BSP is a git dependency:
 
 ```toml
 [dependencies]
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "c71065da588b9256e26557c57c103954cf7915fe" }
+stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "a412876" }
 ```
 
 This preserves the BSP as a separate, versioned dependency rather than modifying it directly.

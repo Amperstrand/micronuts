@@ -1,22 +1,60 @@
 # Micronuts
 
-**Cashu Hardware Wallet Proof of Concept** for the STM32F469I-Discovery board.
+**Cashu Hardware Wallet** for the STM32F469I-Discovery board.
 
-Micronuts is an experimental hardware wallet implementation for [Cashu](https://github.com/cashubtc/nuts) ecash tokens. This is a **proof of concept** exploring embedded blind signature operations on bare metal.
+Micronuts is an experimental hardware wallet for [Cashu](https://github.com/cashubtc/nuts) ecash tokens running on bare metal. It scans Cashu QR codes, performs blind signature operations, and communicates with a host mint via USB CDC.
 
-## Status: Experimental POC
+## Status: Working Prototype
 
-This is NOT a production wallet. Do NOT use with real funds. The goal is to demonstrate that Cashu's blind signature flow can work on constrained embedded hardware.
+The firmware builds, flashes, and runs on real hardware. All core Cashu operations (blind, sign, unblind) have been verified on the STM32F469I-Discovery board.
+
+## What Works
+
+- **4" DSI display** (800x480, NT35510) — renders token info, scan results, status messages via SDRAM framebuffer + LTDC
+- **QR code scanning** — GM65 module on USART6, auto-baud detection (9600/57600/115200), continuous polling
+- **USB CDC protocol** — binary command/response protocol over USB OTG FS (VID:PID `16c0:27dd`, "Micronuts / Cashu Hardware Wallet")
+- **Cashu blind signature flow** — import token, generate blinded outputs, receive signatures, unblind, produce proofs
+- **Hardware RNG** — STM32F469 analog ring oscillator peripheral for cryptographically random blinder generation
+- **Crypto** — secp256k1 (k256), SHA-256, hash-to-curve, CBOR V4 token parsing
 
 ## Target Hardware
 
 - **Board**: STM32F469I-Discovery (STM32F469NIH6 MCU)
 - **MCU**: ARM Cortex-M4F @ 180MHz, 2MB Flash, 384KB SRAM
 - **Display**: 4" DSI LCD (NT35510/OTM8009A, 800x480)
-- **Touch**: FT6X06 capacitive touch controller
+- **Touch**: FT6X06 capacitive touch controller (not yet used)
 - **QR Scanner**: GM65 module via USART6 (PG14=TX, PG9=RX through shield-lite adapter)
-- **Storage**: 16MB SDRAM + microSD via SDIO
+- **Storage**: 16MB SDRAM + microSD via SDIO (SDIO not yet used)
 - **USB**: USB OTG FS (CDC-ACM for host communication)
+- **RNG**: Hardware random number generator (analog ring oscillators)
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  HOST PC                                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  host-mint-tool: holds mint key, signs blinded msgs   │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+│                         │ USB CDC                            │
+└─────────────────────────│────────────────────────────────────┘
+                          │
+┌─────────────────────────│────────────────────────────────────┐
+│  STM32F469I-DISCOVERY   ▼                                    │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  firmware/                                             │  │
+│  │  ├─ USB CDC receiver → command dispatch                │  │
+│  │  ├─ QR scanner (GM65, USART6) → Cashu token decode    │  │
+│  │  ├─ cashu-core-lite (no_std) → blind/unblind ops      │  │
+│  │  ├─ Hardware RNG → blinder entropy                    │  │
+│  │  ├─ Display (DSI/LTDC/SDRAM) → status & token render  │  │
+│  │  └─ 128KB heap in SDRAM (after framebuffer)           │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  cashu-core-lite/ — V4 CBOR, secp256k1, hash-to-curve       │
+│  host-mint-tool/   — CLI demo mint signer                    │
+└───────────────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
@@ -30,12 +68,11 @@ micronuts/
 │   └── src/
 │       ├── main.rs         # Entry point, hardware init, main loop
 │       ├── usb.rs          # USB CDC binary protocol
-│       ├── display.rs      # LCD rendering
+│       ├── display.rs      # LCD rendering (embedded-graphics)
 │       ├── firmware_state.rs
-│       ├── prng.rs
-│       └── qr/             # QR scanner module
-│           ├── driver.rs   # GM65 UART driver (sync, modeled on specter-diy)
-│           ├── protocol.rs # GM65 command builder (legacy, unused in driver)
+│       ├── lib.rs          # Module declarations
+│       └── qr/
+│           ├── driver.rs   # GM65 UART driver (sync, from gm65-scanner crate)
 │           └── decoder.rs  # QR payload classification (Cashu, UR, plain text)
 ├── cashu-core-lite/        # Minimal Cashu library (no_std + alloc)
 ├── host-mint-tool/         # Demo mint signer CLI for host PC
@@ -47,27 +84,17 @@ micronuts/
     └── GM65-PROTOCOL-FINDINGS.md
 ```
 
-## Dependencies
+## Pinned Dependencies
 
-- **BSP**: [`stm32f469i-disc`](https://github.com/Amperstrand/stm32f469i-disc) @ `fa6dc86`
-- **HAL**: stm32f4xx-hal @ `789e5e86` (via BSP)
-- **Crypto**: `k256` (secp256k1), `sha2` (SHA-256)
-- **CBOR**: `minicbor` (no_std compatible)
-- **Scanner reference**: [specter-diy qr.py](https://github.com/cryptoadvance/specter-diy/blob/master/src/hosts/qr.py)
+All git dependencies are pinned to specific commits for reproducibility:
 
-## Quick Start
+| Crate | Pin | Why |
+|-------|-----|-----|
+| `stm32f469i-disc` | `a412876` | Sync BSP with `rng` feature. Based on `fa6dc86` (working display/SDRAM/SDIO/USB). Upstream `main` diverged to a different HAL version. |
+| `stm32f4xx-hal` | `789e5e86` | Pinned by BSP. DSI, SDRAM, SDIO, USB FS, RNG for STM32F469. |
+| `gm65-scanner` | `5b1cf56` | Post-merge main with async+sync dual-mode driver, HIL-tested on hardware. |
 
-```bash
-# Install target and probe-rs
-rustup target add thumbv7em-none-eabihf
-cargo install probe-rs-tools
-
-# Build
-cargo build --release
-
-# Flash and run (output via RTT)
-probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
-```
+Other deps from crates.io: `k256`, `sha2`, `rand_core 0.6`, `minicbor`, `embedded-graphics`, `defmt 1.0`.
 
 ## USB CDC Protocol
 
@@ -84,26 +111,165 @@ Binary protocol: `[Cmd:1][Len:2][Payload:N]` / `[Status:1][Len:2][Payload:N]`
 | ScannerTrigger | 0x11 | Trigger QR scan |
 | ScannerData | 0x12 | Read last scanned data |
 
-## Documentation
+## Quick Start
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — System design and component split
-- [DEMO-FLOW.md](docs/DEMO-FLOW.md) — First vertical slice demo plan
-- [QR-SCANNER.md](docs/QR-SCANNER.md) — QR scanner integration design
-- [GM65-PROTOCOL-FINDINGS.md](docs/GM65-PROTOCOL-FINDINGS.md) — GM65 protocol reverse-engineering notes
+```bash
+# Install target and probe-rs
+rustup target add thumbv7em-none-eabihf
+cargo install probe-rs-tools
 
-## Baseline
+# Build (from firmware/ directory)
+cd firmware && cargo build
 
-This project builds on the STM32F469I-DISCOVERY board support package:
+# Flash
+probe-rs download --chip STM32F469NIHx target/thumbv7em-none-eabihf/debug/firmware
+probe-rs reset --chip STM32F469NIHx
+```
 
-- **Upstream BSP**: `https://github.com/Amperstrand/stm32f469i-disc`
-- **Pinned commit**: `fa6dc86` (display/SDRAM working)
-- **HAL**: stm32f4xx-hal with DSI, SDRAM, SDIO, USB FS support
+## Known Issues
+
+- **RNG security audit pending** — The hardware RNG works but needs independent entropy quality verification. See [#1](https://github.com/Amperstrand/micronuts/issues/1).
+- **Touch screen unused** — FT6X06 touch controller is on the board but not wired into the UI yet.
+- **SDIO unused** — microSD slot works in the BSP but firmware doesn't use it yet.
+- **Demo mint only** — `host-mint-tool` is a toy signer, not a real Cashu mint.
+
+## Roadmap & Future Ideas
+
+What should this device become? Here are possible directions, roughly ordered from near-term to speculative.
+
+### 1. Cashu QR Debug / Showcase Tool
+
+**The simplest next step.** Scan any Cashu QR code and display a structured breakdown: token version, keyset IDs, proof counts, amounts, memo fields, lock conditions. Great for developers testing mint integrations and for conference demos.
+
+- Parse and display all Cashu V4 token fields on the LCD
+- Classify QR payloads: Cashu token, Cashu URL, P2PK lock, multisig, time-lock
+- Show decoded `P2PKsH` and `P2PK` lock scripts in human-readable form
+- Add a "token health check" — flag malformed proofs, unknown keysets, suspicious amounts
+- Touch UI for navigating between scanned tokens
+
+### 2. Offline POS Device
+
+**Scan-to-pay for ecash.** The device scans a Cashu payment QR (a token the customer is sending), verifies the proofs are well-formed, displays the amount, and the merchant confirms on the touch screen. The actual mint verification would require the device to talk to a mint — see use case 5 for connectivity options.
+
+- Touch-screen "Confirm Payment" / "Reject" flow
+- Display payment amount and unit (SAT, msat, USD)
+- Store confirmed tokens in SDRAM or microSD for later batch-send to mint
+- Multi-denomination support (show breakdown of proof amounts)
+- Transaction log stored on microSD (CSV or CBOR)
+
+### 3. P2PK & Lock Debug Tool
+
+**Decode and verify lock-to-public-key outputs.** Cashu supports locking proofs to public keys (P2PK, P2PKsH). This tool would decode lock scripts, verify signatures against known pubkeys, and display lock conditions. Essential for developers building P2PK workflows.
+
+- Decode `P2PK` and `P2PKsH` lock scripts from proof fields
+- Verify proof signatures against specified public keys on-device
+- Display lock conditions: which pubkey, timelocks, spending conditions
+- Test P2PK spending by signing unlock messages with the device's own key
+- Useful for debugging multisig and HTLC-like Cashu workflows
+
+### 4. JavaCard Secure Element Integration (Satocash)
+
+**This is the most interesting hardware direction.** The [Satocash applet](https://github.com/Toporin/Satocash-Applet) is an open-source JavaCard implementation of a Cashu wallet. JavaCard applets run on secure elements — tamper-resistant chips designed to protect cryptographic keys even against physical attacks.
+
+The STM32F469I-DISCO has a microSD slot connected via SDIO. [Secure microSD cards](https://www.swissbit.com/index.php?option=com_content&view=article&id=293&Itemid=601) (like the Swissbit PS-100u) exist that combine flash storage with a JavaCard-capable secure element on the same card. You can load the Satocash applet onto such a card, insert it into the Discovery board's microSD slot, and talk to it via APDU commands over the SDIO interface.
+
+**How it would work:**
+
+1. Load Satocash applet onto a compatible secure microSD card using [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro)
+2. Insert the card into the STM32F469I-DISCO's microSD slot
+3. Firmware communicates with the card via APDU commands over SDIO (the BSP already has SDIO support)
+4. The JavaCard holds all wallet private keys — they never leave the secure element
+5. The STM32 provides the user interface (display, touch, QR scanner, USB) and sends signing requests to the card
+6. The card signs transactions inside its secure boundary and returns only signatures
+
+**What Satocash provides:**
+- Secp256k1 key management (import, derive, sign)
+- PIN-based access control (4-16 char PIN, lockout after failed attempts)
+- Authentikey for card authentication
+- PIN-less payments with configurable amount thresholds (v0.1-0.3)
+- Proof export/import for Cashu operations
+- BIP32-like key derivation (via parent Satochip applet)
+
+**What we'd need to build:**
+- A Rust APDU transport layer over SDIO (the `stm32f469i-disc` BSP has SDIO support, but we'd need the smartcard protocol layer on top — send SELECT, send CLA/INS/P1/P2/Lc/Data/Le, parse response SW1/SW2)
+- Port the relevant subset of [pysatochip](https://github.com/Toporin/pysatochip) APDU logic to Rust
+- Integrate the secure element into the blind signature flow: instead of the firmware holding keys, it delegates signing to the card
+- Handle PIN entry via the touch screen
+
+**Why this matters:** It moves private keys out of the STM32's flash (which is readable by anyone with a debugger) and into a proper secure element. The JavaCard is designed to resist physical attacks — key extraction requires expensive equipment and expertise. This is the difference between "proof of concept" and "something you could actually trust with money."
+
+**Compatible hardware:**
+- Swissbit PS-100u VE card (secure microSD with JavaCard 3.0.1 support)
+- NXP JCOP J2D081
+- J3D081 JCOP v2.4.2 R2 (available single-piece from Motechno)
+
+**References:**
+- [Satocash Applet](https://github.com/Toporin/Satocash-Applet) — Cashu wallet JavaCard applet
+- [Satochip Applet](https://github.com/Toporin/SatochipApplet) — Parent Bitcoin hardware wallet applet (BIP32/BIP39)
+- [pysatochip](https://github.com/Toporin/pysatochip) — Python client library (reference for APDU protocol)
+- [GlobalPlatformPro](https://github.com/martinpaljak/GlobalPlatformPro) — Tool for loading applets onto cards
+
+### 5. Network-Connected Wallet
+
+**The device currently can't talk to mints.** All mint interaction goes through the host PC over USB. Adding direct network connectivity would make it a standalone wallet.
+
+Options for connectivity:
+- **USB Ethernet dongle** — The STM32F469 has a MAC peripheral, but the Discovery board doesn't expose an Ethernet PHY. A USB-to-Ethernet adapter via the USB OTG port could work (the USB host stack would need to be implemented).
+- **WiFi shield** — An ESP32 or ESP8266 connected via UART/SPI could provide WiFi. The ESP32 can also handle TLS, offloading the crypto.
+- **Bluetooth** — The Discovery board doesn't have BLE natively, but an HC-05 or nRF52840 module via UART would work for short-range communication with a phone.
+- **Nostr relay** — A minimal TCP stack connecting to a Nostr relay could enable receiving and sending Cashu tokens over the Nostr protocol. This would be the most "Cashu-native" approach.
+- **Serial-to-USB bridge** — Use the existing USB CDC connection but with a host-side daemon (like `cashu` CLI) that acts as a network proxy. Simplest approach, already partially working.
+
+### 6. Offline Swap Coordination (P2P QR)
+
+**Two devices, no internet, just QR codes.** Two Micronuts devices (or a Micronuts and a phone) coordinate a Cashu swap by scanning each other's QR codes.
+
+Flow:
+1. Device A (buyer) generates blinded messages, encodes them as a QR code
+2. Device B (seller) scans the QR, signs the blinded messages with the seller's mint, encodes the signatures as a QR code
+3. Device A scans the QR, unblinds to get proofs
+4. Both devices display confirmation
+
+This is analogous to BIP78 PayJoin but for Cashu, using QR codes as the communication channel. No mint connectivity required on either device — the seller pre-loads signed blanks from their mint.
+
+- QR encoding/decoding of blinded messages and signatures
+- State machine for swap negotiation (offer, counter-offer, confirm, complete)
+- Display swap progress on the LCD
+- Handle large swaps that don't fit in a single QR code (multi-QR or UR encoding)
+
+### 7. Hardware Mint Signing Module
+
+**A dedicated mint signing device.** Instead of a wallet, this is a device that holds the mint's private key and only signs blinded outputs when the operator confirms on the touch screen.
+
+The key never leaves the device. Even if the host computer is compromised, the attacker can only request signatures — they can't extract the key.
+
+- Mint private key stored in flash (or better: in a JavaCard secure element — see use case 4)
+- Touch screen confirmation for every signing request
+- Display the blinded messages being signed (amount, keyset)
+- Rate limiting and audit logging to microSD
+- Could be the basis for a physical cash register at a merchant
+
+### 8. Educational Demo Device
+
+**Self-contained Cashu explainer.** A conference demo or teaching tool that walks through how ecash works, step by step, on the built-in display.
+
+Touch-driven UI:
+1. "This is a Cashu token" — shows a sample token, highlights fields
+2. "Watch it get blinded" — animates the blinding process
+3. "The mint signs" — shows what the mint sees (blinded, not the original)
+4. "Unblind to get a proof" — shows the unblinding
+5. "The proof is yours" — shows the final proof
+6. "Scan a real token" — switch to live QR scanning mode
+
+No real crypto needed for the demo mode — just the animations. Switch to "live mode" for actual operations.
 
 ## Credits
 
 - BSP foundation: [stm32f469i-disc](https://github.com/Amperstrand/stm32f469i-disc)
-- Scanner protocol: [specter-diy](https://github.com/cryptoadvance/specter-diy)
+- Scanner: [gm65-scanner](https://github.com/Amperstrand/gm65-scanner)
+- Scanner protocol reference: [specter-diy](https://github.com/cryptoadvance/specter-diy)
 - Cashu protocol: [cashubtc/nuts](https://github.com/cashubtc/nuts)
+- Satocash JavaCard applet: [Toporin/Satocash-Applet](https://github.com/Toporin/Satocash-Applet)
 
 ## License
 

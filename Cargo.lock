@@ -540,7 +540,7 @@ dependencies = [
  "linked_list_allocator",
  "nb 1.1.0",
  "panic-probe 1.0.0",
- "qrcodegen-no-heap",
+ "rand_core 0.6.4",
  "sha2",
  "static_cell",
  "stm32f469i-disc",
@@ -618,9 +618,10 @@ dependencies = [
 
 [[package]]
 name = "gm65-scanner"
-version = "0.1.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?branch=main#6be7890537b688adbc0a37a004fc04610ec152db"
+version = "0.2.0"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=5b1cf56#5b1cf5682f2fefa436c389c370111be437c0fafd"
 dependencies = [
+ "bitflags 2.11.0",
  "defmt 1.0.1",
  "embedded-hal 0.2.7",
  "nb 1.1.0",
@@ -1001,12 +1002,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qrcodegen-no-heap"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e2c0bf8be8a1c4a4f48973dabf26943f05da2bfc2d3180aae62409dbba6f0c"
-
-[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1242,7 +1237,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=fa6dc86#fa6dc86c887da4c6a567981207ebbf69027f880a"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=a412876#a412876a17f9aa41e74dc30c510a437a8c2926e4"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

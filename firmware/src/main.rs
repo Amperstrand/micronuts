@@ -30,19 +30,18 @@ use stm32f469i_disc::{
     hal::pac::{self, CorePeripherals},
     hal::prelude::*,
     hal::rcc,
+    hal::rng::RngExt,
     lcd, sdram, usb,
 };
 
-use hal::otg_fs::UsbBus;
-use hal::serial::Serial6;
-use usb_device::prelude::*;
-
-mod prng;
-
-use crate::prng::Prng;
 use firmware::firmware_state::{FirmwareState, SwapState};
 use firmware::qr::{Gm65Scanner, ScannerDriverSync};
 use firmware::usb::{CdcPort, Command, Response, Status};
+use hal::otg_fs::UsbBus;
+use hal::rng::Rng;
+use hal::serial::Serial6;
+use rand_core::RngCore as _;
+use usb_device::prelude::*;
 
 static EP_MEMORY: ConstStaticCell<[u32; 1024]> = ConstStaticCell::new([0; 1024]);
 
@@ -64,10 +63,7 @@ fn main() -> ! {
 
     defmt::info!("Micronuts firmware starting...");
 
-    let mut dwt = cp.DWT;
-    unsafe { dwt.enable_cycle_counter() };
-    let seed = DWT::cycle_count();
-    let mut prng = Prng::new(seed);
+    let mut rng = dp.RNG.constrain(&mut rcc);
 
     let gpioa = dp.GPIOA.split(&mut rcc);
     let gpioc = dp.GPIOC.split(&mut rcc);
@@ -244,7 +240,7 @@ fn main() -> ! {
                     frame.command,
                     frame.payload(),
                     &mut state,
-                    &mut prng,
+                    &mut rng,
                     &mut fb,
                     &mut scanner,
                     &mut last_scan_data,
@@ -282,7 +278,7 @@ fn handle_command(
     command: Command,
     payload: &[u8],
     state: &mut FirmwareState,
-    prng: &mut Prng,
+    rng: &mut Rng,
     fb: &mut LtdcFramebuffer<u16>,
     scanner: &mut Gm65Scanner<Serial6>,
     last_scan_data: &mut Option<Vec<u8>>,
@@ -290,7 +286,7 @@ fn handle_command(
     match command {
         Command::ImportToken => handle_import_token(payload, state, fb),
         Command::GetTokenInfo => handle_get_token_info(state),
-        Command::GetBlinded => handle_get_blinded(state, prng, fb),
+        Command::GetBlinded => handle_get_blinded(state, rng, fb),
         Command::SendSignatures => handle_send_signatures(payload, state, fb),
         Command::GetProofs => handle_get_proofs(state),
         Command::ScannerStatus => handle_scanner_status(scanner),
@@ -370,7 +366,7 @@ fn handle_get_token_info(state: &mut FirmwareState) -> Response {
 
 fn handle_get_blinded(
     state: &mut FirmwareState,
-    prng: &mut Prng,
+    rng: &mut Rng,
     fb: &mut LtdcFramebuffer<u16>,
 ) -> Response {
     defmt::info!("GET_BLINDED");
@@ -398,7 +394,7 @@ fn handle_get_blinded(
             };
 
             let mut blinder_bytes = [0u8; 32];
-            prng.fill_bytes(&mut blinder_bytes);
+            rng.fill_bytes(&mut blinder_bytes);
             let blinder = match SecretKey::from_slice(&blinder_bytes) {
                 Ok(sk) => sk,
                 Err(_) => {

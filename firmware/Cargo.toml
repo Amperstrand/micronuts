@@ -14,7 +14,7 @@ embedded-hal = { workspace = true }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 embedded-graphics = { workspace = true }
 heapless = "0.8"
-stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer"] }
+stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer", "rng"] }
 gm65-scanner = { workspace = true }
 qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
@@ -27,6 +27,7 @@ sha2 = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 linked_list_allocator = "0.10"
 nb = "1.1"
+rand_core = { workspace = true }
 
 [features]
 default = ["defmt"]
