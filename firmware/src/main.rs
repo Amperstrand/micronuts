@@ -31,9 +31,10 @@ use stm32f469i_disc::{
     hal::prelude::*,
     hal::rcc,
     hal::rng::RngExt,
-    lcd, sdram, usb,
+    lcd, sdram, touch, usb,
 };
 
+use embedded_graphics::primitives::{Circle, PrimitiveStyle};
 use firmware::firmware_state::{FirmwareState, SwapState};
 use firmware::qr::{Gm65Scanner, ScannerDriverSync};
 use firmware::usb::{CdcPort, Command, Response, Status};
@@ -66,6 +67,7 @@ fn main() -> ! {
     let mut rng = dp.RNG.constrain(&mut rcc);
 
     let gpioa = dp.GPIOA.split(&mut rcc);
+    let gpiob = dp.GPIOB.split(&mut rcc);
     let gpioc = dp.GPIOC.split(&mut rcc);
     let gpiod = dp.GPIOD.split(&mut rcc);
     let gpioe = dp.GPIOE.split(&mut rcc);
@@ -75,6 +77,8 @@ fn main() -> ! {
     let scanner_rx = gpiog.pg9;
     let gpioh = dp.GPIOH.split(&mut rcc);
     let gpioi = dp.GPIOI.split(&mut rcc);
+
+    let ts_int = gpioc.pc1.into_pull_down_input();
 
     let mut lcd_reset = gpioh.ph7.into_push_pull_output();
     lcd_reset.set_low();
@@ -131,6 +135,16 @@ fn main() -> ! {
     let mut fb = LtdcFramebuffer::new(fb_buf, lcd::WIDTH, lcd::HEIGHT);
 
     defmt::info!("Display initialized");
+
+    defmt::info!("Initializing touch...");
+    let mut touch_i2c = touch::init_i2c(dp.I2C1, gpiob.pb8, gpiob.pb9, &mut rcc);
+    let mut touch_ctrl = touch::init_ft6x06(&touch_i2c, ts_int);
+    let touch_available = touch_ctrl.is_some();
+    if touch_available {
+        defmt::info!("Touch controller ready");
+    } else {
+        defmt::warn!("Touch controller not found");
+    }
 
     defmt::info!("Initializing USB...");
     let usb_periph = usb::init(
@@ -269,6 +283,28 @@ fn main() -> ! {
                 last_scan_data = Some(data);
                 scan_active = false;
                 break;
+            }
+        }
+
+        if let Some(ref mut t) = touch_ctrl {
+            if let Ok(status) = t.td_status(&mut touch_i2c) {
+                if status > 0 {
+                    if let Ok(touch_point) = t.get_touch(&mut touch_i2c, 1) {
+                        if touch_point.detected {
+                            defmt::info!(
+                                "Touch: x={}, y={}, weight={}",
+                                touch_point.x,
+                                touch_point.y,
+                                touch_point.weight
+                            );
+                            let center = Point::new(touch_point.x as i32, touch_point.y as i32);
+                            Circle::with_center(center, 20)
+                                .into_styled(PrimitiveStyle::with_fill(Rgb565::CSS_WHITE))
+                                .draw(&mut fb)
+                                .ok();
+                        }
+                    }
+                }
             }
         }
     }
