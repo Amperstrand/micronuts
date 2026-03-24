@@ -1244,7 +1244,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=a412876#a412876a17f9aa41e74dc30c510a437a8c2926e4"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=2278cdd#2278cdd79da432b0563657d5fda62d9d221e4408"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

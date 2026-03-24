@@ -41,7 +41,7 @@ use crate::boot_splash_assets::{TileAsset, TILE_CATALOG};
 // ---------------------------------------------------------------------------
 
 /// How long each variant is shown (in frames at ~30 FPS).
-const VARIANT_DURATION_FRAMES: u32 = 90; // 3 seconds × 30 FPS
+const VARIANT_DURATION_FRAMES: u32 = 300; // 10 seconds × 30 FPS
 
 /// Number of animation variants.
 const NUM_VARIANTS: usize = 3;
@@ -164,12 +164,7 @@ impl SplashState {
 /// order (matches the LTDC framebuffer layout).
 ///
 /// Returns `true` if the variant just cycled (so caller can detect transitions).
-pub fn render_frame(
-    fb: &mut [u16],
-    width: u32,
-    height: u32,
-    state: &mut SplashState,
-) -> bool {
+pub fn render_frame(fb: &mut [u16], width: u32, height: u32, state: &mut SplashState) -> bool {
     let cfg = &VARIANTS[state.variant];
     let cat_len = TILE_CATALOG.len();
     let tile: &TileAsset = if cfg.tile_index < cat_len {
@@ -271,14 +266,7 @@ pub fn render_frame(
 /// Blit a single tile onto the framebuffer at integer position (tx, ty).
 /// Clips to framebuffer bounds. No scaling.
 #[inline]
-fn blit_tile(
-    fb: &mut [u16],
-    fb_w: u32,
-    fb_h: u32,
-    tile: &TileAsset,
-    tx: i32,
-    ty: i32,
-) {
+fn blit_tile(fb: &mut [u16], fb_w: u32, fb_h: u32, tile: &TileAsset, tx: i32, ty: i32) {
     let tw = tile.width as i32;
     let th = tile.height as i32;
 
@@ -315,31 +303,13 @@ fn blit_tile(
 fn render_variant_indicator(fb: &mut [u16], width: u32, height: u32, variant: usize) {
     // 5x7 bitmap font for 'A', 'B', 'C' — each is 5 columns × 7 rows
     const FONT_A: [u8; 7] = [
-        0b01110,
-        0b10001,
-        0b10001,
-        0b11111,
-        0b10001,
-        0b10001,
-        0b10001,
+        0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
     ];
     const FONT_B: [u8; 7] = [
-        0b11110,
-        0b10001,
-        0b10001,
-        0b11110,
-        0b10001,
-        0b10001,
-        0b11110,
+        0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
     ];
     const FONT_C: [u8; 7] = [
-        0b01110,
-        0b10001,
-        0b10000,
-        0b10000,
-        0b10000,
-        0b10001,
-        0b01110,
+        0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
     ];
 
     let glyph: &[u8; 7] = match variant {
