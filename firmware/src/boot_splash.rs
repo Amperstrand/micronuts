@@ -189,7 +189,6 @@ pub fn render_frame(
     }
 
     let num_rows = ((height + row_pitch - 1) / row_pitch) as usize;
-    let tiles_per_row = ((width + pitch - 1) / pitch) + 2; // +2 for seamless wrap
 
     // --- Update row offsets ---
     for row in 0..num_rows.min(state.row_offsets.len()) {
@@ -215,6 +214,9 @@ pub fn render_frame(
     }
 
     // --- Render tiled rows ---
+    // Strategy: for each row compute a normalized offset in [0, pitch),
+    // then start drawing from one tile before the left edge and iterate
+    // rightward until we pass the right edge.
     for row in 0..num_rows {
         let row_y = (row as u32) * row_pitch;
         if row_y >= height {
@@ -239,25 +241,15 @@ pub fn render_frame(
 
         let total_offset = base_offset + stagger + phase;
 
-        // Render tiles for this row
-        for col_idx in 0..tiles_per_row {
-            let tile_x_base = (col_idx as i32) * (pitch as i32) - total_offset;
+        // Normalize offset to [0, pitch) for seamless wrapping
+        let p = pitch as i32;
+        let norm = total_offset.rem_euclid(p);
 
-            // Wrap into visible range
-            let wrap = pitch as i32;
-            let tile_x = if wrap > 0 {
-                let mut x = tile_x_base % wrap;
-                if x < -(tw as i32) {
-                    x += wrap * (((-(x + tw as i32)) / wrap) + 1);
-                }
-                // Shift to cover the full width
-                x - pitch as i32
-            } else {
-                tile_x_base
-            };
-
-            // Blit tile pixels
+        // Start one tile before the left edge to cover partial tiles
+        let mut tile_x = norm - p;
+        while tile_x < width as i32 {
             blit_tile(fb, width, height, tile, tile_x, row_y as i32);
+            tile_x += p;
         }
     }
 

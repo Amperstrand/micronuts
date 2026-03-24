@@ -8,8 +8,15 @@ Micronuts is an experimental hardware wallet for [Cashu](https://github.com/cash
 
 The firmware builds, flashes, and runs on real hardware. All core Cashu operations (blind, sign, unblind) have been verified on the STM32F469I-Discovery board.
 
+### Boot Splash Preview
+
+![Boot Splash Preview](firmware/assets/preview/boot-splash-screenshot.png)
+
+*Retro tiled Cashu nut logo grid with alternating row scrolling. See [docs/BOOT-SPLASH.md](docs/BOOT-SPLASH.md) for details.*
+
 ## What Works
 
+- **Boot splash animation** — retro tiled Cashu nut logo grid with alternating row scrolling, 3 cycling variants, touch to exit
 - **4" DSI display** (800x480, NT35510) — renders token info, scan results, status messages via SDRAM framebuffer + LTDC
 - **QR code scanning** — GM65 module on USART6, auto-baud detection (9600/57600/115200), continuous polling
 - **USB CDC protocol** — binary command/response protocol over USB OTG FS (VID:PID `16c0:27dd`, "Micronuts / Cashu Hardware Wallet")
@@ -22,7 +29,7 @@ The firmware builds, flashes, and runs on real hardware. All core Cashu operatio
 - **Board**: STM32F469I-Discovery (STM32F469NIH6 MCU)
 - **MCU**: ARM Cortex-M4F @ 180MHz, 2MB Flash, 384KB SRAM
 - **Display**: 4" DSI LCD (NT35510/OTM8009A, 800x480)
-- **Touch**: FT6X06 capacitive touch controller (not yet used)
+- **Touch**: FT6X06 capacitive touch controller — used for boot splash exit, touch visualization
 - **QR Scanner**: GM65 module via USART6 (PG14=TX, PG9=RX through shield-lite adapter)
 - **Storage**: 16MB SDRAM + microSD via SDIO (SDIO not yet used)
 - **USB**: USB OTG FS (CDC-ACM for host communication)
@@ -65,8 +72,11 @@ micronuts/
 │   ├── Cargo.toml
 │   ├── build.rs            # Copies memory.x to OUT_DIR for linker
 │   ├── memory.x            # STM32F469 memory layout (2048K flash, 320K RAM)
+│   ├── assets/             # Vendored logo and generated tile assets
 │   └── src/
 │       ├── main.rs         # Entry point, hardware init, main loop
+│       ├── boot_splash.rs  # Retro boot splash animation engine
+│       ├── boot_splash_assets.rs  # Generated RGB565 tile data
 │       ├── usb.rs          # USB CDC binary protocol
 │       ├── display.rs      # LCD rendering (embedded-graphics)
 │       ├── firmware_state.rs
@@ -76,8 +86,12 @@ micronuts/
 │           └── decoder.rs  # QR payload classification (Cashu, UR, plain text)
 ├── cashu-core-lite/        # Minimal Cashu library (no_std + alloc)
 ├── host-mint-tool/         # Demo mint signer CLI for host PC
+├── scripts/
+│   ├── generate_assets.py  # Offline tile asset generation
+│   └── render_preview.py   # Host-side splash preview renderer
 └── docs/
     ├── ARCHITECTURE.md
+    ├── BOOT-SPLASH.md      # Boot splash documentation
     ├── DEMO-FLOW.md
     ├── QR-SCANNER.md
     ├── QR-SCANNER-DESIGN.md
@@ -129,7 +143,7 @@ probe-rs reset --chip STM32F469NIHx
 ## Known Issues
 
 - **RNG security audit pending** — The hardware RNG works but needs independent entropy quality verification. See [#1](https://github.com/Amperstrand/micronuts/issues/1).
-- **Touch screen unused** — FT6X06 touch controller is on the board but not wired into the UI yet.
+- **Touch screen** — FT6X06 used for boot splash exit; not yet wired into full UI navigation.
 - **SDIO unused** — microSD slot works in the BSP but firmware doesn't use it yet.
 - **Demo mint only** — `host-mint-tool` is a toy signer, not a real Cashu mint.
 
