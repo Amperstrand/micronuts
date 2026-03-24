@@ -34,5 +34,8 @@ embedded-graphics = "0.8"
 # BSP - pinned to working commit
 stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "a412876" }
 
+# QR code generation (no_std, no heap)
+qrcodegen-no-heap = "1.8"
+
 # QR Scanner - latest main (pre-merge cleanup, Sans-IO architecture)
 gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "5b1cf56", features = ["sync", "defmt"] }
