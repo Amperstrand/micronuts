@@ -1,0 +1,63 @@
+name: Render Boot Splash Preview
+
+on:
+  push:
+    paths:
+      - 'firmware/assets/nut-logo-original.png'
+      - 'scripts/generate_assets.py'
+      - 'scripts/render_preview.py'
+      - 'firmware/src/boot_splash.rs'
+      - 'firmware/src/boot_splash_assets.rs'
+  pull_request:
+    paths:
+      - 'firmware/assets/nut-logo-original.png'
+      - 'scripts/generate_assets.py'
+      - 'scripts/render_preview.py'
+      - 'firmware/src/boot_splash.rs'
+      - 'firmware/src/boot_splash_assets.rs'
+  workflow_dispatch:
+
+jobs:
+  render-preview:
+    name: Render boot splash preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: pip install Pillow
+
+      - name: Regenerate tile assets
+        run: python3 scripts/generate_assets.py
+
+      - name: Render preview frames and GIF
+        run: python3 scripts/render_preview.py
+
+      - name: Upload preview artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-splash-preview
+          path: |
+            firmware/assets/preview/boot-splash-preview.gif
+            firmware/assets/preview/boot-splash-composite.png
+            firmware/assets/preview/boot-splash-screenshot.png
+            firmware/assets/preview/variant_*.png
+
+  build-firmware:
+    name: Check firmware builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - name: Build firmware
+        run: cd firmware && cargo build

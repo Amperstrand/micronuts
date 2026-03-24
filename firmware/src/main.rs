@@ -146,6 +146,47 @@ fn main() -> ! {
         defmt::warn!("Touch controller not found");
     }
 
+    // --- Boot splash animation ---
+    {
+        defmt::info!("Running boot splash...");
+        let mut splash_state = firmware::boot_splash::SplashState::new();
+        let mut splash_done = false;
+        // Auto-exit after 2 full variant cycles (2 × 3 variants × 90 frames/variant)
+        const MAX_SPLASH_FRAMES: u32 = 2 * 3 * 90;
+        // Run splash: cycle through variants, touch to exit
+        while !splash_done {
+            // Extract raw buffer for direct pixel writes
+            let raw_buf = fb.into_inner();
+            firmware::boot_splash::render_frame(
+                raw_buf,
+                lcd::WIDTH as u32,
+                lcd::HEIGHT as u32,
+                &mut splash_state,
+            );
+            // Reconstruct framebuffer wrapper
+            fb = LtdcFramebuffer::new(raw_buf, lcd::WIDTH, lcd::HEIGHT);
+
+            // Simple frame pacing: ~33ms delay for ~30 FPS
+            delay.delay_ms(33u32);
+
+            // Check touch to exit
+            if let Some(ref mut t) = touch_ctrl {
+                if let Ok(status) = t.td_status(&mut touch_i2c) {
+                    if status > 0 {
+                        defmt::info!("Touch detected, exiting splash");
+                        splash_done = true;
+                    }
+                }
+            }
+
+            if splash_state.global_frame >= MAX_SPLASH_FRAMES {
+                defmt::info!("Splash timeout, continuing boot");
+                splash_done = true;
+            }
+        }
+        defmt::info!("Boot splash complete");
+    }
+
     defmt::info!("Initializing USB...");
     let usb_periph = usb::init(
         (dp.OTG_FS_GLOBAL, dp.OTG_FS_DEVICE, dp.OTG_FS_PWRCLK),
