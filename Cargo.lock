@@ -1272,7 +1272,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=main#de97767d1da5d677a073887a1081f635b741aae6"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=main#da9fdb2f3b10d26ba1cc6a54f68e4d4ddc5e3f23"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -1290,7 +1290,7 @@ dependencies = [
 [[package]]
 name = "stm32f4xx-hal"
 version = "0.23.0"
-source = "git+https://github.com/Amperstrand/stm32f4xx-hal?rev=ec6dc08366ae14ccabfc157e21270b2592a05639#ec6dc08366ae14ccabfc157e21270b2592a05639"
+source = "git+https://github.com/Amperstrand/stm32f4xx-hal?rev=b72958b7099878567cf80acf66afe0485b5e8309#b72958b7099878567cf80acf66afe0485b5e8309"
 dependencies = [
  "bare-metal 1.0.0",
  "cortex-m",

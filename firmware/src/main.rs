@@ -96,7 +96,7 @@ fn main() -> ! {
         dp.DMA2D,
         &mut rcc,
         &mut delay,
-        lcd::BoardHint::Unknown,
+        lcd::BoardHint::ForceNt35510,
         orientation,
     );
 
