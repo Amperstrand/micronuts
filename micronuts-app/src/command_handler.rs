@@ -210,7 +210,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
     hw: &mut H,
 ) -> Response {
     let blinded_messages = match &state.blinded_messages {
-        Some(bm) => bm.clone(),
+        Some(bm) => bm,
         None => return Response::new(Status::Error),
     };
 

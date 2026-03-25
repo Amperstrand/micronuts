@@ -4,6 +4,11 @@
 
 Micronuts is a **Cashu hardware wallet proof of concept** demonstrating blind signature operations on the STM32F469I-Discovery board. The architecture splits responsibilities between the embedded firmware and a host-side demo tool.
 
+The core business logic lives in `micronuts-app/`, which is platform-independent. Two hardware adapters implement the `MicronutsHardware` trait:
+
+- **`firmware/`** — real STM32F469I-Discovery peripherals (LCD, USB CDC, GM65 scanner, HW RNG)
+- **`examples/native_sim.rs`** — SDL2 window on your PC (mock display, mock scanner, stdin/stdout transport)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          HOST PC                                     │
@@ -20,25 +25,61 @@ Micronuts is a **Cashu hardware wallet proof of concept** demonstrating blind si
 ┌──────────────────────────────────────────────│───────────────────────┐
 │                          STM32F469I-DISCOVERY │                       │
 │  ┌────────────────────────────────────────────│───────────────────┐  │
-│  │                          firmware          ▼                   │  │
+│  │  micronuts-app (shared core)              ▼                   │  │
 │  │  ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐     │  │
-│  │  │ USB CDC     │   │ cashu-core-  │   │   BSP / HAL     │     │  │
-│  │  │ Receiver    │──▶│ lite         │──▶│   (display,     │     │  │
-│  │  └─────────────┘   │ (no_std)     │   │    sdram, rng)  │     │  │
-│  │                    └──────────────┘   └─────────────────┘     │  │
+│  │  │ USB CDC     │   │ cashu-core-  │   │  Display (gen   │     │  │
+│  │  │ Protocol    │──▶│ lite         │──▶│  over DrawTarget)│     │  │
+│  │  └─────────────┘   │ (no_std)     │   └─────────────────┘     │  │
+│  │                    └──────────────┘                           │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  firmware/ (hardware adapter — impl MicronutsHardware)        │  │
+│  │  Display → LtdcFramebuffer │ Scanner → GM65 USART6 │ RNG → HW │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                       │
 │  Hardware: 180MHz Cortex-M4F, 2MB Flash, 384KB SRAM, 16MB SDRAM      │
+└───────────────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────┐
+│  NATIVE SIMULATOR (same micronuts-app, different HW adapter)          │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │  examples/native_sim.rs — impl MicronutsHardware                │  │
+│  │  Display → Sdl2Display (800x480 SDL2 window, mouse→touch)      │  │
+│  │  Scanner → mock (stdin paste) │ Transport → stdin/stdout        │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
-### 1. `firmware/` (Embedded Application)
+### 0. `micronuts-app/` (Shared Core)
 
-The embedded firmware running on the STM32F469I-Discovery.
+Platform-independent business logic, used by both the firmware and the native simulator.
 
 **Dependencies:**
+- `cashu-core-lite` (workspace member)
+- `embedded-graphics` — display rendering via `DrawTarget` trait
+- `gm65-scanner` (git dependency, pinned commit)
+- `k256`, `sha2` — secp256k1 blind signature operations
+
+**Responsibilities:**
+- `run()` main loop — polls transport, dispatches commands, renders display
+- USB CDC binary protocol (Command, Response, Frame, FrameDecoder)
+- Display rendering (generic over `DrawTarget<Color = Rgb565>`)
+- All command handlers (token import, blind/unblind, scanner control)
+- QR payload classification (Cashu V4/V3, UR, plain text)
+- Firmware state machine (SwapState, ScannerInfo)
+
+**Features:**
+- `default` — `no_std`, for firmware use
+- `std` — enables `std`, `alloc` with std allocator (required for simulator)
+
+### 1. `firmware/` (Embedded Application — Hardware Adapter)
+
+The embedded firmware running on the STM32F469I-Discovery. Initializes peripherals and implements `MicronutsHardware`.
+
+**Dependencies:**
+- `micronuts-app` (workspace member) — shared business logic
 - `stm32f469i-disc` BSP (git dependency, pinned commit)
 - `gm65-scanner` (git dependency, pinned commit)
 - `cashu-core-lite` (workspace member)
@@ -46,12 +87,9 @@ The embedded firmware running on the STM32F469I-Discovery.
 
 **Responsibilities:**
 - Initialize hardware (display, USB, SDRAM, RNG, QR scanner)
-- Receive commands via USB CDC
-- Decode Cashu tokens
-- Generate blinded outputs using hardware RNG for blinder entropy
-- Unblind signatures
-- Display token info and scan results
-- QR code scanning via GM65 module
+- Boot splash animation
+- Implement `MicronutsHardware` trait for STM32 peripherals
+- USB CDC transport (CdcPort wrapper)
 
 **Build target:** `thumbv7em-none-eabihf`
 
@@ -151,6 +189,34 @@ All git dependencies are pinned to specific commits for reproducibility:
 | `stm32f469i-disc` | `a412876` | Sync BSP with `rng` feature forward. Based on `fa6dc86` which has working display/SDRAM/SDIO/USB. Upstream `main` diverged to a different HAL version. |
 | `stm32f4xx-hal` | `789e5e86` | Pinned by BSP. Includes DSI, SDRAM, SDIO, USB FS, RNG support for STM32F469. |
 | `gm65-scanner` | `5b1cf56` | Post-merge main with async+sync dual-mode driver, HIL-tested on hardware. Removed `embedded-hal` feature (replaced by `sync`). |
+
+## Dual-Run Architecture
+
+The `MicronutsHardware` trait (defined in `micronuts-app/src/hardware.rs`) abstracts all hardware dependencies:
+
+| Method | Firmware impl | Simulator impl |
+|--------|--------------|----------------|
+| `Display` (DrawTarget) | `LtdcFramebuffer<u16>` via LTDC/SDRAM | `Sdl2Display` → SDL2 texture (RGB565) |
+| `Touch` | FT6X06 I2C capacitive touch controller | Mouse click → (x, y) mapping |
+| `Scanner` | GM65 module on USART6 | Mock (stdin paste) |
+| `Transport` | USB CDC (CdcPort) | stdin/stdout (mock frames) |
+| `RNG` | STM32 hardware RNG (ring oscillators) | `rand::thread_rng()` |
+| `Delay` | `SysDelay` (cortex-m SYST) | `std::thread::sleep` |
+
+Both adapters call `micronuts_app::run(&mut hw)` which runs the identical main loop. The simulator renders an 800x480 SDL2 window that shows exactly what the LCD would display. Mouse clicks map to touch coordinates.
+
+### Running
+
+```bash
+# Simulator (no cross-compiler needed)
+sudo apt install libsdl2-dev
+cargo run -p micronuts-app --example native_sim --features std
+
+# Firmware
+rustup target add thumbv7em-none-eabihf
+cargo build --release
+probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
+```
 
 ## Baseline
 

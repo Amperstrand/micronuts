@@ -32,21 +32,21 @@ No formal linter is configured. The project compiles with warnings that should b
 
 ## Architecture
 
+This crate is the **hardware adapter** for the STM32F469I-Discovery board. Business logic lives in `micronuts-app/`; this crate initializes peripherals and implements `MicronutsHardware` to wire them together.
+
 ```
-src/main.rs          Entry point: hardware init, main loop, command dispatch
-src/usb.rs           USB CDC binary protocol (frame codec, CdcPort wrapper)
-src/display.rs       LCD rendering via embedded-graphics (LtdcFramebuffer)
-src/firmware_state.rs  Swap state machine for Cashu token operations
-src/prng.rs          Simple PRNG using DWT cycle counter
-src/qr/
-  driver.rs          GM65 scanner UART driver (synchronous, specter-diy protocol)
-  protocol.rs        GM65 command builder (legacy, see docs/GM65-PROTOCOL-FINDINGS.md)
-  decoder.rs         QR payload classification (Cashu V4, UR, plain text)
+src/main.rs            Hardware init (display, USB, SDRAM, RNG, scanner), boot splash, delegates to micronuts-app::run()
+src/hardware_impl.rs   impl MicronutsHardware for FirmwareHardware<T>
+src/usb.rs             USB CDC binary protocol (frame codec, CdcPort wrapper)
+src/boot_splash.rs     Retro boot splash animation engine
+src/boot_splash_assets.rs  Generated RGB565 tile data
+src/prng.rs            Simple PRNG using DWT cycle counter
 ```
 
 ## Key Dependencies
 
-- `stm32f469i-disc` (BSP) @ `fa6dc86` — display, SDRAM, USB, GPIO
+- `micronuts-app` (workspace member) — shared business logic (protocol, display, state, commands)
+- `stm32f469i-disc` (BSP) @ `a412876` — display, SDRAM, USB, GPIO
 - `embedded-hal-02` (0.2.x) — serial Read/Write traits for scanner UART
 - `cashu-core-lite` — no_std Cashu token decode, blind/unblind
 - `k256` — secp256k1 for blind signatures

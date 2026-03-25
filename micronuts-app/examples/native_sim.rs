@@ -12,7 +12,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::Sdl;
 
-use micronuts_app::display::{self, HEIGHT, WIDTH};
+use micronuts_app::display::{HEIGHT, WIDTH};
 use micronuts_app::hardware::{MicronutsHardware, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
 use micronuts_app::qr::{ScannerModel, ScannerState};
@@ -249,7 +249,126 @@ impl MicronutsHardware for MockHardware {
     }
 }
 
+fn has_nvidia_gpu() -> bool {
+    if std::env::var("SDL_VIDEODRIVER").is_ok() {
+        return false;
+    }
+    let entries = match std::fs::read_dir("/sys/class/drm") {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for entry in entries.flatten() {
+        let vendor_path = entry.path().join("device/vendor");
+        if let Ok(vendor) = std::fs::read_to_string(&vendor_path) {
+            if vendor.contains("0x10de") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn sdl2_crashes_with_default_driver() -> bool {
+    if !has_nvidia_gpu() {
+        return false;
+    }
+    eprintln!("[sim] NVIDIA GPU detected — testing SDL2 video driver...");
+
+    let mut pipe_fds: [libc::c_int; 2] = [0; 2];
+    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+        return false;
+    }
+
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        unsafe { libc::close(pipe_fds[0]) };
+        unsafe { libc::close(pipe_fds[1]) };
+        return false;
+    }
+
+    if pid == 0 {
+        unsafe {
+            libc::close(pipe_fds[0]);
+            libc::alarm(3);
+        }
+        let ok = std::panic::catch_unwind(|| {
+            let sdl = sdl2::init().expect("init");
+            let video = sdl.video().expect("video");
+            let _window = video.window("probe", 1, 1).build().expect("window");
+        })
+        .is_ok();
+        let byte: u8 = if ok { 1 } else { 0 };
+        unsafe {
+            let _ = libc::write(pipe_fds[1], &byte as *const u8 as *const libc::c_void, 1);
+            libc::_exit(0);
+        }
+    }
+
+    unsafe { libc::close(pipe_fds[1]) };
+
+    let read_fd = pipe_fds[0];
+    let mut tv = libc::timeval {
+        tv_sec: 4,
+        tv_usec: 0,
+    };
+    let mut fds: libc::fd_set = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::FD_ZERO(&mut fds);
+        libc::FD_SET(read_fd, &mut fds);
+    }
+
+    let ready = unsafe {
+        libc::select(
+            read_fd + 1,
+            &mut fds,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut tv,
+        )
+    };
+
+    if ready <= 0 {
+        unsafe { libc::close(read_fd) };
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+        unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0) };
+        eprintln!("[sim] Driver probe timed out — assuming default driver is OK");
+        return false;
+    }
+
+    let mut byte: u8 = 0;
+    unsafe {
+        libc::read(read_fd, &mut byte as *mut u8 as *mut libc::c_void, 1);
+    }
+    unsafe { libc::close(read_fd) };
+
+    let mut status: libc::c_int = 0;
+    unsafe { libc::waitpid(pid, &mut status, 0) };
+
+    if libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == 11 {
+        eprintln!("[sim] Default driver crashed (SIGSEGV) — switching to software rendering");
+        eprintln!("[sim] Set SDL_VIDEODRIVER to override. See https://github.com/Amperstrand/micronuts/issues/4");
+        return true;
+    }
+
+    if byte == 1 {
+        eprintln!("[sim] Default driver OK");
+    } else {
+        eprintln!("[sim] Default driver failed — switching to software rendering");
+        return true;
+    }
+
+    false
+}
+
+fn apply_sdl_video_workaround() {
+    if sdl2_crashes_with_default_driver() {
+        std::env::set_var("SDL_VIDEODRIVER", "software");
+    }
+}
+
 fn main() {
+    apply_sdl_video_workaround();
+
     println!("Micronuts Native Simulator");
     println!("==========================");
     println!("Display: {}x{} RGB565", WIDTH, HEIGHT);

@@ -547,7 +547,7 @@ dependencies = [
  "linked_list_allocator",
  "micronuts-app",
  "nb 1.1.0",
- "panic-probe 1.0.0",
+ "panic-probe",
  "qrcodegen-no-heap",
  "rand_core 0.6.4",
  "sha2",
@@ -569,12 +569,10 @@ dependencies = [
 [[package]]
 name = "ft6x06"
 version = "0.1.2"
-source = "git+https://github.com/DougAnderson444/ft6x06?rev=cc352f80b12fd985da4c4847771a26ebc03ece62#cc352f80b12fd985da4c4847771a26ebc03ece62"
+source = "git+https://github.com/Amperstrand/ft6x06?branch=patch-2#2ed36f74d6b52e8ff68533c01a50d81800ae10b4"
 dependencies = [
  "cortex-m",
  "embedded-hal 0.2.7",
- "panic-probe 0.2.1",
- "rtt-target",
 ]
 
 [[package]]
@@ -822,6 +820,7 @@ dependencies = [
  "heapless",
  "hex",
  "k256",
+ "libc",
  "qrcodegen-no-heap",
  "rand",
  "rand_core 0.6.4",
@@ -932,16 +931,6 @@ checksum = "e56059a2e83de4409e5fa0854d3ae891b0f949af86c74ccf76a8bffe4ce6dc6d"
 dependencies = [
  "embedded-display-controller",
  "embedded-hal 0.2.7",
-]
-
-[[package]]
-name = "panic-probe"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a0fa226f55c70d0d70ad373802f0d65a775478afec75c0f3eee1de5d39057c9"
-dependencies = [
- "cortex-m",
- "rtt-target",
 ]
 
 [[package]]
@@ -1093,16 +1082,6 @@ checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
 dependencies = [
  "hmac",
  "subtle",
-]
-
-[[package]]
-name = "rtt-target"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "065d6058bb1204f51a562a67209e1817cf714759d5cf845aa45c75fa7b0b9d9b"
-dependencies = [
- "cortex-m",
- "ufmt-write",
 ]
 
 [[package]]
@@ -1294,7 +1273,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=feat%2Fdouble-framebuffer#1306f7906b67a0eb6588d69df32249d078f4dfe7"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=feat%2Fdouble-framebuffer#c8c59d8254456e231ec96fb09c8d6fce8ecde99f"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -1312,7 +1291,7 @@ dependencies = [
 [[package]]
 name = "stm32f4xx-hal"
 version = "0.23.0"
-source = "git+https://github.com/Amperstrand/stm32f4xx-hal?rev=789e5e86f5d93ae80b2f50e861c3c76980733bca#789e5e86f5d93ae80b2f50e861c3c76980733bca"
+source = "git+https://github.com/Amperstrand/stm32f4xx-hal?branch=fix%2Fltdc-swap-buffers-vbr-wait#ec6dc08366ae14ccabfc157e21270b2592a05639"
 dependencies = [
  "bare-metal 1.0.0",
  "cortex-m",
@@ -1487,12 +1466,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "ufmt-write"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e87a2ed6b42ec5e28cc3b94c09982969e9227600b2e3dcbc1db927a84c06bd69"
 
 [[package]]
 name = "unescaper"

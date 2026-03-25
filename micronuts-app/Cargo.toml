@@ -24,6 +24,7 @@ std = ["cashu-core-lite/std", "hex/std"]
 [dev-dependencies]
 sdl2 = { version = "0.37", default-features = false, features = ["gfx"] }
 rand = "0.8"
+libc = "0.2"
 
 [[example]]
 name = "native_sim"
