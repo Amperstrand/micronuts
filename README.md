@@ -121,15 +121,53 @@ micronuts/
 
 ## Pinned Dependencies
 
-All git dependencies are pinned to specific commits for reproducibility:
+All git dependencies are pinned to specific commits for reproducibility. Forked repos are under the `Amperstrand` GitHub org; upstream targets are noted where applicable.
 
-| Crate | Pin | Why |
-|-------|-----|-----|
-| `stm32f469i-disc` | `a412876` | Sync BSP with `rng` feature. Based on `fa6dc86` (working display/SDRAM/SDIO/USB). Upstream `main` diverged to a different HAL version. |
-| `stm32f4xx-hal` | `789e5e86` | Pinned by BSP. DSI, SDRAM, SDIO, USB FS, RNG for STM32F469. |
-| `gm65-scanner` | `5b1cf56` | Post-merge main with async+sync dual-mode driver, HIL-tested on hardware. |
+### Direct dependencies (in workspace `Cargo.toml`)
 
-Other deps from crates.io: `k256`, `sha2`, `rand_core 0.6`, `minicbor`, `embedded-graphics`, `defmt 1.0`.
+| Crate | Pin | Source | Upstream Target |
+|-------|-----|--------|-----------------|
+| `stm32f469i-disc` | `89d22c6` | Amperstrand fork, `main` branch | Consider `stm32-rs` org or taking over from `tegimeki` |
+| `gm65-scanner` | `df13690` | Amperstrand original (not a fork) | N/A |
+
+### Transitive / firmware-only dependencies (in `firmware/Cargo.toml`)
+
+| Crate | Pin | Source | Upstream Target |
+|-------|-----|--------|-----------------|
+| `stm32f4xx-hal` | `ec6dc08` | Amperstrand fork, `fix/ltdc-swap-buffers-vbr-wait` | Cherry-pick `swap_buffers` fix onto `pr1-core-dsi-ltdc`, then upstream via draft PR #866 to `stm32-rs/stm32f4xx-hal` |
+| `ft6x06` | `2ed36f7` | Amperstrand fork, `patch-2` branch | PR build fixes to `DougAnderson444/ft6x06` |
+
+### Dependency chain
+
+```
+micronuts (this workspace)
+├── stm32f469i-disc @ 89d22c6  (BSP: board pin routing, DoubleFramebuffer, USB, SDRAM)
+│   └── stm32f4xx-hal @ ec6dc08  (HAL: DSI, LTDC, USB, FMC, SDIO, RNG)
+│       └── (upstream: stm32-rs/stm32f4xx-hal @ 59cbcac)
+├── ft6x06 @ 2ed36f7  (touch controller driver)
+│   └── (upstream: DougAnderson444/ft6x06 @ ce9f1ac)
+└── gm65-scanner @ df13690  (QR scanner driver)
+```
+
+Other deps from crates.io: `k256`, `sha2`, `rand_core 0.6`, `minicbor`, `embedded-graphics`, `defmt 1.0`, `heapless`.
+
+## USB CDC Protocol
+
+### Display Orientation
+
+The STM32F469I-DISCO panel is physically 480x800 portrait. The BSP (`stm32f469i-disc`) configures the LTDC and LCD controller in portrait mode (480 wide x 800 tall). `micronuts-app` uses the same portrait dimensions (`WIDTH=480, HEIGHT=800`), so rendering coordinates are identical on hardware and in the native simulator.
+
+The orientation is set at init time:
+- **NT35510** (B08 board revision): configured by the standalone `Amperstrand/nt35510` crate during `panel.init()`
+- **OTM8009A** (B07 and earlier): `otm8009a::Mode::Portrait` passed in `Otm8009AConfig`
+
+Both the LTDC timing (`DisplayConfig { active_width: 480, active_height: 800 }`) and the panel's internal column/page address scan direction determine the final orientation. These must match — a mismatch causes garbled or rotated output.
+
+To change orientation, you would need to:
+1. Swap `active_width`/`active_height` in the `DisplayConfig`
+2. Change the panel init mode (e.g., `otm8009a::Mode::Landscape`)
+3. Adjust the BSP's `WIDTH`/`HEIGHT` constants
+4. `micronuts-app` would pick up the new dimensions automatically via the BSP constants
 
 ## USB CDC Protocol
 
@@ -150,7 +188,7 @@ Binary protocol: `[Cmd:1][Len:2][Payload:N]` / `[Status:1][Len:2][Payload:N]`
 
 ### Option A: Native Simulator (SDL2)
 
-Develop and test the UI on your PC without hardware. Opens an 800x480 window that renders exactly what the LCD would show. Mouse clicks map to touch input.
+Develop and test the UI on your PC without hardware. Opens a 480x800 portrait window that renders exactly what the LCD would show. Mouse clicks map to touch input.
 
 ```bash
 # Install SDL2 development libraries

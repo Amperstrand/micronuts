@@ -371,7 +371,7 @@ fn main() {
 
     println!("Micronuts Native Simulator");
     println!("==========================");
-    println!("Display: {}x{} RGB565", WIDTH, HEIGHT);
+    println!("Display: {}x{} RGB565 (portrait)", WIDTH, HEIGHT);
     println!("Transport: stdin/stdout (binary protocol)");
     println!("Click window to simulate touch input");
     println!("Press ESC or close window to exit");

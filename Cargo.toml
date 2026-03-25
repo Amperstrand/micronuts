@@ -29,11 +29,11 @@ panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-hal = "1.0"
 embedded-graphics = "0.8"
 
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", branch = "feat/double-framebuffer" }
+stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "89d22c69ac582602d33170902da2c22b12ef3d75" }
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "5b1cf56", features = ["sync", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "df13690bb50167d55b3531ec3fb3b93920da14e7", features = ["sync", "defmt"] }
 
 [profile.release]
 debug = true

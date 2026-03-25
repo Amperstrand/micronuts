@@ -12,8 +12,8 @@ use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
 
 use crate::qr::QrPayload;
 
-pub const WIDTH: u32 = 800;
-pub const HEIGHT: u32 = 480;
+pub const WIDTH: u32 = 480;
+pub const HEIGHT: u32 = 800;
 
 const BLACK: Rgb565 = Rgb565::BLACK;
 const WHITE: Rgb565 = Rgb565::WHITE;
@@ -162,9 +162,14 @@ pub fn render_token_info<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &Toke
     let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
 
-    Text::with_text_style("Cashu Token", Point::new(400, 30), title_style, center_text)
-        .draw(fb)
-        .ok();
+    Text::with_text_style(
+        "Cashu Token",
+        Point::new(WIDTH as i32 / 2, 30),
+        title_style,
+        center_text,
+    )
+    .draw(fb)
+    .ok();
 
     render_token_fields(fb, token, 80);
 }
@@ -223,7 +228,7 @@ pub fn render_status<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
     Text::with_text_style(
         truncate_str(message, 60),
-        Point::new(400, 240),
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2),
         style,
         center_text,
     )
@@ -251,12 +256,17 @@ pub fn render_error<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
     let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
     let msg_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
-    Text::with_text_style("ERROR", Point::new(400, 200), title_style, center_text)
-        .draw(fb)
-        .ok();
     Text::with_text_style(
-        truncate_str(message, 60),
-        Point::new(400, 240),
+        "ERROR",
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 - 40),
+        title_style,
+        center_text,
+    )
+    .draw(fb)
+    .ok();
+    Text::with_text_style(
+        truncate_str(message, 40),
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2),
         msg_style,
         center_text,
     )
@@ -274,7 +284,7 @@ pub fn render_scan_result<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]
 
     Text::with_text_style(
         "QR Scan Result",
-        Point::new(400, 30),
+        Point::new(WIDTH as i32 / 2, 30),
         title_style,
         center_text,
     )
@@ -282,13 +292,13 @@ pub fn render_scan_result<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]
     .ok();
 
     let data_str = core::str::from_utf8(data).unwrap_or("<binary data>");
-    let display_str = truncate_str(data_str, 800);
+    let display_str = truncate_str(data_str, 2000);
 
     Text::new("Data:", Point::new(20, 80), label_style)
         .draw(fb)
         .ok();
 
-    let chars_per_line = 80;
+    let chars_per_line = 48;
     let mut y = 110u32;
     let mut offset = 0;
     while offset < display_str.len() && y < HEIGHT - 30 {
@@ -399,7 +409,7 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb565>>(fb: &mut D, payload: &
     y += 25;
 
     let data_str = core::str::from_utf8(raw).unwrap_or("<binary data>");
-    let chars_per_line = 90;
+    let chars_per_line = 48;
     let mut offset = 0;
     while offset < data_str.len() && y < HEIGHT - 20 {
         let end = core::cmp::min(offset + chars_per_line, data_str.len());
@@ -450,7 +460,7 @@ fn render_token_fields<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &TokenV
         .draw(fb)
         .ok();
     Text::new(
-        truncate_url(&token.mint, 60),
+        truncate_url(&token.mint, 30),
         Point::new(100, y as i32),
         value_style,
     )

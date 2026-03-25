@@ -15,7 +15,7 @@ embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unpr
 embedded-graphics = { workspace = true }
 heapless = "0.8"
 stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer", "rng", "touch"] }
-ft6x06 = { git = "https://github.com/Amperstrand/ft6x06", branch = "patch-2" }
+ft6x06 = { git = "https://github.com/Amperstrand/ft6x06", rev = "2ed36f74d6b52e8ff68533c01a50d81800ae10b4" }
 gm65-scanner = { workspace = true }
 qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
@@ -34,8 +34,3 @@ rand_core = { workspace = true }
 [features]
 default = ["defmt"]
 defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "stm32f469i-disc/defmt"]
-
-[profile.release]
-debug = true
-lto = true
-opt-level = "s"

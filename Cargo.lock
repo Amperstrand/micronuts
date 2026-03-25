@@ -569,7 +569,7 @@ dependencies = [
 [[package]]
 name = "ft6x06"
 version = "0.1.2"
-source = "git+https://github.com/Amperstrand/ft6x06?branch=patch-2#2ed36f74d6b52e8ff68533c01a50d81800ae10b4"
+source = "git+https://github.com/Amperstrand/ft6x06?rev=2ed36f74d6b52e8ff68533c01a50d81800ae10b4#2ed36f74d6b52e8ff68533c01a50d81800ae10b4"
 dependencies = [
  "cortex-m",
  "embedded-hal 0.2.7",
@@ -626,7 +626,7 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?rev=5b1cf56#5b1cf5682f2fefa436c389c370111be437c0fafd"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=df13690bb50167d55b3531ec3fb3b93920da14e7#df13690bb50167d55b3531ec3fb3b93920da14e7"
 dependencies = [
  "bitflags 2.11.0",
  "defmt 1.0.1",
@@ -1273,7 +1273,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=feat%2Fdouble-framebuffer#c8c59d8254456e231ec96fb09c8d6fce8ecde99f"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=89d22c69ac582602d33170902da2c22b12ef3d75#89d22c69ac582602d33170902da2c22b12ef3d75"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -1291,7 +1291,7 @@ dependencies = [
 [[package]]
 name = "stm32f4xx-hal"
 version = "0.23.0"
-source = "git+https://github.com/Amperstrand/stm32f4xx-hal?branch=fix%2Fltdc-swap-buffers-vbr-wait#ec6dc08366ae14ccabfc157e21270b2592a05639"
+source = "git+https://github.com/Amperstrand/stm32f4xx-hal?rev=ec6dc08366ae14ccabfc157e21270b2592a05639#ec6dc08366ae14ccabfc157e21270b2592a05639"
 dependencies = [
  "bare-metal 1.0.0",
  "cortex-m",
