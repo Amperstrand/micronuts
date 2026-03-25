@@ -1272,7 +1272,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=da9dd8bba5485db855bb0eacc34a3879a9e6e1ed#da9dd8bba5485db855bb0eacc34a3879a9e6e1ed"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?branch=main#de97767d1da5d677a073887a1081f635b741aae6"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

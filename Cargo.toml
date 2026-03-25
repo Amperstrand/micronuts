@@ -29,7 +29,7 @@ panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-hal = "1.0"
 embedded-graphics = "0.8"
 
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "da9dd8bba5485db855bb0eacc34a3879a9e6e1ed" }
+stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", branch = "main" }
 
 qrcodegen-no-heap = "1.8"
 

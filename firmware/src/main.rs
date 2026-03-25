@@ -13,8 +13,7 @@ use hal::serial::Serial6;
 use static_cell::ConstStaticCell;
 use stm32f469i_disc::{
     hal,
-    hal::gpio::alt::fmc as alt,
-    hal::ltdc::{LtdcFramebuffer, PixelFormat},
+    hal::ltdc::LtdcFramebuffer,
     hal::pac::{self, CorePeripherals},
     hal::prelude::*,
     hal::rcc,
@@ -58,55 +57,50 @@ fn main() -> ! {
     let gpioe = dp.GPIOE.split(&mut rcc);
     let gpiof = dp.GPIOF.split(&mut rcc);
     let gpiog = dp.GPIOG.split(&mut rcc);
-    let scanner_tx = gpiog.pg14;
-    let scanner_rx = gpiog.pg9;
     let gpioh = dp.GPIOH.split(&mut rcc);
     let gpioi = dp.GPIOI.split(&mut rcc);
 
-    let ts_int = gpioc.pc1.into_pull_down_input();
+    defmt::info!("Initializing SDRAM...");
 
-    let mut lcd_reset = gpioh.ph7.into_push_pull_output();
+    let (sdram_pins, remainders, ph7) =
+        sdram::split_sdram_pins(gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi);
+
+    let ts_int = remainders.pc1.into_pull_down_input();
+    let scanner_tx = remainders.pg14;
+    let scanner_rx = remainders.pg9;
+
+    let mut lcd_reset = ph7.into_push_pull_output();
     lcd_reset.set_low();
     delay.delay_ms(20u32);
     lcd_reset.set_high();
     delay.delay_ms(10u32);
 
-    defmt::info!("Initializing SDRAM...");
+    let mut sdram = sdram::Sdram::new(dp.FMC, sdram_pins, &rcc.clocks, &mut delay);
 
-    let mut sdram = sdram::Sdram::new(
-        dp.FMC,
-        sdram::sdram_pins!(gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi),
-        &rcc.clocks,
-        &mut delay,
-    );
+    let orientation = lcd::DisplayOrientation::Portrait;
 
     {
         const HEAP_SIZE: usize = 128 * 1024;
         let heap_start = sdram.mem as *mut u8;
         unsafe {
-            let heap_ptr = heap_start.add(lcd::FB_SIZE * 2 * 2);
+            let heap_ptr = heap_start.add(orientation.fb_size() * 2);
             ALLOCATOR.lock().init(heap_ptr as *mut u8, HEAP_SIZE);
         }
     }
 
     defmt::info!("Initializing display...");
 
-    let (display_ctrl, _controller) = lcd::init_display_full(
+    let (display_ctrl, _controller, _orientation) = lcd::init_display_full(
         dp.DSI,
         dp.LTDC,
         dp.DMA2D,
         &mut rcc,
         &mut delay,
         lcd::BoardHint::Unknown,
-        PixelFormat::RGB565,
+        orientation,
     );
 
-    let mut dbl_fb = lcd::DoubleFramebuffer::new(
-        &mut sdram,
-        display_ctrl,
-        lcd::BoardHint::Unknown,
-        PixelFormat::RGB565,
-    );
+    let mut dbl_fb = lcd::DoubleFramebuffer::new(&mut sdram, display_ctrl, orientation);
 
     defmt::info!("Display initialized");
 
@@ -128,8 +122,8 @@ fn main() -> ! {
         while !splash_done {
             boot_splash::render_frame(
                 dbl_fb.back_buffer(),
-                lcd::WIDTH as u32,
-                lcd::HEIGHT as u32,
+                orientation.width() as u32,
+                orientation.height() as u32,
                 &mut splash_state,
             );
             dbl_fb.swap();
@@ -153,7 +147,11 @@ fn main() -> ! {
         defmt::info!("Boot splash complete");
     }
 
-    let fb = LtdcFramebuffer::new(dbl_fb.into_front_buffer(), lcd::WIDTH, lcd::HEIGHT);
+    let fb = LtdcFramebuffer::new(
+        dbl_fb.into_front_buffer(),
+        orientation.width(),
+        orientation.height(),
+    );
 
     defmt::info!("Initializing USB...");
     let usb_periph = usb::init(
