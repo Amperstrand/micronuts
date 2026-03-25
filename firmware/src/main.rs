@@ -83,7 +83,7 @@ fn main() -> ! {
         const HEAP_SIZE: usize = 128 * 1024;
         let heap_start = sdram.mem as *mut u8;
         unsafe {
-            let heap_ptr = heap_start.add(orientation.fb_size() * 2);
+            let heap_ptr = heap_start.add(orientation.fb_size() * 4);
             ALLOCATOR.lock().init(heap_ptr as *mut u8, HEAP_SIZE);
         }
     }
