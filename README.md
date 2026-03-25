@@ -6,7 +6,7 @@ Micronuts is an experimental hardware wallet for [Cashu](https://github.com/cash
 
 ## Status: Working Prototype
 
-The firmware builds, flashes, and runs on real hardware. All core Cashu operations (blind, sign, unblind) have been verified on the STM32F469I-Discovery board.
+The firmware builds, flashes, and runs on real hardware. All core Cashu operations (blind, sign, unblind) have been verified on the STM32F469I-Discovery board. A **native SDL2 simulator** lets you develop and test the UI on your PC without flashing.
 
 ### Boot Splash Preview
 
@@ -16,6 +16,7 @@ The firmware builds, flashes, and runs on real hardware. All core Cashu operatio
 
 ## What Works
 
+- **Native simulator** — SDL2 window renders the 800x480 display on your PC, mouse clicks map to touch input. Develop without flashing.
 - **Boot splash animation** — retro tiled Cashu nut logo grid with alternating row scrolling, 3 cycling variants, touch to exit
 - **4" DSI display** (800x480, NT35510) — renders token info, scan results, status messages via SDRAM framebuffer + LTDC
 - **QR code scanning** — GM65 module on USART6, auto-baud detection (9600/57600/115200), continuous polling
@@ -49,18 +50,30 @@ The firmware builds, flashes, and runs on real hardware. All core Cashu operatio
 ┌─────────────────────────│────────────────────────────────────┐
 │  STM32F469I-DISCOVERY   ▼                                    │
 │  ┌────────────────────────────────────────────────────────┐  │
-│  │  firmware/                                             │  │
-│  │  ├─ USB CDC receiver → command dispatch                │  │
-│  │  ├─ QR scanner (GM65, USART6) → Cashu token decode    │  │
-│  │  ├─ cashu-core-lite (no_std) → blind/unblind ops      │  │
-│  │  ├─ Hardware RNG → blinder entropy                    │  │
-│  │  ├─ Display (DSI/LTDC/SDRAM) → status & token render  │  │
-│  │  └─ 128KB heap in SDRAM (after framebuffer)           │  │
+│  │  micronuts-app/ (shared core)                          │  │
+│  │  ├─ protocol.rs       — USB CDC command/response codec │  │
+│  │  ├─ display.rs        — embedded-graphics rendering    │  │
+│  │  ├─ command_handler.rs — all handle_* functions        │  │
+│  │  ├─ state.rs          — FirmwareState, SwapState       │  │
+│  │  ├─ qr/              — GM65 scanner + decoder         │  │
+│  │  └─ hardware.rs       — MicronutsHardware trait        │  │
 │  └────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  firmware/ (hardware adapter)                                 │
+│  ├─ main.rs           — HAL init, USB, display, scanner      │
+│  └─ hardware_impl.rs  — impl MicronutsHardware for STM32     │
 │                                                               │
 │  cashu-core-lite/ — V4 CBOR, secp256k1, hash-to-curve       │
 │  host-mint-tool/   — CLI demo mint signer                    │
 └───────────────────────────────────────────────────────────────┘
+
+  ┌────────────────────────────────────────────────────────┐
+  │  NATIVE SIMULATOR (same micronuts-app, different HW)   │
+  │                                                        │
+  │  examples/native_sim.rs                                │
+  │  ├─ Sdl2Display    — DrawTarget → SDL2 texture (800x480)│
+  │  └─ MockHardware   — impl MicronutsHardware (stdin/stdout)│
+  └────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -68,22 +81,30 @@ The firmware builds, flashes, and runs on real hardware. All core Cashu operatio
 ```
 micronuts/
 ├── Cargo.toml              # Workspace definition
+├── micronuts-app/          # Platform-independent business logic
+│   ├── src/
+│   │   ├── lib.rs          — Entry point: pub fn run()
+│   │   ├── hardware.rs     — MicronutsHardware trait
+│   │   ├── protocol.rs     — USB CDC command/response codec + tests
+│   │   ├── display.rs      — Rendering (generic over DrawTarget)
+│   │   ├── command_handler.rs — All handle_* functions
+│   │   ├── state.rs        — FirmwareState, SwapState, ScannerInfo
+│   │   ├── qr/             — GM65 scanner + decoder
+│   │   └── util.rs         — Hex codec, demo key derivation
+│   └── examples/
+│       └── native_sim.rs   — SDL2 window simulator with mock hardware
 ├── firmware/               # Embedded app for STM32F469I-Discovery
 │   ├── Cargo.toml
 │   ├── build.rs            # Copies memory.x to OUT_DIR for linker
 │   ├── memory.x            # STM32F469 memory layout (2048K flash, 320K RAM)
 │   ├── assets/             # Vendored logo and generated tile assets
 │   └── src/
-│       ├── main.rs         # Entry point, hardware init, main loop
+│       ├── main.rs         # Hardware init, boot splash, delegates to micronuts-app
+│       ├── hardware_impl.rs # impl MicronutsHardware for STM32 peripherals
 │       ├── boot_splash.rs  # Retro boot splash animation engine
 │       ├── boot_splash_assets.rs  # Generated RGB565 tile data
 │       ├── usb.rs          # USB CDC binary protocol
-│       ├── display.rs      # LCD rendering (embedded-graphics)
-│       ├── firmware_state.rs
-│       ├── lib.rs          # Module declarations
-│       └── qr/
-│           ├── driver.rs   # GM65 UART driver (sync, from gm65-scanner crate)
-│           └── decoder.rs  # QR payload classification (Cashu, UR, plain text)
+│       └── lib.rs          # Module declarations
 ├── cashu-core-lite/        # Minimal Cashu library (no_std + alloc)
 ├── host-mint-tool/         # Demo mint signer CLI for host PC
 ├── scripts/
@@ -127,22 +148,63 @@ Binary protocol: `[Cmd:1][Len:2][Payload:N]` / `[Status:1][Len:2][Payload:N]`
 
 ## Quick Start
 
+### Option A: Native Simulator (SDL2)
+
+Develop and test the UI on your PC without hardware. Opens an 800x480 window that renders exactly what the LCD would show. Mouse clicks map to touch input.
+
 ```bash
-# Install target and probe-rs
+# Install SDL2 development libraries
+sudo apt install libsdl2-dev
+
+# Run the simulator (requires an X11 or Wayland display)
+cargo run -p micronuts-app --example native_sim --features std
+```
+
+Requirements: Rust, SDL2 dev libraries, an X11 or Wayland display server. No cross-compiler or probe needed.
+
+**Headless / SSH / no display?** Start a virtual framebuffer first:
+
+```bash
+# Start Xvfb (virtual X11 server)
+sudo apt install xvfb
+Xvfb :1 -screen 0 800x480x24 &
+
+# Run the simulator against the virtual display
+DISPLAY=:1 cargo run -p micronuts-app --example native_sim --features std
+```
+
+**NVIDIA GPU note:** The simulator auto-detects NVIDIA GPUs, probes the default SDL2 driver, and automatically falls back to `SDL_VIDEODRIVER=software` if it crashes (SIGSEGV). If the software driver is unavailable (some distro packages don't include it), use Xvfb instead. Set `SDL_VIDEODRIVER` yourself to override auto-detection. See [#4](https://github.com/Amperstrand/micronuts/issues/4).
+
+### Option B: Flash to Device (STM32F469I-Discovery)
+
+Build the firmware and flash it to the STM32F469I-Discovery board via ST-Link.
+
+```bash
+# Install ARM target and probe-rs
 rustup target add thumbv7em-none-eabihf
 cargo install probe-rs-tools
 
-# Build (from firmware/ directory)
-cd firmware && cargo build
+# Build (from workspace root)
+cargo build --release
 
-# Flash
-probe-rs download --chip STM32F469NIHx target/thumbv7em-none-eabihf/debug/firmware
-probe-rs reset --chip STM32F469NIHx
+# Flash and run with RTT output
+probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
+
+# Flash only (no RTT)
+probe-rs download --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
+```
+
+### Run Tests
+
+```bash
+# Unit tests for protocol codec, hex utils, etc.
+cargo test -p micronuts-app
 ```
 
 ## Known Issues
 
 - **RNG security audit pending** — The hardware RNG works but needs independent entropy quality verification. See [#1](https://github.com/Amperstrand/micronuts/issues/1).
+- **NVIDIA GPU SIGSEGV** — SDL2 may crash on NVIDIA GPUs. The simulator auto-detects this and falls back to `SDL_VIDEODRIVER=software`, but some distro SDL2 packages don't include the software driver. In that case, use `Xvfb` as a virtual display instead. See [#4](https://github.com/Amperstrand/micronuts/issues/4).
 - **Touch screen** — FT6X06 used for boot splash exit; not yet wired into full UI navigation.
 - **SDIO unused** — microSD slot works in the BSP but firmware doesn't use it yet.
 - **Demo mint only** — `host-mint-tool` is a toy signer, not a real Cashu mint.
