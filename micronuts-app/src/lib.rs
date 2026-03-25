@@ -81,7 +81,7 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                     touch_active = false;
                 }
 
-                for _ in 0..256 {
+                for _ in 0..16 {
                     if let Some(data) = hw.scanner_try_read() {
                         let payload = qr::decode_qr(&data);
                         screen = AppScreen::ScanResult;
@@ -92,7 +92,7 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                 }
             }
             AppScreen::Scanning => {
-                for _ in 0..256 {
+                for _ in 0..16 {
                     if let Some(data) = hw.scanner_try_read() {
                         let payload = qr::decode_qr(&data);
                         screen = AppScreen::ScanResult;
@@ -168,6 +168,6 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
             }
         }
 
-        hw.delay_ms(5);
+        hw.delay_ms(1);
     }
 }

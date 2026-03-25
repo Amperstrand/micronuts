@@ -108,14 +108,12 @@ where
     }
 
     fn transport_poll(&mut self) -> Option<Frame> {
-        if self.usb_dev.poll(&mut [&mut self.serial]) {
-            let mut rx_buf = [0u8; 64];
-            match self.serial.read(&mut rx_buf) {
-                Ok(count) if count > 0 => return self.decoder.decode(&rx_buf[..count]),
-                _ => {}
-            }
+        self.usb_dev.poll(&mut [&mut self.serial]);
+        let mut rx_buf = [0u8; 64];
+        match self.serial.read(&mut rx_buf) {
+            Ok(count) if count > 0 => self.decoder.decode(&rx_buf[..count]),
+            _ => None,
         }
-        None
     }
 
     fn transport_send(&mut self, response: &Response) {
