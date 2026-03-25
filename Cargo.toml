@@ -41,3 +41,4 @@ lto = true
 opt-level = "s"
 strip = "none"
 split-debuginfo = "off"
+panic = "abort"

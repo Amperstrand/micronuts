@@ -128,6 +128,7 @@ where
                     offset += written;
                 }
                 _ => {
+                    self.usb_dev.poll(&mut [&mut self.serial]);
                     let _ = self.serial.flush();
                 }
             }
