@@ -14,10 +14,12 @@ embedded-hal = { workspace = true }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 embedded-graphics = { workspace = true }
 heapless = "0.8"
-stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer", "rng"] }
+stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer", "rng", "touch"] }
+ft6x06 = { git = "https://github.com/DougAnderson444/ft6x06", rev = "cc352f80b12fd985da4c4847771a26ebc03ece62" }
 gm65-scanner = { workspace = true }
 qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
+micronuts-app = { path = "../micronuts-app" }
 static_cell = "2.1"
 usb-device = "0.3"
 usbd-serial = "0.2"

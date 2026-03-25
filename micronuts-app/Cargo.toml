@@ -1,0 +1,30 @@
+[package]
+name = "micronuts-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent business logic for Micronuts Cashu hardware wallet"
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite" }
+embedded-hal = { workspace = true }
+embedded-graphics = { workspace = true }
+rand_core = { workspace = true }
+k256 = { workspace = true }
+sha2 = { workspace = true }
+heapless = "0.8"
+gm65-scanner = { workspace = true }
+qrcodegen-no-heap = { workspace = true }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+
+[features]
+default = []
+std = ["cashu-core-lite/std", "hex/std"]
+
+[dev-dependencies]
+sdl2 = { version = "0.37", default-features = false, features = ["gfx"] }
+rand = "0.8"
+
+[[example]]
+name = "native_sim"
+required-features = ["std"]
