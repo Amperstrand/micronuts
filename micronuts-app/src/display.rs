@@ -251,6 +251,34 @@ pub fn render_home<D: DrawTarget<Color = Rgb565>>(fb: &mut D, scanner_connected:
     }
 }
 
+pub fn render_waiting_token<D: DrawTarget<Color = Rgb565>>(fb: &mut D) {
+    fb.clear(BLACK).ok();
+    draw_status_bar(fb, "IMPORT TOKEN");
+    draw_button(fb, &back_button());
+
+    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+    let dim_style = MonoTextStyle::new(&FONT_10X20, MID_GRAY);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+
+    Text::with_text_style(
+        "Waiting for token...",
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 - 40),
+        label_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+
+    Text::with_text_style(
+        "Send ImportToken via USB",
+        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2),
+        dim_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+}
+
 pub fn render_error<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
     fb.clear(Rgb565::BLACK).ok();
     let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);

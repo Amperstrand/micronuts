@@ -1,6 +1,7 @@
+#[cfg(feature = "std")]
+use k256::Scalar;
 use k256::{
-    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, Scalar,
-    SecretKey,
+    elliptic_curve::sec1::FromEncodedPoint, EncodedPoint, ProjectivePoint, PublicKey, SecretKey,
 };
 use sha2::{Digest, Sha256};
 

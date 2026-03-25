@@ -879,9 +879,8 @@ dependencies = [
 
 [[package]]
 name = "nt35510"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91c66b704b492b02551fcd286376d138afd69577943c52996285cf6b9595bf13"
+version = "0.2.0"
+source = "git+https://github.com/Amperstrand/nt35510?rev=7d588ef40d94f51f2ed2df33acbb04a920a4ae0b#7d588ef40d94f51f2ed2df33acbb04a920a4ae0b"
 dependencies = [
  "embedded-display-controller",
  "embedded-hal 1.0.0",
@@ -1273,7 +1272,7 @@ dependencies = [
 [[package]]
 name = "stm32f469i-disc"
 version = "0.4.0"
-source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=89d22c69ac582602d33170902da2c22b12ef3d75#89d22c69ac582602d33170902da2c22b12ef3d75"
+source = "git+https://github.com/Amperstrand/stm32f469i-disc?rev=da9dd8bba5485db855bb0eacc34a3879a9e6e1ed#da9dd8bba5485db855bb0eacc34a3879a9e6e1ed"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

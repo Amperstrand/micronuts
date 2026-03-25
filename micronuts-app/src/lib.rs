@@ -12,12 +12,15 @@ pub mod qr;
 pub mod state;
 pub mod util;
 
-pub use hardware::{MicronutsHardware, Screen, TouchPoint};
+pub use hardware::{MicronutsHardware, TouchPoint};
 
 enum AppScreen {
     Home,
     Scanning,
     ScanResult,
+    WaitingToken,
+    TokenInfo,
+    ShowProofs,
 }
 
 pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
@@ -42,6 +45,11 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
             if frame.command == protocol::Command::ScannerTrigger {
                 last_scan_data = None;
             }
+            if frame.command == protocol::Command::ImportToken {
+                if let AppScreen::WaitingToken = screen {
+                    screen = AppScreen::TokenInfo;
+                }
+            }
             hw.transport_send(&response);
         }
 
@@ -55,6 +63,18 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                             last_scan_data = None;
                             let _ = hw.scanner_trigger();
                             display::draw_scanning(hw.display());
+                        } else if buttons[1].hit(tp.x, tp.y) {
+                            screen = AppScreen::WaitingToken;
+                            display::render_waiting_token(hw.display());
+                        } else if buttons[2].hit(tp.x, tp.y) {
+                            if state.swap_state == state::SwapState::ProofsReady {
+                                screen = AppScreen::ShowProofs;
+                                display::render_status(hw.display(), "Generating proof QR...");
+                            } else {
+                                display::render_status(hw.display(), "No proofs available yet");
+                                screen = AppScreen::Home;
+                                display::render_home(hw.display(), scanner_connected);
+                            }
                         }
                     }
                 } else {
@@ -95,6 +115,45 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                 }
             }
             AppScreen::ScanResult => {
+                if let Some(tp) = hw.touch_get() {
+                    if !touch_active {
+                        touch_active = true;
+                        if back_btn.hit(tp.x, tp.y) {
+                            screen = AppScreen::Home;
+                            display::render_home(hw.display(), scanner_connected);
+                        }
+                    }
+                } else {
+                    touch_active = false;
+                }
+            }
+            AppScreen::WaitingToken => {
+                if let Some(tp) = hw.touch_get() {
+                    if !touch_active {
+                        touch_active = true;
+                        if back_btn.hit(tp.x, tp.y) {
+                            screen = AppScreen::Home;
+                            display::render_home(hw.display(), scanner_connected);
+                        }
+                    }
+                } else {
+                    touch_active = false;
+                }
+            }
+            AppScreen::TokenInfo => {
+                if let Some(tp) = hw.touch_get() {
+                    if !touch_active {
+                        touch_active = true;
+                        if back_btn.hit(tp.x, tp.y) {
+                            screen = AppScreen::Home;
+                            display::render_home(hw.display(), scanner_connected);
+                        }
+                    }
+                } else {
+                    touch_active = false;
+                }
+            }
+            AppScreen::ShowProofs => {
                 if let Some(tp) = hw.touch_get() {
                     if !touch_active {
                         touch_active = true;

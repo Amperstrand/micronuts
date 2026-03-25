@@ -9,7 +9,6 @@ use panic_probe as _;
 
 use hal::otg_fs::UsbBus;
 use hal::otg_fs::UsbBusType;
-use hal::rng::Rng;
 use hal::serial::Serial6;
 use static_cell::ConstStaticCell;
 use stm32f469i_disc::{
@@ -50,7 +49,7 @@ fn main() -> ! {
 
     defmt::info!("Micronuts firmware starting...");
 
-    let mut rng = dp.RNG.constrain(&mut rcc);
+    let rng = dp.RNG.constrain(&mut rcc);
 
     let gpioa = dp.GPIOA.split(&mut rcc);
     let gpiob = dp.GPIOB.split(&mut rcc);
@@ -58,7 +57,7 @@ fn main() -> ! {
     let gpiod = dp.GPIOD.split(&mut rcc);
     let gpioe = dp.GPIOE.split(&mut rcc);
     let gpiof = dp.GPIOF.split(&mut rcc);
-    let mut gpiog = dp.GPIOG.split(&mut rcc);
+    let gpiog = dp.GPIOG.split(&mut rcc);
     let scanner_tx = gpiog.pg14;
     let scanner_rx = gpiog.pg9;
     let gpioh = dp.GPIOH.split(&mut rcc);
@@ -154,7 +153,7 @@ fn main() -> ! {
         defmt::info!("Boot splash complete");
     }
 
-    let mut fb = LtdcFramebuffer::new(dbl_fb.into_front_buffer(), lcd::WIDTH, lcd::HEIGHT);
+    let fb = LtdcFramebuffer::new(dbl_fb.into_front_buffer(), lcd::WIDTH, lcd::HEIGHT);
 
     defmt::info!("Initializing USB...");
     let usb_periph = usb::init(
@@ -219,7 +218,7 @@ fn main() -> ! {
                 _ => panic!("No USART6 available"),
             };
             let uart = usart.serial(pins, 9600.bps(), &mut rcc).unwrap();
-            let mut s = Gm65Scanner::with_default_config(uart);
+            let s = Gm65Scanner::with_default_config(uart);
             defmt::warn!("QR scanner not found at any baud rate, using 9600 default");
             s
         }

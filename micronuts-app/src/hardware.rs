@@ -4,13 +4,6 @@ use embedded_graphics::pixelcolor::Rgb565;
 use crate::protocol::{Frame, Response};
 use crate::state::ScannerInfo;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Screen {
-    Home,
-    Scanning,
-    ScanResult,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct TouchPoint {
     pub x: u16,
