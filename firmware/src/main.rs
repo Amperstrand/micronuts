@@ -234,10 +234,9 @@ fn main() -> ! {
                     .serial((tx_pin, rx_pin), 115200.bps(), &mut rcc)
                     .unwrap();
                 scanner = Gm65Scanner::with_default_config(uart);
-                if scanner.ping() {
-                    defmt::info!("UART re-init at 115200 bps confirmed");
-                } else {
-                    defmt::warn!("UART re-init at 115200 bps failed");
+                match scanner.init() {
+                    Ok(_) => defmt::info!("UART re-init at 115200 bps complete"),
+                    Err(e) => defmt::warn!("UART re-init at 115200 bps failed: {}", e),
                 }
             }
         }

@@ -76,6 +76,16 @@ pub fn back_button() -> Button {
     }
 }
 
+pub fn aim_button() -> Button {
+    Button {
+        x: WIDTH as u32 - 170,
+        y: 8,
+        w: 160,
+        h: 36,
+        label: "LASER: OFF",
+    }
+}
+
 pub fn draw_button<D: DrawTarget<Color = Rgb565>>(fb: &mut D, btn: &Button) {
     let rect = Rectangle::new(
         Point::new(btn.x as i32, btn.y as i32),
@@ -128,7 +138,7 @@ pub fn draw_status_bar<D: DrawTarget<Color = Rgb565>>(fb: &mut D, right_text: &s
     .ok();
 }
 
-pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D) {
+pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D, aim_on: bool) {
     fb.clear(BLACK).ok();
     draw_status_bar(fb, "SCANNING...");
 
@@ -154,6 +164,10 @@ pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D) {
     .ok();
 
     draw_button(fb, &back_button());
+
+    let mut aim_btn = aim_button();
+    aim_btn.label = if aim_on { "LASER: ON" } else { "LASER: OFF" };
+    draw_button(fb, &aim_btn);
 }
 
 pub fn render_token_info<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &TokenV4) {

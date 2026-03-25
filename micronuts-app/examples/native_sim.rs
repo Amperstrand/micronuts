@@ -13,10 +13,8 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::Sdl;
 
 use micronuts_app::display::{HEIGHT, WIDTH};
-use micronuts_app::hardware::{MicronutsHardware, TouchPoint};
+use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
-use micronuts_app::qr::{ScannerModel, ScannerState};
-use micronuts_app::state::ScannerInfo;
 
 fn rgb565_to_raw(color: Rgb565) -> u16 {
     let r = color.r();
@@ -187,24 +185,6 @@ impl MicronutsHardware for MockHardware {
         self.rng.fill_bytes(dest);
     }
 
-    fn scanner_trigger(&mut self) -> Result<(), ()> {
-        println!("[SCANNER] Trigger scan (simulated)");
-        Ok(())
-    }
-
-    fn scanner_try_read(&mut self) -> Option<Vec<u8>> {
-        None
-    }
-
-    fn scanner_status(&self) -> ScannerInfo {
-        ScannerInfo {
-            model: ScannerModel::Unknown,
-            state: ScannerState::Uninitialized,
-            last_scan_len: None,
-            connected: false,
-        }
-    }
-
     fn transport_poll(&mut self) -> Option<Frame> {
         let mut buf = [0u8; 64];
         match io::stdin().read(&mut buf) {
@@ -237,6 +217,7 @@ impl MicronutsHardware for MockHardware {
         if let Some(tp) = result {
             if tp.detected {
                 self.pending_touch = Some(tp);
+                println!("[TOUCH] x={}, y={}", tp.x, tp.y);
                 return Some(tp);
             }
         }
@@ -246,6 +227,30 @@ impl MicronutsHardware for MockHardware {
     fn delay_ms(&mut self, ms: u32) {
         self.display.present();
         thread::sleep(Duration::from_millis(ms as u64));
+    }
+}
+
+impl Scanner for MockHardware {
+    fn trigger(&mut self) -> Result<(), ScanError> {
+        println!("[SCANNER] Trigger scan");
+        Ok(())
+    }
+
+    fn try_read(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn stop(&mut self) {
+        println!("[SCANNER] Stop scan");
+    }
+
+    fn is_connected(&self) -> bool {
+        false
+    }
+
+    fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
+        println!("[SCANNER] Aim: {}", if enabled { "ON" } else { "OFF" });
+        Ok(())
     }
 }
 

@@ -41,29 +41,18 @@ pub fn handle_command<H: MicronutsHardware>(
         Command::SendSignatures => handle_send_signatures(payload, state, hw),
         Command::GetProofs => handle_get_proofs(state),
         Command::ScannerStatus => {
-            let status = hw.scanner_status();
             let mut payload = [0u8; MAX_PAYLOAD_SIZE];
             let mut offset = 0;
-            payload[offset] = if status.connected { 1 } else { 0 };
+            payload[offset] = if hw.is_connected() { 1 } else { 0 };
             offset += 1;
-            payload[offset] = if status.state == qr::ScannerState::Ready {
-                1
-            } else {
-                0
-            };
+            payload[offset] = 0x00; // data_ready: not exposed via Scanner trait
             offset += 1;
-            let model_byte: u8 = match status.model {
-                qr::ScannerModel::Gm65 => 0x01,
-                qr::ScannerModel::M3Y => 0x02,
-                qr::ScannerModel::Generic => 0x03,
-                qr::ScannerModel::Unknown => 0x00,
-            };
-            payload[offset] = model_byte;
+            payload[offset] = 0x00; // model: unknown (not exposed via Scanner trait)
             offset += 1;
             Response::with_payload(Status::Ok, &payload[..offset])
                 .unwrap_or_else(|| Response::new(Status::Error))
         }
-        Command::ScannerTrigger => match hw.scanner_trigger() {
+        Command::ScannerTrigger => match hw.trigger() {
             Ok(()) => {
                 display::render_status(hw.display(), "Scanning...");
                 Response::new(Status::Ok)

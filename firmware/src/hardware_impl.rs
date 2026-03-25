@@ -12,10 +12,8 @@ use stm32f469i_disc::hal;
 use usb_device::device::UsbDevice;
 use usbd_serial::SerialPort;
 
-use micronuts_app::hardware::{MicronutsHardware, TouchPoint};
+use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
-use micronuts_app::qr::{ScannerModel, ScannerState};
-use micronuts_app::state::ScannerInfo;
 
 use crate::qr::Gm65Scanner;
 use gm65_scanner::ScannerDriverSync;
@@ -66,6 +64,46 @@ where
     }
 }
 
+impl<T> Scanner for FirmwareHardware<T>
+where
+    T: embedded_hal_02::digital::v2::InputPin,
+{
+    fn trigger(&mut self) -> Result<(), ScanError> {
+        self.scanner.trigger_scan().map_err(|_| ScanError::IoError)
+    }
+
+    fn try_read(&mut self) -> Option<Vec<u8>> {
+        self.scanner.try_read_scan()
+    }
+
+    fn stop(&mut self) {
+        let _ = self.scanner.stop_scan();
+    }
+
+    fn is_connected(&self) -> bool {
+        self.scanner.status().connected
+    }
+
+    fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
+        use gm65_scanner::ScannerSettings;
+        let settings = self
+            .scanner
+            .get_scanner_settings()
+            .ok_or(ScanError::NotReady)?;
+        let new_settings = if enabled {
+            settings | ScannerSettings::AIM
+        } else {
+            settings & !(ScannerSettings::AIM)
+        };
+        if self.scanner.set_scanner_settings(new_settings) {
+            defmt::info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
+            Ok(())
+        } else {
+            Err(ScanError::IoError)
+        }
+    }
+}
+
 impl<T> MicronutsHardware for FirmwareHardware<T>
 where
     T: embedded_hal_02::digital::v2::InputPin,
@@ -78,33 +116,6 @@ where
 
     fn rng_fill_bytes(&mut self, dest: &mut [u8]) {
         self.rng.fill_bytes(dest);
-    }
-
-    fn scanner_trigger(&mut self) -> Result<(), ()> {
-        self.scanner.trigger_scan().map_err(|_| ())
-    }
-
-    fn scanner_try_read(&mut self) -> Option<Vec<u8>> {
-        self.scanner.try_read_scan()
-    }
-
-    fn scanner_status(&self) -> ScannerInfo {
-        let status = self.scanner.status();
-        ScannerInfo {
-            model: match status.model {
-                gm65_scanner::ScannerModel::Gm65 => ScannerModel::Gm65,
-                gm65_scanner::ScannerModel::M3Y => ScannerModel::M3Y,
-                gm65_scanner::ScannerModel::Generic => ScannerModel::Generic,
-                gm65_scanner::ScannerModel::Unknown => ScannerModel::Unknown,
-            },
-            state: if status.connected {
-                ScannerState::Ready
-            } else {
-                ScannerState::Uninitialized
-            },
-            last_scan_len: None,
-            connected: status.connected,
-        }
     }
 
     fn transport_poll(&mut self) -> Option<Frame> {
@@ -142,6 +153,7 @@ where
                 if status > 0 {
                     if let Ok(tp) = t.get_touch(&mut self.touch_i2c, 1) {
                         if tp.detected {
+                            defmt::info!("Touch: x={}, y={}", tp.x, tp.y);
                             return Some(TouchPoint {
                                 x: tp.x,
                                 y: tp.y,
