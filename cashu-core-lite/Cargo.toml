@@ -16,4 +16,4 @@ hex = "0.4"
 
 [features]
 default = []
-std = []
+std = ["rand_core/getrandom"]

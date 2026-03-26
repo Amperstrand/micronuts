@@ -1,6 +1,8 @@
+extern crate alloc;
+
 use std::io::{self, Read, Write};
+use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
 
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{OriginDimensions, Size};
@@ -158,16 +160,33 @@ struct MockHardware {
     display: Sdl2Display,
     rng: rand::rngs::ThreadRng,
     decoder: FrameDecoder,
+    stdin_rx: mpsc::Receiver<Vec<u8>>,
     stdin_buf: Vec<u8>,
     pending_touch: Option<TouchPoint>,
 }
 
 impl MockHardware {
     fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        thread::spawn(move || {
+            let mut buf = [0u8; 64];
+            loop {
+                match io::stdin().read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
         Self {
             display: Sdl2Display::new(),
             rng: rand::thread_rng(),
             decoder: FrameDecoder::new(),
+            stdin_rx: rx,
             stdin_buf: Vec::new(),
             pending_touch: None,
         }
@@ -185,24 +204,22 @@ impl MicronutsHardware for MockHardware {
         self.rng.fill_bytes(dest);
     }
 
-    fn transport_poll(&mut self) -> Option<Frame> {
-        let mut buf = [0u8; 64];
-        match io::stdin().read(&mut buf) {
-            Ok(0) => return None,
-            Ok(n) => {
-                self.stdin_buf.extend_from_slice(&buf[..n]);
+    async fn transport_recv_frame(&mut self) -> Option<Frame> {
+        loop {
+            while let Ok(data) = self.stdin_rx.try_recv() {
+                self.stdin_buf.extend_from_slice(&data);
             }
-            Err(_) => return None,
-        }
 
-        let frame = self.decoder.decode(&self.stdin_buf);
-        if frame.is_some() {
-            self.stdin_buf.clear();
+            if let Some(frame) = self.decoder.decode(&self.stdin_buf) {
+                self.stdin_buf.clear();
+                return Some(frame);
+            }
+
+            embassy_time::Timer::after(embassy_time::Duration::from_millis(1)).await;
         }
-        frame
     }
 
-    fn transport_send(&mut self, response: &Response) {
+    async fn transport_send(&mut self, response: &Response) {
         let mut buf = [0u8; MAX_PAYLOAD_SIZE + 3];
         let len = response.encode(&mut buf);
         let _ = io::stdout().write_all(&buf[..len]);
@@ -224,23 +241,27 @@ impl MicronutsHardware for MockHardware {
         None
     }
 
-    fn delay_ms(&mut self, ms: u32) {
+    async fn delay_ms(&mut self, ms: u32) {
         self.display.present();
-        thread::sleep(Duration::from_millis(ms as u64));
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(ms as u64)).await;
     }
 }
 
 impl Scanner for MockHardware {
-    fn trigger(&mut self) -> Result<(), ScanError> {
+    async fn trigger(&mut self) -> Result<(), ScanError> {
         println!("[SCANNER] Trigger scan");
         Ok(())
     }
 
-    fn try_read(&mut self) -> Option<Vec<u8>> {
+    fn try_read(&mut self) -> Option<alloc::vec::Vec<u8>> {
         None
     }
 
-    fn stop(&mut self) {
+    async fn read_scan(&mut self) -> Option<alloc::vec::Vec<u8>> {
+        None
+    }
+
+    async fn stop(&mut self) {
         println!("[SCANNER] Stop scan");
     }
 
@@ -248,7 +269,7 @@ impl Scanner for MockHardware {
         false
     }
 
-    fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
+    async fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
         println!("[SCANNER] Aim: {}", if enabled { "ON" } else { "OFF" });
         Ok(())
     }
@@ -378,14 +399,24 @@ fn apply_sdl_video_workaround() {
 fn main() {
     apply_sdl_video_workaround();
 
-    println!("Micronuts Native Simulator");
-    println!("==========================");
+    println!("Micronuts Native Simulator (embassy)");
+    println!("=====================================");
     println!("Display: {}x{} RGB565 (portrait)", WIDTH, HEIGHT);
     println!("Transport: stdin/stdout (binary protocol)");
     println!("Click window to simulate touch input");
     println!("Press ESC or close window to exit");
     println!();
 
-    let mut hw = MockHardware::new();
-    micronuts_app::run(&mut hw);
+    let hw = MockHardware::new();
+    let mut executor = embassy_executor::Executor::new();
+    let executor: &'static mut embassy_executor::Executor =
+        unsafe { core::mem::transmute(&mut executor) };
+    executor.run(|spawner: embassy_executor::Spawner| {
+        spawner.spawn(run(hw).expect("spawn failed"));
+    });
+}
+
+#[embassy_executor::task]
+async fn run(mut hw: MockHardware) {
+    micronuts_app::run(&mut hw).await
 }

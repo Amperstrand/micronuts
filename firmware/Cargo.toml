@@ -11,26 +11,42 @@ defmt = { workspace = true, optional = true }
 defmt-rtt = { workspace = true, optional = true }
 panic-probe = { workspace = true, optional = true }
 embedded-hal = { workspace = true }
-embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
+embedded-hal-02 = { workspace = true }
 embedded-graphics = { workspace = true }
-heapless = "0.8"
-stm32f469i-disc = { workspace = true, features = ["usb_fs", "framebuffer", "rng", "touch"] }
-ft6x06 = { git = "https://github.com/Amperstrand/ft6x06", rev = "2ed36f74d6b52e8ff68533c01a50d81800ae10b4" }
+embedded-io = { workspace = true }
+embedded-io-async = { workspace = true }
+heapless = { workspace = true }
 gm65-scanner = { workspace = true }
 qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
 micronuts-app = { path = "../micronuts-app" }
-static_cell = "2.1"
-usb-device = "0.3"
-usbd-serial = "0.2"
-critical-section = "1.2"
+static_cell = { workspace = true }
+critical-section = { workspace = true }
+linked_list_allocator = { workspace = true }
 k256 = { workspace = true }
 sha2 = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-linked_list_allocator = "0.10"
-nb = "1.1"
 rand_core = { workspace = true }
+nb = { workspace = true }
+
+# Embassy
+embassy-stm32 = { workspace = true, features = ["stm32f469ni", "time-driver-any", "exti", "defmt"] }
+embassy-time = { workspace = true, features = ["defmt"] }
+embassy-executor = { workspace = true, features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-usb = { workspace = true }
+embassy-usb-synopsys-otg = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+
+# Embassy BSP
+embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
+
+# Touch controller
+ft6x06 = { git = "https://github.com/Amperstrand/ft6x06", rev = "2ed36f74d6b52e8ff68533c01a50d81800ae10b4" }
+
+# USB CDC
+
 
 [features]
 default = ["defmt"]
-defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "stm32f469i-disc/defmt"]
+defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]

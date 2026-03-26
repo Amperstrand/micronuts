@@ -13,7 +13,7 @@ use cashu_core_lite::{
     SecretKey, TokenV4, TokenV4Token,
 };
 
-pub fn handle_command<H: MicronutsHardware>(
+pub async fn handle_command<H: MicronutsHardware>(
     command: Command,
     payload: &[u8],
     state: &mut FirmwareState,
@@ -50,7 +50,7 @@ pub fn handle_command<H: MicronutsHardware>(
             Response::with_payload(Status::Ok, &payload[..offset])
                 .unwrap_or_else(|| Response::new(Status::Error))
         }
-        Command::ScannerTrigger => match hw.trigger() {
+        Command::ScannerTrigger => match hw.trigger().await {
             Ok(()) => {
                 display::render_status(hw.display(), "Scanning...");
                 Response::new(Status::Ok)
@@ -305,4 +305,443 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
 
     Response::with_payload(Status::Ok, &encoded)
         .unwrap_or_else(|| Response::new(Status::BufferOverflow))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+    use crate::protocol::{Command, Frame, Status};
+    use crate::state::{FirmwareState, SwapState};
+    use alloc::string::String;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use embedded_graphics::{
+        draw_target::DrawTarget,
+        geometry::{OriginDimensions, Size},
+        pixelcolor::Rgb565,
+        Pixel,
+    };
+    use rand::RngCore;
+
+    struct MockDisplay;
+
+    impl OriginDimensions for MockDisplay {
+        fn size(&self) -> Size {
+            Size::new(480, 800)
+        }
+    }
+
+    impl DrawTarget for MockDisplay {
+        type Color = Rgb565;
+        type Error = core::convert::Infallible;
+
+        fn draw_iter<I>(&mut self, _pixels: I) -> Result<(), Self::Error>
+        where
+            I: IntoIterator<Item = Pixel<Self::Color>>,
+        {
+            Ok(())
+        }
+
+        fn clear(&mut self, _color: Self::Color) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
+    struct MockHardware {
+        display: MockDisplay,
+        scanner_connected: bool,
+        scan_data: Option<Vec<u8>>,
+    }
+
+    impl MockHardware {
+        fn new() -> Self {
+            Self {
+                display: MockDisplay,
+                scanner_connected: false,
+                scan_data: None,
+            }
+        }
+
+        fn with_scanner(connected: bool) -> Self {
+            Self {
+                display: MockDisplay,
+                scanner_connected: connected,
+                scan_data: None,
+            }
+        }
+    }
+
+    impl Scanner for MockHardware {
+        fn trigger(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>> {
+            async move {
+                if self.scanner_connected {
+                    Ok(())
+                } else {
+                    Err(ScanError::NotConnected)
+                }
+            }
+        }
+
+        fn try_read(&mut self) -> Option<Vec<u8>> {
+            self.scan_data.take()
+        }
+
+        fn read_scan(&mut self) -> impl core::future::Future<Output = Option<Vec<u8>>> {
+            async move { self.scan_data.take() }
+        }
+
+        fn stop(&mut self) -> impl core::future::Future<Output = ()> {
+            async move {}
+        }
+
+        fn is_connected(&self) -> bool {
+            self.scanner_connected
+        }
+
+        fn set_aim(
+            &mut self,
+            _enabled: bool,
+        ) -> impl core::future::Future<Output = Result<(), ScanError>> {
+            async move { Ok(()) }
+        }
+
+        fn debug_dump_settings(&mut self) {}
+    }
+
+    impl MicronutsHardware for MockHardware {
+        type Display = MockDisplay;
+
+        fn display(&mut self) -> &mut Self::Display {
+            &mut self.display
+        }
+
+        fn rng_fill_bytes(&mut self, dest: &mut [u8]) {
+            let mut rng = rand::thread_rng();
+            rng.fill_bytes(dest);
+        }
+
+        fn transport_recv_frame(
+            &mut self,
+        ) -> impl core::future::Future<Output = Option<Frame>> {
+            async move { None }
+        }
+
+        fn transport_send(
+            &mut self,
+            _response: &Response,
+        ) -> impl core::future::Future<Output = ()> {
+            async move {}
+        }
+
+        fn touch_get(&mut self) -> Option<TouchPoint> {
+            None
+        }
+
+        fn delay_ms(&mut self, _ms: u32) -> impl core::future::Future<Output = ()> {
+            async move {}
+        }
+    }
+
+    fn sample_token() -> cashu_core_lite::TokenV4 {
+        cashu_core_lite::TokenV4 {
+            mint: String::from("https://example.com/mint"),
+            unit: String::from("sat"),
+            memo: Some(String::from("test memo")),
+            tokens: vec![cashu_core_lite::TokenV4Token {
+                keyset_id: String::from("00"),
+                proofs: vec![
+                    cashu_core_lite::Proof {
+                        amount: 2,
+                        keyset_id: String::from("00"),
+                        secret: String::from("aabbccdd"),
+                        c: vec![0x02, 0xAB, 0xCD],
+                    },
+                    cashu_core_lite::Proof {
+                        amount: 8,
+                        keyset_id: String::from("00"),
+                        secret: String::from("11223344"),
+                        c: vec![0x02, 0xEF, 0x01],
+                    },
+                ],
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_import_token_valid() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let token = sample_token();
+        let encoded = cashu_core_lite::encode_token(&token).unwrap();
+
+        let response = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(state.swap_state, SwapState::TokenImported);
+        assert!(state.imported_token.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_import_token_invalid() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ImportToken, b"garbage data", &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::InvalidPayload);
+        assert!(state.imported_token.is_none());
+        assert_eq!(state.swap_state, SwapState::Idle);
+    }
+
+    #[tokio::test]
+    async fn test_import_token_empty() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ImportToken, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::InvalidPayload);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_info_no_token() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Error);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_info_after_import() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let token = sample_token();
+        let encoded = cashu_core_lite::encode_token(&token).unwrap();
+        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+
+        let response = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert!(response.length > 0);
+
+        let payload = response.payload();
+        let mint_len = payload[0] as usize;
+        let mint = core::str::from_utf8(&payload[1..1 + mint_len]).unwrap();
+        assert_eq!(mint, "https://example.com/mint");
+
+        let offset = 1 + mint_len;
+        let unit_len = payload[offset] as usize;
+        let unit = core::str::from_utf8(&payload[offset + 1..offset + 1 + unit_len]).unwrap();
+        assert_eq!(unit, "sat");
+
+        let amount_offset = offset + 1 + unit_len;
+        let mut amount_bytes = [0u8; 8];
+        amount_bytes.copy_from_slice(&payload[amount_offset..amount_offset + 8]);
+        let amount = u64::from_be_bytes(amount_bytes);
+        assert_eq!(amount, 10);
+
+        let count_offset = amount_offset + 8;
+        let mut count_bytes = [0u8; 4];
+        count_bytes.copy_from_slice(&payload[count_offset..count_offset + 4]);
+        let count = u32::from_be_bytes(count_bytes);
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_blinded_no_token() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Error);
+    }
+
+    #[tokio::test]
+    async fn test_get_blinded_after_import() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let token = sample_token();
+        let encoded = cashu_core_lite::encode_token(&token).unwrap();
+        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+
+        let response = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(state.swap_state, SwapState::BlindedGenerated);
+        assert!(state.blinded_messages.is_some());
+        assert!(state.swap_secrets.is_some());
+        assert!(state.swap_amounts.is_some());
+
+        let blinded = state.blinded_messages.as_ref().unwrap();
+        assert_eq!(blinded.len(), 2);
+        assert_eq!(response.length, 2 * 33);
+    }
+
+    #[tokio::test]
+    async fn test_send_signatures_no_blinded() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let fake_sig = [0u8; 66];
+        let response = handle_command(Command::SendSignatures, &fake_sig, &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Error);
+    }
+
+    #[tokio::test]
+    async fn test_send_signatures_invalid_payload_length() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let bad_payload = [0u8; 34];
+        let response = handle_command(Command::SendSignatures, &bad_payload, &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Error);
+    }
+
+    #[tokio::test]
+    async fn test_send_signatures_wrong_count() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let token = sample_token();
+        let encoded = cashu_core_lite::encode_token(&token).unwrap();
+        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        let _ = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        let wrong_sig = [0u8; 33];
+        let response = handle_command(Command::SendSignatures, &wrong_sig, &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::InvalidPayload);
+    }
+
+    #[tokio::test]
+    async fn test_get_proofs_no_proofs() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::GetProofs, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Error);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_status_disconnected() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ScannerStatus, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.length, 3);
+        assert_eq!(response.payload()[0], 0);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_status_connected() {
+        let mut hw = MockHardware::with_scanner(true);
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ScannerStatus, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert_eq!(response.payload()[0], 1);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_trigger_disconnected() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ScannerTrigger, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::ScannerNotConnected);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_trigger_connected() {
+        let mut hw = MockHardware::with_scanner(true);
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ScannerTrigger, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_data_no_data() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let response = handle_command(Command::ScannerData, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::NoScanData);
+    }
+
+    #[tokio::test]
+    async fn test_scanner_data_with_data() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = Some(vec![0x01, 0x02, 0x03]);
+
+        let response = handle_command(Command::ScannerData, &[], &mut state, &mut hw, &mut last_scan).await;
+
+        assert_eq!(response.status, Status::Ok);
+        assert!(response.length > 0);
+        assert!(last_scan.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_full_swap_flow() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        assert_eq!(state.swap_state, SwapState::Idle);
+
+        let token = sample_token();
+        let encoded = cashu_core_lite::encode_token(&token).unwrap();
+
+        let r = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        assert_eq!(r.status, Status::Ok);
+        assert_eq!(state.swap_state, SwapState::TokenImported);
+
+        let r = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+        assert_eq!(r.status, Status::Ok);
+
+        let r = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+        assert_eq!(r.status, Status::Ok);
+        assert_eq!(state.swap_state, SwapState::BlindedGenerated);
+        assert_eq!(state.blinded_messages.as_ref().unwrap().len(), 2);
+
+        let blinded_count = state.blinded_messages.as_ref().unwrap().len();
+        let fake_sigs = vec![0u8; blinded_count * 33];
+
+        let r = handle_command(Command::SendSignatures, &fake_sigs, &mut state, &mut hw, &mut last_scan).await;
+        assert_eq!(r.status, Status::CryptoError);
+        assert!(state.new_proofs.is_none());
+    }
 }

@@ -6,5 +6,3 @@ pub mod boot_splash;
 pub mod boot_splash_assets;
 pub mod hardware_impl;
 pub mod qr;
-
-pub use stm32f469i_disc::*;

@@ -21,19 +21,40 @@ rand_core = { version = "0.6", default-features = false }
 
 minicbor = { version = "0.25", default-features = false, features = ["derive", "alloc"] }
 
-cortex-m = "0.7"
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-hal = "1.0"
+embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 embedded-graphics = "0.8"
+embedded-io = "0.7"
+embedded-io-async = "0.7"
 
 stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "da9fdb2f3b10d26ba1cc6a54f68e4d4ddc5e3f23" }
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c673ef6547d57cce9347672d0b53ea0b7832afaf", features = ["sync", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c6c94871afe60ee55c68cdfa0f17afe6e9cb9836", features = ["sync", "async", "defmt"] }
+
+# Embassy — pinned to rev 84444a19 (same as BSP)
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
+embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
+
+# Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "3646aa87e5b7948440e025a0ed056f4f18e57248" }
+
+linked_list_allocator = "0.10"
+static_cell = "2.1"
+heapless = "0.8"
+critical-section = "1.2"
+nb = "1.1"
 
 [profile.release]
 debug = true

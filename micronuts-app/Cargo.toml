@@ -11,19 +11,24 @@ embedded-hal = { workspace = true }
 embedded-graphics = { workspace = true }
 rand_core = { workspace = true }
 sha2 = { workspace = true }
-heapless = "0.8"
+heapless = { workspace = true }
 gm65-scanner = { workspace = true }
 qrcodegen-no-heap = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
+embassy-time = { workspace = true }
+embassy-futures = { workspace = true }
 
 [features]
 default = []
-std = ["cashu-core-lite/std", "hex/std"]
+std = ["cashu-core-lite/std", "hex/std", "embassy-time/std"]
 
 [dev-dependencies]
+embassy-executor = { workspace = true, features = ["platform-std", "executor-thread"] }
+static_cell = { workspace = true }
 sdl2 = { version = "0.37", default-features = false, features = ["gfx"] }
 rand = "0.8"
 libc = "0.2"
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [[example]]
 name = "native_sim"

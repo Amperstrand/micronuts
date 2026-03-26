@@ -18,11 +18,15 @@ pub enum ScanError {
 }
 
 pub trait Scanner {
-    fn trigger(&mut self) -> Result<(), ScanError>;
+    fn trigger(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
     fn try_read(&mut self) -> Option<alloc::vec::Vec<u8>>;
-    fn stop(&mut self);
+    fn read_scan(&mut self) -> impl core::future::Future<Output = Option<alloc::vec::Vec<u8>>>;
+    fn stop(&mut self) -> impl core::future::Future<Output = ()>;
     fn is_connected(&self) -> bool;
-    fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError>;
+    fn set_aim(
+        &mut self,
+        enabled: bool,
+    ) -> impl core::future::Future<Output = Result<(), ScanError>>;
     fn debug_dump_settings(&mut self);
 }
 
@@ -31,8 +35,8 @@ pub trait MicronutsHardware: Scanner {
 
     fn display(&mut self) -> &mut Self::Display;
     fn rng_fill_bytes(&mut self, dest: &mut [u8]);
-    fn transport_poll(&mut self) -> Option<Frame>;
-    fn transport_send(&mut self, response: &Response);
+    fn transport_recv_frame(&mut self) -> impl core::future::Future<Output = Option<Frame>>;
+    fn transport_send(&mut self, response: &Response) -> impl core::future::Future<Output = ()>;
     fn touch_get(&mut self) -> Option<TouchPoint>;
-    fn delay_ms(&mut self, ms: u32);
+    fn delay_ms(&mut self, ms: u32) -> impl core::future::Future<Output = ()>;
 }
