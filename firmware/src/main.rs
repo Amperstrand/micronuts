@@ -16,6 +16,7 @@ use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
 
 use firmware::boot_splash;
 use firmware::hardware_impl::{AsyncUart, FirmwareHardware, RawFramebuffer, UsbDriverType};
+use firmware::self_test;
 use gm65_scanner::{Gm65ScannerAsync, ScannerDriver};
 use linked_list_allocator::LockedHeap;
 
@@ -245,6 +246,14 @@ async fn main(spawner: Spawner) {
     defmt::info!("--- Scanner register dump ---");
     hw.debug_dump_settings();
     defmt::info!("--- End dump ---");
+
+    self_test::run_all(&mut hw).await;
+
+    defmt::info!("Self-test complete, starting app...");
+    let raw_buf = hw.fb.as_raw();
+    for px in raw_buf.iter_mut() {
+        *px = 0x0000;
+    }
 
     micronuts_app::run(&mut hw).await;
 }

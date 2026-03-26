@@ -144,10 +144,7 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
-        match embassy_time::with_timeout(Duration::from_secs(2), self.scanner.read_scan()).await {
-            Ok(result) => result,
-            Err(_) => None,
-        }
+        self.scanner.read_scan().await
     }
 
     async fn stop(&mut self) {

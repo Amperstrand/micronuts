@@ -71,3 +71,6 @@ Embed.toml
 .logs/
 __pycache__/
 state.json
+
+# Hardware test results (runtime artifacts)
+tests/results/
