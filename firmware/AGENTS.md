@@ -285,9 +285,17 @@ To properly validate PR #5738, we created 5 minimal branches on `Amperstrand/emb
 
 Use `./tests/test_usb_variant.sh <branch-name>` to build each variant. See issue #17 for tracking.
 
-### TODO: Hardware test the matrix
+### Hardware test results (2026-03-26)
 
-Priority:
-1. `debug-register-dump` — if it fires on upstream, we have real evidence
-2. `remove-snak-only` — if this alone passes, it's the minimal fix
-3. Remaining variants if needed
+Tested with auto-detecting wallet port (VID:PID 16c0:27dd). Previous session's
+timeouts were false negatives caused by talking to ST-LINK instead of wallet.
+
+**Upstream baseline (84444a19)**: 600/600, 501 cmds/sec, 3.9ms max
+**debug-register-dump**: 1200/1200 across 2 runs (506 cmds/sec, 3.7ms max)
+
+The EPENA stuck detection (1M-poll bounded timeout in `write()`) **never fired**
+across 1200 total commands. Upstream embassy is stable on our hardware.
+
+**Conclusion**: No evidence of IN endpoint hang on STM32F469I-DISCO. Keep upstream
+`84444a19` pin. Test branches remain available if a minimal reproducer surfaces.
+See issue #17 for full details.
