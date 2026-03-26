@@ -164,8 +164,8 @@ async fn main(spawner: Spawner) {
     }
 
     defmt::info!("Initializing USB...");
-    static EP_OUT_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
-    let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 512]);
+    static EP_OUT_BUFFER: StaticCell<[u8; 1024]> = StaticCell::new();
+    let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 1024]);
     let mut usb_config = usb::Config::default();
     usb_config.vbus_detection = false;
     let usb_driver = usb::Driver::new_fs(
