@@ -1,4 +1,5 @@
 use k256::{PublicKey, SecretKey};
+use sha2::{Digest, Sha256};
 
 pub struct DemoMint {
     key_1: SecretKey,
@@ -6,10 +7,10 @@ pub struct DemoMint {
 
 impl DemoMint {
     pub fn new() -> Self {
-        use rand::RngCore;
-        let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
-        let key_1 = SecretKey::from_slice(&bytes).expect("Invalid key");
+        let mut hasher = Sha256::new();
+        Digest::update(&mut hasher, b"demo://micronuts");
+        let seed = Digest::finalize(hasher);
+        let key_1 = SecretKey::from_slice(&seed).expect("Invalid demo mint key");
         Self { key_1 }
     }
 

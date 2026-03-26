@@ -172,13 +172,8 @@ fn handle_get_blinded<H: MicronutsHardware>(state: &mut FirmwareState, hw: &mut 
     let mut offset = 0;
 
     for blinded in &blinded_messages {
-        let bytes = blinded.blinded.to_encoded_point(false);
-        let bytes = bytes.as_bytes();
-        if bytes.len() == 65 {
-            payload[offset..offset + 33].copy_from_slice(&bytes[1..34]);
-        } else {
-            payload[offset..offset + 33].copy_from_slice(&bytes[..33]);
-        }
+        let point = blinded.blinded.to_encoded_point(true);
+        payload[offset..offset + 33].copy_from_slice(point.as_bytes());
         offset += 33;
     }
 
