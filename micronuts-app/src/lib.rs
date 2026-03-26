@@ -106,18 +106,26 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                         }
                     }
                     AppScreen::Scanning => {
-                        if let Some(data) = hw.try_read() {
-                            let payload = qr::decode_qr(&data);
-                            screen = AppScreen::ScanResult;
-                            let _ = hw.set_aim(false).await;
-                            aim_on = false;
-                            scan_ticks = 0;
-                            display::render_decoded_scan(hw.display(), &payload);
-                            last_scan_data = Some(data);
-                        } else {
-                            scan_ticks += 1;
-                            if scan_ticks > SCAN_TIMEOUT_TICKS {
-                                go_home = true;
+                        match embassy_time::with_timeout(
+                            Duration::from_millis(100),
+                            hw.read_scan(),
+                        )
+                        .await
+                        {
+                            Ok(Some(data)) => {
+                                let payload = qr::decode_qr(&data);
+                                screen = AppScreen::ScanResult;
+                                let _ = hw.set_aim(false).await;
+                                aim_on = false;
+                                scan_ticks = 0;
+                                display::render_decoded_scan(hw.display(), &payload);
+                                last_scan_data = Some(data);
+                            }
+                            _ => {
+                                scan_ticks += 1;
+                                if scan_ticks > SCAN_TIMEOUT_TICKS {
+                                    go_home = true;
+                                }
                             }
                         }
 

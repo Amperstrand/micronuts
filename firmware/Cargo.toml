@@ -41,9 +41,6 @@ embassy-futures = { workspace = true }
 # Embassy BSP
 embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
 
-# Touch controller
-ft6x06 = { git = "https://github.com/Amperstrand/ft6x06", rev = "2ed36f74d6b52e8ff68533c01a50d81800ae10b4" }
-
 # USB CDC
 
 

@@ -88,13 +88,6 @@ async fn main(spawner: Spawner) {
         config.rcc.apb2_pre = APBPrescaler::DIV2;
         config.rcc.sys = Sysclk::PLL1_P;
         config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
-        config.rcc.pllsai = Some(Pll {
-            prediv: PllPreDiv::DIV8,
-            mul: PllMul::MUL384,
-            divp: None,
-            divq: None,
-            divr: Some(PllRDiv::DIV7),
-        });
     }
     let mut p = embassy_stm32::init(config);
 
@@ -170,8 +163,8 @@ async fn main(spawner: Spawner) {
     }
 
     defmt::info!("Initializing USB...");
-    static EP_OUT_BUFFER: StaticCell<[u8; 256]> = StaticCell::new();
-    let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 256]);
+    static EP_OUT_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
+    let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 512]);
     let mut usb_config = usb::Config::default();
     usb_config.vbus_detection = false;
     let usb_driver = usb::Driver::new_fs(
