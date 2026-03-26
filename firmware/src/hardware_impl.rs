@@ -15,6 +15,7 @@ use embedded_graphics::{
 use embedded_graphics::pixelcolor::RgbColor;
 use embedded_graphics::prelude::IntoStorage;
 use embedded_hal_02::blocking::serial::Write as _;
+use sha2::Digest;
 
 use gm65_scanner::ScannerDriver;
 
@@ -190,7 +191,20 @@ impl MicronutsHardware for FirmwareHardware {
     }
 
     fn rng_fill_bytes(&mut self, dest: &mut [u8]) {
-        self.rng.fill_bytes(dest);
+        if dest.is_empty() {
+            return;
+        }
+        let mut hasher = sha2::Sha256::new();
+        let mut offset = 0;
+        while offset < dest.len() {
+            let mut raw = [0u8; 32];
+            self.rng.fill_bytes(&mut raw);
+            hasher.update(&raw);
+            let hash = hasher.finalize_reset();
+            let to_copy = core::cmp::min(32, dest.len() - offset);
+            dest[offset..offset + to_copy].copy_from_slice(&hash[..to_copy]);
+            offset += to_copy;
+        }
     }
 
     async fn transport_recv_frame(&mut self) -> Option<Frame> {

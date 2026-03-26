@@ -287,7 +287,7 @@ fn sign_blinded_outputs(mint: &DemoMint, payload: &[u8]) -> Result<Vec<u8>> {
     for chunk in payload.chunks(33) {
         let blinded = PublicKey::from_sec1_bytes(chunk).context("Invalid blinded public key")?;
         let sig = mint.sign(&blinded);
-        signatures.extend_from_slice(&sig.to_sec1_bytes());
+        signatures.extend_from_slice(sig.to_encoded_point(true).as_bytes());
     }
 
     Ok(signatures)
