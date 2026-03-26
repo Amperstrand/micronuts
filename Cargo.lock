@@ -657,7 +657,7 @@ dependencies = [
 [[package]]
 name = "embassy-stm32f469i-disco"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=3646aa87e5b7948440e025a0ed056f4f18e57248#3646aa87e5b7948440e025a0ed056f4f18e57248"
+source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=a407fcd#a407fcd89de3babafe1b0afe9424f32f955c362a"
 dependencies = [
  "cortex-m",
  "embassy-stm32",
@@ -1004,7 +1004,7 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?rev=c6c94871afe60ee55c68cdfa0f17afe6e9cb9836#c6c94871afe60ee55c68cdfa0f17afe6e9cb9836"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=85734ba#85734bac69c7e1f4cf35f2a738df0d8ab1c01d7a"
 dependencies = [
  "bitflags 2.11.0",
  "defmt 1.0.1",

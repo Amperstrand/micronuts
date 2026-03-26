@@ -36,7 +36,7 @@ stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev 
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c6c94871afe60ee55c68cdfa0f17afe6e9cb9836", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async", "defmt"] }
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
 # To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
@@ -49,7 +49,7 @@ embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embas
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 
 # Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "3646aa87e5b7948440e025a0ed056f4f18e57248" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "a407fcd" }
 
 linked_list_allocator = "0.10"
 static_cell = "2.1"
