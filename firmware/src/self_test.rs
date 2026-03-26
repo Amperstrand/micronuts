@@ -210,7 +210,7 @@ async fn test_display(hw: &mut FirmwareHardware) -> TestResult {
 }
 
 async fn test_touch(hw: &mut FirmwareHardware) -> TestResult {
-    defmt::info!("[TEST] Touch... (tap the screen within 60s)");
+    defmt::info!("[TEST] Touch... (tap the screen within 5s)");
 
     if !hw.touch_available {
         defmt::info!("[SKIP] Touch (controller not detected)");
@@ -220,7 +220,7 @@ async fn test_touch(hw: &mut FirmwareHardware) -> TestResult {
     let start = embassy_time::Instant::now();
     loop {
         if embassy_time::Instant::now().duration_since(start) > INTERACTIVE_TIMEOUT {
-            defmt::warn!("[SKIP] Touch (60s timeout, no tap detected)");
+            defmt::warn!("[SKIP] Touch (5s timeout, no tap detected)");
             return TestResult::skip("Touch");
         }
 
@@ -236,7 +236,7 @@ async fn test_touch(hw: &mut FirmwareHardware) -> TestResult {
 }
 
 async fn test_scanner(hw: &mut FirmwareHardware) -> TestResult {
-    defmt::info!("[TEST] Scanner... (scan a QR code within 60s)");
+    defmt::info!("[TEST] Scanner... (scan a QR code within 5s)");
 
     if !hw.is_connected() {
         defmt::info!("[SKIP] Scanner (not connected)");
@@ -266,7 +266,7 @@ async fn test_scanner(hw: &mut FirmwareHardware) -> TestResult {
             TestResult::skip("Scanner")
         }
         Err(_) => {
-            defmt::warn!("[SKIP] Scanner (60s timeout, no scan)");
+            defmt::warn!("[SKIP] Scanner (5s timeout, no scan)");
             TestResult::skip("Scanner")
         }
     }
