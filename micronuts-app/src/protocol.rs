@@ -1,8 +1,6 @@
 extern crate alloc;
 
-pub const MAX_PAYLOAD_SIZE: usize = 256;
-
-const RX_BUF_SIZE: usize = 3 + MAX_PAYLOAD_SIZE;
+pub const MAX_PAYLOAD_SIZE: usize = 1024;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,29 +227,6 @@ impl FrameDecoder {
 }
 
 impl Default for FrameDecoder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct FrameEncoder {
-    tx_buf: [u8; RX_BUF_SIZE],
-}
-
-impl FrameEncoder {
-    pub const fn new() -> Self {
-        Self {
-            tx_buf: [0; RX_BUF_SIZE],
-        }
-    }
-
-    pub fn encode_response(&self, response: &Response) -> &[u8] {
-        let len = response.encode(&mut self.tx_buf.clone());
-        &self.tx_buf[..len]
-    }
-}
-
-impl Default for FrameEncoder {
     fn default() -> Self {
         Self::new()
     }
