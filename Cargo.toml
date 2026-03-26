@@ -38,15 +38,15 @@ qrcodegen-no-heap = "1.8"
 
 gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c6c94871afe60ee55c68cdfa0f17afe6e9cb9836", features = ["sync", "async", "defmt"] }
 
-# Embassy — Amperstrand fork with USB CDC IN endpoint hang fix (c0289d7)
-# Upstream rev 84444a19 + SNAK fix + DSI/LTDC improvements
-embassy-time = { git = "https://github.com/Amperstrand/embassy", package = "embassy-time", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-executor = { git = "https://github.com/Amperstrand/embassy", package = "embassy-executor", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-stm32 = { git = "https://github.com/Amperstrand/embassy", package = "embassy-stm32", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-usb = { git = "https://github.com/Amperstrand/embassy", package = "embassy-usb", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-usb-synopsys-otg = { git = "https://github.com/Amperstrand/embassy", package = "embassy-usb-synopsys-otg", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-sync = { git = "https://github.com/Amperstrand/embassy", package = "embassy-sync", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-futures = { git = "https://github.com/Amperstrand/embassy", package = "embassy-futures", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
+# Embassy — pinned to upstream 84444a19 (same as BSP)
+# To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
+embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 
 # Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
 embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "3646aa87e5b7948440e025a0ed056f4f18e57248" }
@@ -64,13 +64,3 @@ opt-level = "s"
 strip = "none"
 split-debuginfo = "off"
 panic = "abort"
-
-[patch."https://github.com/embassy-rs/embassy"]
-embassy-time = { git = "https://github.com/Amperstrand/embassy", package = "embassy-time", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-time-driver = { git = "https://github.com/Amperstrand/embassy", package = "embassy-time-driver", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-executor = { git = "https://github.com/Amperstrand/embassy", package = "embassy-executor", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-stm32 = { git = "https://github.com/Amperstrand/embassy", package = "embassy-stm32", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-usb = { git = "https://github.com/Amperstrand/embassy", package = "embassy-usb", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-usb-synopsys-otg = { git = "https://github.com/Amperstrand/embassy", package = "embassy-usb-synopsys-otg", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-sync = { git = "https://github.com/Amperstrand/embassy", package = "embassy-sync", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
-embassy-futures = { git = "https://github.com/Amperstrand/embassy", package = "embassy-futures", rev = "c0289d7a8935c8194808b689653bd5fd72620536" }
