@@ -24,16 +24,14 @@ impl std::fmt::Display for HashToCurveError {
 impl std::error::Error for HashToCurveError {}
 
 pub fn hash_to_curve(message: &[u8]) -> Result<PublicKey, HashToCurveError> {
-    let mut counter: u32 = 0;
-
     let msg_hash = Sha256::new()
         .chain_update(DOMAIN_SEPARATOR)
         .chain_update(message)
         .finalize();
 
-    loop {
+    for counter in 0..u16::MAX {
         let candidate = Sha256::new()
-            .chain_update(&msg_hash)
+            .chain_update(msg_hash)
             .chain_update(counter.to_le_bytes())
             .finalize();
 
@@ -50,9 +48,9 @@ pub fn hash_to_curve(message: &[u8]) -> Result<PublicKey, HashToCurveError> {
         {
             return Ok(point);
         }
-
-        counter = counter.checked_add(1).ok_or(HashToCurveError)?;
     }
+
+    Err(HashToCurveError)
 }
 
 pub struct BlindedMessage {
@@ -103,14 +101,23 @@ pub fn unblind_signature(
     PublicKey::from_affine(unblinded_projective.into()).map_err(|_| ())
 }
 
+pub fn sign_message(mint_key: &SecretKey, blinded_message: &PublicKey) -> PublicKey {
+    let b_prime: ProjectivePoint = blinded_message.into();
+    let k_scalar = *mint_key.to_nonzero_scalar();
+    let c_prime = b_prime * k_scalar;
+    PublicKey::from_affine(c_prime.into()).expect("valid signature point")
+}
+
 pub fn verify_signature(
     secret: &[u8],
     unblinded_sig: &PublicKey,
-    _mint_pubkey: &PublicKey,
+    mint_key: &SecretKey,
 ) -> Result<bool, HashToCurveError> {
     let y = hash_to_curve(secret)?;
     let y_projective: ProjectivePoint = y.into();
     let sig_projective: ProjectivePoint = unblinded_sig.into();
+    let k_scalar = *mint_key.to_nonzero_scalar();
+    let expected = y_projective * k_scalar;
 
-    Ok(y_projective == sig_projective || y_projective == -sig_projective)
+    Ok(expected == sig_projective || -expected == sig_projective)
 }

@@ -7,6 +7,7 @@ pub mod crypto;
 pub mod token;
 
 pub use crypto::{
-    blind_message, hash_to_curve, unblind_signature, BlindedMessage, HashToCurveError,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
+    BlindedMessage, HashToCurveError,
 };
 pub use token::{decode_token, encode_token, Proof, TokenV4, TokenV4Token};

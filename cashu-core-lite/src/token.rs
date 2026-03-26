@@ -11,7 +11,7 @@ use std::vec::Vec;
 use core::convert::Infallible;
 use minicbor::{Decode, Encode};
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Proof {
     #[n(0)]
     pub amount: u64,
@@ -26,7 +26,7 @@ pub struct Proof {
     pub c: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct TokenV4Token {
     #[n(0)]
     pub keyset_id: String,
@@ -35,7 +35,7 @@ pub struct TokenV4Token {
     pub proofs: Vec<Proof>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct TokenV4 {
     #[n(0)]
     pub mint: String,
