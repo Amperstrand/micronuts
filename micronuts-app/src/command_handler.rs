@@ -9,11 +9,9 @@ use crate::qr;
 use crate::state::{FirmwareState, SwapState};
 use crate::util::{decode_hex, derive_demo_mint_key, encode_hex};
 use cashu_core_lite::{
-    blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, TokenV4,
-    TokenV4Token,
+    blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, PublicKey,
+    SecretKey, TokenV4, TokenV4Token,
 };
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::{PublicKey, SecretKey};
 
 pub fn handle_command<H: MicronutsHardware>(
     command: Command,
@@ -250,8 +248,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
         let secret = &state.swap_secrets.as_ref().unwrap()[i];
         let amount = state.swap_amounts.as_ref().unwrap()[i];
 
-        let c_bytes = unblinded.to_encoded_point(false);
-        let c_vec = c_bytes.as_bytes().to_vec();
+        let c_vec = unblinded.to_sec1_bytes();
 
         proofs.push(Proof {
             amount,

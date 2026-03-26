@@ -246,6 +246,7 @@ fn main() -> ! {
     defmt::info!("USB initialized, entering main loop");
 
     let scanner_connected = scanner.state() == gm65_scanner::ScannerState::Ready;
+    defmt::info!("Scanner state after init: {}", scanner.state());
 
     let mut hw = FirmwareHardware::new(
         fb,

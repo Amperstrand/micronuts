@@ -252,6 +252,10 @@ impl Scanner for MockHardware {
         println!("[SCANNER] Aim: {}", if enabled { "ON" } else { "OFF" });
         Ok(())
     }
+
+    fn debug_dump_settings(&mut self) {
+        println!("[SCANNER] debug_dump_settings (no-op in simulator)");
+    }
 }
 
 fn has_nvidia_gpu() -> bool {

@@ -1,4 +1,4 @@
-use k256::{PublicKey, SecretKey};
+use cashu_core_lite::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
 pub struct DemoMint {
@@ -19,10 +19,11 @@ impl DemoMint {
     }
 
     pub fn sign(&self, blinded: &PublicKey) -> PublicKey {
-        let scalar = *self.key_1.to_nonzero_scalar();
-        let blinded_affine = blinded.as_affine();
-        let sig_projective = *blinded_affine * scalar;
-        PublicKey::from_affine(sig_projective.into()).expect("Invalid signature")
+        use k256::ProjectivePoint;
+        let scalar = self.key_1.to_scalar();
+        let sig_projective: ProjectivePoint = blinded.into();
+        let c_prime = sig_projective * scalar;
+        PublicKey::from_affine(c_prime.into()).expect("Invalid signature")
     }
 }
 

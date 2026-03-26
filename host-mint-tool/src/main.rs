@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
+use cashu_core_lite::PublicKey;
 use clap::Parser;
-use k256::PublicKey;
 use std::path::PathBuf;
 
 mod mint;
@@ -256,7 +256,7 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
             cashu_core_lite::unblind_signature(&blinded_sig, &blinded.blinder, &mint.public_key())
                 .map_err(|_| anyhow::anyhow!("Failed to unblind signature"))?;
 
-        let c = sig.to_sec1_bytes().to_vec();
+        let c = sig.to_sec1_bytes();
 
         proofs.push(Proof {
             amount: value,

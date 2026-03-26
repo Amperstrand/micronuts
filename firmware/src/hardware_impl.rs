@@ -161,6 +161,26 @@ where
                             });
                         }
                     }
+
+                    fn debug_dump_settings(&mut self) {
+                        use gm65_scanner::protocol::Register;
+                        let regs: &[(Register, &str)] = &[
+                            (Register::Settings, "Settings"),
+                            (Register::ScanEnable, "ScanEnable"),
+                            (Register::Timeout, "Timeout"),
+                            (Register::ScanInterval, "ScanInterval"),
+                            (Register::QrEnable, "QrEnable"),
+                            (Register::BarType, "BarType"),
+                            (Register::SameBarcodeDelay, "SameBCDelay"),
+                        ];
+                        for (reg, name) in regs {
+                            if let Some(v) = self.scanner.get_setting(*reg) {
+                                defmt::info!("Reg {}: 0x{:02x}", name, v);
+                            } else {
+                                defmt::warn!("Reg {}: READ FAIL", name);
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -36,6 +36,7 @@ pub fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
     let mut last_scan_data: Option<Vec<u8>> = None;
     let mut aim_on: bool = false;
     let mut scan_timeout: u32 = 0;
+    let mut scan_poll_count: u32 = 0;
     const SCAN_TIMEOUT_SECS: u32 = 10;
     loop {
         if let Some(frame) = hw.transport_poll() {

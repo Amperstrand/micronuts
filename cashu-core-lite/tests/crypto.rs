@@ -1,7 +1,8 @@
 use cashu_core_lite::{
-    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature, PublicKey,
+    SecretKey,
 };
-use k256::{ProjectivePoint, PublicKey, SecretKey};
+use k256::ProjectivePoint;
 
 fn make_secret_key(bytes: &[u8; 32]) -> SecretKey {
     SecretKey::from_slice(bytes).expect("valid secret key")
@@ -10,7 +11,7 @@ fn make_secret_key(bytes: &[u8; 32]) -> SecretKey {
 fn expected_unblinded(secret: &[u8], mint_key: &SecretKey) -> PublicKey {
     let y = hash_to_curve(secret).expect("should hash to curve");
     let y_proj: ProjectivePoint = y.into();
-    let k_scalar = *mint_key.to_nonzero_scalar();
+    let k_scalar = mint_key.to_scalar();
     let expected = y_proj * k_scalar;
     PublicKey::from_affine(expected.into()).expect("valid point")
 }

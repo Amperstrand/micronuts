@@ -1,5 +1,5 @@
 use cashu_core_lite::hash_to_curve;
-use k256::{elliptic_curve::sec1::ToEncodedPoint, PublicKey};
+use cashu_core_lite::PublicKey;
 
 fn assert_compressed_hex(point: &PublicKey, expected_hex: &str) {
     let encoded = point.to_encoded_point(true);

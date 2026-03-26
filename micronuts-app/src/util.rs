@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use k256::{PublicKey, SecretKey};
+use cashu_core_lite::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
 pub fn decode_hex(s: &str) -> Option<Vec<u8>> {

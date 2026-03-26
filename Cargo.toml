@@ -33,7 +33,7 @@ stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev 
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "b05d7b6176bde382565ea3184153d479d64b41ff", features = ["sync", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c673ef6547d57cce9347672d0b53ea0b7832afaf", features = ["sync", "defmt"] }
 
 [profile.release]
 debug = true

@@ -23,6 +23,7 @@ pub trait Scanner {
     fn stop(&mut self);
     fn is_connected(&self) -> bool;
     fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError>;
+    fn debug_dump_settings(&mut self);
 }
 
 pub trait MicronutsHardware: Scanner {
