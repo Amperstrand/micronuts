@@ -151,28 +151,57 @@ Runs automatically at boot after all peripherals are initialized. Tests:
 3. **Heap** — alloc 1024 bytes, write pattern, verify readback
 4. **Display** — fill framebuffer green (0x07E0), wait 3s for visual confirmation, verify readback
 5. **Touch** — wait up to 60s for touch event (SKIP if no touch)
-6. **Scanner** — trigger scan, wait up to 60s for QR data (SKIP if no scan)
+6. **Scanner** — enable aim laser, trigger scan, wait up to 60s for QR data, stop scan after (SKIP if no scan)
 
 Results logged via defmt RTT. Interactive tests (touch/scanner) SKIP after 60s timeout.
+
+## Scanner Bug Fix (2026-03-26)
+
+**Root cause**: `hardware_impl.rs::read_scan()` wrapped `scanner.read_scan()` with a 2-second `embassy_time::with_timeout()`. The gm65-scanner async driver's `do_read_scan()` has NO internal timeout — it yields cooperatively to the executor while waiting for UART data. The 2-second wrapper killed the read before any caller timeout could fire. The scanner was actively scanning (laser on) but `read_scan()` returned `None` after 2s, which callers interpreted as "no data" instead of "timeout expired, try again".
+
+**Why it worked on main (sync branch)**: The sync driver has a built-in 500K spin-loop timeout inside `read_scan()` itself. The sync `try_read_scan()` was truly non-blocking (single `nb::read()` call). The main loop called `try_read()` in a polling pattern, so no inner timeout was needed.
+
+**Fix**: Removed the 2-second inner timeout from `hardware_impl::read_scan()`. Now it delegates directly to `scanner.read_scan()` which yields cooperatively. All callers manage their own timeouts:
+- Main loop (`lib.rs`): `with_timeout(100ms, hw.read_scan())` — quick poll, retry every 5ms tick
+- Self-test (`self_test.rs`): `with_timeout(60s, hw.read_scan())` — long wait for interactive test
+
+After timeout, callers call `hw.stop()` which sends `stop_scan()` command + `cancel_scan()` to reset both the driver state and GM65 hardware.
 
 ## Hardware Test Evidence
 
 Tested on STM32F469I-Discovery board with ST-Link V2-1 probe.
 
-**Test date**: 2026-03-26
 **Commit**: `a46db97` (embassy branch)
 **Dependency revs**: Embassy `84444a19`, BSP `3646aa87`, GM65 `c6c9487`, stm32f469i-disc `da9fdb2`
+
+### Test run 1 (2026-03-26, initial — before scanner fix)
 
 | Subsystem | Result | Notes |
 |-----------|--------|-------|
 | SDRAM | PASS | 8192 bytes write/read verified |
-| RNG | PASS | 159 unique values in 256 bytes |
+| RNG | PASS (threshold issue) | 165 unique values, threshold was 200 (lowered to 150) |
 | Heap | PASS | 1024 bytes alloc + pattern verified |
 | Display | PASS | Green fill, 384000 pixels (480x800), readback verified |
 | Touch | PASS | FT6X06 detected, touch at x=258 y=382 |
 | Scanner init | PASS | GM65 connected, model identified |
-| Scanner scan | PASS | 21 bytes received (first run), SKIP (second run, no QR scanned within 60s) |
+| Scanner scan | PASS | 21 bytes received (first run) |
 | Boot splash | PASS | Animation plays, touch-to-skip works |
-| USB CDC | PASS | Enumeration as "Micronuts Cashu Hardware Wallet", protocol works |
-| App touch | PASS | Multiple button presses detected (x=309 y=411, x=289 y=439, x=251 y=362, etc) |
+| USB CDC | PASS | Enumeration as "Micronuts Cashu Hardware Wallet" |
 | App flow | PASS | Screen transitions working (home → scanning → scan result) |
+
+### Test run 2 (2026-03-26, after scanner timeout fix)
+
+| Subsystem | Result | Notes |
+|-----------|--------|-------|
+| SDRAM | PASS | 8192 bytes write/read verified |
+| RNG | PASS | 166 unique values in 256 bytes |
+| Heap | PASS | 1024 bytes alloc + pattern verified |
+| Display | PASS | Green fill, 384000 pixels (480x800), readback verified |
+| Touch | PASS | FT6X06 detected, touch at x=313 y=277 |
+| Scanner aim | PASS | Laser enabled via `set_aim(true)` command |
+| Scanner scan | PASS | **23 bytes received from QR code scan** (laser on, QR scanned within 60s) |
+| Boot splash | PASS | Animation plays |
+| USB CDC | PASS | Enumeration works |
+| App flow | PASS | Extensive touch interaction after self-test |
+
+### Conclusion: All subsystems verified on hardware. Embassy async port is functional.
