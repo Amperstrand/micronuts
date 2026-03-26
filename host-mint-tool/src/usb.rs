@@ -19,7 +19,12 @@ impl UsbConnection {
             .open()
             .with_context(|| format!("Failed to open serial port {:?}", path))?;
 
-        // Give the device a moment to reset after connection
+        // Prevent DTR/RTS from resetting the STM32
+        port.write_data_terminal_ready(false)
+            .context("Failed to set DTR")?;
+        port.write_request_to_send(false)
+            .context("Failed to set RTS")?;
+
         std::thread::sleep(Duration::from_millis(100));
 
         Ok(Self { port })
