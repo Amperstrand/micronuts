@@ -70,7 +70,7 @@ src/
 ├── main.rs              Embassy executor, RCC config (no PLLSAI), SDRAM/display/touch/USB/scanner init, boot splash, self-test
 ├── hardware_impl.rs     impl MicronutsHardware + Scanner for FirmwareHardware, RawFramebuffer, AsyncUart, USB CDC Sender/Receiver
 ├── build_info.rs        Compile-time build provenance (git hash, dep revs) via build.rs env vars
-├── self_test.rs         Hardware self-test runner (SDRAM, RNG, heap, display, touch, scanner) — runs at boot, 60s interactive timeouts
+├── self_test.rs         Hardware self-test runner (SDRAM, RNG, heap, display, touch, scanner) — runs at boot, 5s interactive timeouts
 ├── boot_splash.rs       Retro boot splash animation engine
 ├── boot_splash_assets.rs Generated RGB565 tile data
 ├── lib.rs               Module declarations
@@ -82,9 +82,9 @@ src/
 ## Key Dependencies
 
 - `micronuts-app` (workspace member) — shared async business logic (protocol, display, state, commands)
-- `embassy-stm32` @ `c0289d7` (Amperstrand fork) — MCU peripheral drivers (RNG, I2C, USART, USB OTG)
+- `embassy-stm32` @ `84444a19` (upstream) — MCU peripheral drivers (RNG, I2C, USART, USB OTG)
 - `embassy-stm32f469i-disco` @ `3646aa87` — BSP for display (DSI/LTDC/NT35510), SDRAM, touch (FT6X06)
-- `embassy-usb` @ `c0289d7` (Amperstrand fork) — USB CDC class (includes IN endpoint hang fix, PR #5738)
+- `embassy-usb` @ `84444a19` (upstream) — USB CDC class
 - `gm65-scanner` @ `c6c9487` — QR scanner async driver (NOT part of BSP)
 - `embedded-hal-02` (0.2.x) — serial Read/Write traits used by AsyncUart for byte-level reads
 - `cashu-core-lite` — no_std Cashu token decode, blind/unblind
@@ -254,12 +254,40 @@ When `probe-rs run` is attached, it halts the CPU every ~100ms for RTT reads. Th
 
 **Evidence**: gm65-scanner firmware (using old `usb-device`/`usbd-serial`, NOT embassy-usb) also fails enumeration with probe-rs attached, confirming it's a probe-rs + USB coexistence issue.
 
-## Embassy USB Fix (Amperstrand fork c0289d7, PR #5738)
+## Embassy USB Fix Investigation (PR #5738)
 
-Pinned to `c0289d7` from [embassy-rs/embassy#5738](https://github.com/embassy-rs/embassy/pull/5738). This fixes a bug where `configure_endpoints()` sets `SNAK=1` on IN endpoints while `EPENA=0`, then `endpoint_set_enabled(true)` sets `CNAK=1` — undefined behavior per the RM since both SNAK and CNAK are write-only trigger bits. This can leave EPENA stuck at 1 forever, causing IN writes to hang.
+[embassy-rs/embassy#5738](https://github.com/embassy-rs/embassy/pull/5738) claims that `configure_endpoints()` setting SNAK on IN endpoints causes undefined behavior. The theory is sound (SNAK and CNAK are write-only trigger bits, ST HAL/TinyUSB don't do this), but we have NOT reproduced the hang on our hardware.
 
-Cross-stack comparison: ST HAL and TinyUSB do NOT set SNAK during endpoint configuration. Only embassy did this. The fix also adds AHBIDL waits before FIFO flushes (STM32 errata ES0321 §2.16.1) and EPENA recovery in `write()`.
+**Current state**: Pinned to upstream `84444a19` (reverted from fork in `d579f5b`).
 
-The `[patch]` section in workspace `Cargo.toml` overrides all embassy deps for both direct dependencies and the BSP's transitive dependencies.
+### False alarm retrospective
 
-Note: Our firmware worked without the fix at 504 cmds/sec (likely timing-dependent — the bug may not manifest with our specific USB host timing). The fix is still correct and should be kept.
+We initially pinned to the fork because:
+1. probe-rs broke USB enumeration → we thought firmware was broken (issue #15)
+2. Fork logged "EPENA stuck, recovering" warnings → we thought this confirmed the bug
+3. But the warnings were observed WITH probe-rs attached — likely probe-rs artifacts
+
+Our 600/600 stress test at 504 cmds/sec passed on upstream without probe-rs. The fork pin was premature.
+
+### Test matrix
+
+To properly validate PR #5738, we created 5 minimal branches on `Amperstrand/embassy`:
+
+| Branch | Change | Lines |
+|--------|--------|-------|
+| `test/remove-snak-only` | Remove `w.set_snak(true)` from `configure_endpoints()` | -1 |
+| `test/ahbidl-only` | Add `while !ahbidl() {}` before 3 FIFO flush sites | +6 |
+| `test/remove-snak+ahbidl` | Both combined | +6/-1 |
+| `test/remove-snak+ahbidl+disable` | Above + improved IN disable sequence | +28/-3 |
+| `test/debug-register-dump` | Bounded timeout + dump 8 registers on EPENA stuck | +34/-1 |
+
+**None include write() EPENA recovery** — it changes "wait for !epena" into "force-disable" which can abort active transfers.
+
+Use `./tests/test_usb_variant.sh <branch-name>` to build each variant. See issue #17 for tracking.
+
+### TODO: Hardware test the matrix
+
+Priority:
+1. `debug-register-dump` — if it fires on upstream, we have real evidence
+2. `remove-snak-only` — if this alone passes, it's the minimal fix
+3. Remaining variants if needed
