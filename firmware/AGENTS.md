@@ -82,9 +82,9 @@ src/
 ## Key Dependencies
 
 - `micronuts-app` (workspace member) — shared async business logic (protocol, display, state, commands)
-- `embassy-stm32` @ `84444a19` — MCU peripheral drivers (RNG, I2C, USART, USB OTG)
+- `embassy-stm32` @ `c0289d7` (Amperstrand fork) — MCU peripheral drivers (RNG, I2C, USART, USB OTG)
 - `embassy-stm32f469i-disco` @ `3646aa87` — BSP for display (DSI/LTDC/NT35510), SDRAM, touch (FT6X06)
-- `embassy-usb` @ `84444a19` — USB CDC class
+- `embassy-usb` @ `c0289d7` (Amperstrand fork) — USB CDC class (includes IN endpoint hang fix, PR #5738)
 - `gm65-scanner` @ `c6c9487` — QR scanner async driver (NOT part of BSP)
 - `embedded-hal-02` (0.2.x) — serial Read/Write traits used by AsyncUart for byte-level reads
 - `cashu-core-lite` — no_std Cashu token decode, blind/unblind
@@ -150,10 +150,10 @@ Runs automatically at boot after all peripherals are initialized. Tests:
 2. **RNG** — fill 256 bytes, check >150 unique values, <10 zeros, <10 0xFF
 3. **Heap** — alloc 1024 bytes, write pattern, verify readback
 4. **Display** — fill framebuffer green (0x07E0), wait 3s for visual confirmation, verify readback
-5. **Touch** — wait up to 60s for touch event (SKIP if no touch)
-6. **Scanner** — enable aim laser, trigger scan, wait up to 60s for QR data, stop scan after (SKIP if no scan)
+5. **Touch** — wait up to 5s for touch event (SKIP if no touch)
+6. **Scanner** — enable aim laser, trigger scan, wait up to 5s for QR data, stop scan after (SKIP if no scan)
 
-Results logged via defmt RTT. Interactive tests (touch/scanner) SKIP after 60s timeout.
+Results logged via defmt RTT. Interactive tests (touch/scanner) SKIP after 5s timeout (reduced from 60s for faster boot).
 
 ## Scanner Bug Fix (2026-03-26)
 
@@ -205,3 +205,61 @@ Tested on STM32F469I-Discovery board with ST-Link V2-1 probe.
 | App flow | PASS | Extensive touch interaction after self-test |
 
 ### Conclusion: All subsystems verified on hardware. Embassy async port is functional.
+
+## USB CDC Stress Test (2026-03-26)
+
+**IMPORTANT**: Do NOT use `probe-rs run` during USB testing. probe-rs halts the CPU periodically for RTT reads, causing USB disconnects and making enumeration fail. Flash with `st-flash`, reset, wait 15s for boot+self-test, then test via pyserial.
+
+**Correct test methodology**:
+```bash
+arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware target/thumbv7em-none-eabihf/release/firmware.bin
+st-flash --connect-under-reset write target/thumbv7em-none-eabihf/release/firmware.bin 0x08000000
+st-flash --connect-under-reset reset
+# Wait 15s for boot + self-test
+python3 tests/usb_stress_test.py /dev/ttyACM0
+```
+
+### Stress test results (600 commands, upstream embassy 84444a19)
+
+| Metric | Value |
+|--------|-------|
+| Total commands | 600 |
+| Successes | 600 (100%) |
+| Failures | 0 |
+| Total time | 1.19s |
+| Commands/sec | 504 |
+| Median latency | 1.8ms |
+| p95 latency | 2.4ms |
+| p99 latency | 3.2ms |
+| Max latency | 4.2ms |
+
+### Swap flow (raw protocol, all OK)
+
+| Command | Status |
+|---------|--------|
+| ImportToken (CBOR token) | Ok |
+| GetBlinded | Ok (3 blinded pubkey points) |
+| SendSignatures | Ok |
+| GetProofs | Ok (Cashu V4 token) |
+
+## USB CDC Known Issues
+
+### ZLP (Zero-Length Packet)
+
+When response length is a multiple of 64 bytes (USB FS max packet size), the host won't process the transfer until a short packet arrives. Fixed in `hardware_impl.rs::transport_send()` — sends ZLP after `write_all()` when `len % 64 == 0`.
+
+### probe-rs breaks USB enumeration (root cause of #15)
+
+When `probe-rs run` is attached, it halts the CPU every ~100ms for RTT reads. This causes USB disconnects (`device disconnected` in dmesg, `unable to read config descriptor` in lsusb). The firmware's USB CDC works correctly — this is a test methodology issue, not a firmware bug.
+
+**Evidence**: gm65-scanner firmware (using old `usb-device`/`usbd-serial`, NOT embassy-usb) also fails enumeration with probe-rs attached, confirming it's a probe-rs + USB coexistence issue.
+
+## Embassy USB Fix (Amperstrand fork c0289d7, PR #5738)
+
+Pinned to `c0289d7` from [embassy-rs/embassy#5738](https://github.com/embassy-rs/embassy/pull/5738). This fixes a bug where `configure_endpoints()` sets `SNAK=1` on IN endpoints while `EPENA=0`, then `endpoint_set_enabled(true)` sets `CNAK=1` — undefined behavior per the RM since both SNAK and CNAK are write-only trigger bits. This can leave EPENA stuck at 1 forever, causing IN writes to hang.
+
+Cross-stack comparison: ST HAL and TinyUSB do NOT set SNAK during endpoint configuration. Only embassy did this. The fix also adds AHBIDL waits before FIFO flushes (STM32 errata ES0321 §2.16.1) and EPENA recovery in `write()`.
+
+The `[patch]` section in workspace `Cargo.toml` overrides all embassy deps for both direct dependencies and the BSP's transitive dependencies.
+
+Note: Our firmware worked without the fix at 504 cmds/sec (likely timing-dependent — the bug may not manifest with our specific USB host timing). The fix is still correct and should be kept.

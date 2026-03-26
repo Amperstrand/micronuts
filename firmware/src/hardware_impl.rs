@@ -207,6 +207,9 @@ impl MicronutsHardware for FirmwareHardware {
             return;
         }
         let _ = embedded_io_async::Write::write_all(&mut self.usb_sender, &self.encoder_buf[..len]).await;
+        if len % 64 == 0 {
+            let _ = self.usb_sender.write_packet(&[]).await;
+        }
         let _ = embedded_io_async::Write::flush(&mut self.usb_sender).await;
     }
 

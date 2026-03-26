@@ -33,7 +33,7 @@ impl TestResult {
     }
 }
 
-const INTERACTIVE_TIMEOUT: Duration = Duration::from_secs(60);
+const INTERACTIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn log_build_info() {
     defmt::info!("=== MICRONUTS SELF-TEST ===");
