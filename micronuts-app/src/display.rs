@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use cashu_core_lite::token::TokenV4;
+use cashu_core_lite::token::{TokenV4, TokenV4Token};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
@@ -627,6 +627,42 @@ pub fn render_qr_code<D: DrawTarget<Color = Rgb565>>(fb: &mut D, text: &str) -> 
         Err(_) => return false,
     };
 
+    render_qr_modules(fb, &qr, Some(text))
+}
+
+pub fn render_qr_binary<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]) -> bool {
+    if data.is_empty() || data.len() > 2953 {
+        return false;
+    }
+
+    let buf_len = QR_BUF_SIZE + data.len();
+    let mut data_and_temp = alloc::vec![0u8; buf_len];
+    let mut out_buf = [0u8; QR_BUF_SIZE];
+
+    data_and_temp[..data.len()].copy_from_slice(data);
+
+    let qr = match QrCode::encode_binary(
+        &mut data_and_temp,
+        data.len(),
+        &mut out_buf,
+        QrCodeEcc::Medium,
+        Version::MIN,
+        Version::MAX,
+        None,
+        true,
+    ) {
+        Ok(qr) => qr,
+        Err(_) => return false,
+    };
+
+    render_qr_modules(fb, &qr, None)
+}
+
+fn render_qr_modules<D: DrawTarget<Color = Rgb565>>(
+    fb: &mut D,
+    qr: &QrCode,
+    label: Option<&str>,
+) -> bool {
     let border = 2;
     let qr_size = qr.size();
     let total = qr_size + border * 2;
@@ -661,9 +697,14 @@ pub fn render_qr_code<D: DrawTarget<Color = Rgb565>>(fb: &mut D, text: &str) -> 
 
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
     let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
-    let label = truncate_str(text, 50);
+
+    let label_text = match label {
+        Some(text) => truncate_str(text, 50),
+        None => "Cashu V4 Token",
+    };
+
     Text::with_text_style(
-        label,
+        label_text,
         Point::new(WIDTH as i32 / 2, (offset_y + qr_pixel_h + 10) as i32),
         style,
         center,
@@ -687,5 +728,46 @@ pub fn render_qr_mirror<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]) 
         Err(_) => {
             render_status(fb, "Binary data");
         }
+    }
+}
+
+pub fn render_show_proofs<D: DrawTarget<Color = Rgb565>>(
+    fb: &mut D,
+    token: &TokenV4,
+    proofs: &[cashu_core_lite::Proof],
+) {
+    let new_token = TokenV4 {
+        mint: token.mint.clone(),
+        unit: token.unit.clone(),
+        memo: Some(alloc::string::String::from("Swapped via Micronuts")),
+        tokens: alloc::vec![TokenV4Token {
+            keyset_id: proofs
+                .first()
+                .map(|p| p.keyset_id.clone())
+                .unwrap_or_else(|| alloc::string::String::from("00")),
+            proofs: proofs.to_vec(),
+        }],
+    };
+
+    let cbor = match cashu_core_lite::encode_token(&new_token) {
+        Ok(c) => c,
+        Err(_) => {
+            render_error(fb, "Token encode failed");
+            return;
+        }
+    };
+
+    let total_len = 6 + cbor.len();
+    if total_len > 2953 {
+        render_error(fb, "Token too large for QR");
+        return;
+    }
+
+    let mut token_bytes = alloc::vec![0u8; total_len];
+    token_bytes[..6].copy_from_slice(b"cashuB");
+    token_bytes[6..].copy_from_slice(&cbor);
+
+    if !render_qr_binary(fb, &token_bytes) {
+        render_error(fb, "QR encode failed");
     }
 }

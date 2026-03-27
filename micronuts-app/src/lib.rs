@@ -56,6 +56,12 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                     .await;
                     if frame.command == protocol::Command::ScannerTrigger {
                         last_scan_data = None;
+                        if hw.is_connected() {
+                            screen = AppScreen::Scanning;
+                            aim_on = true;
+                            let _ = hw.set_aim(true).await;
+                            scan_ticks = 0;
+                        }
                     }
                     if frame.command == protocol::Command::ImportToken {
                         if let AppScreen::WaitingToken = screen {
@@ -87,10 +93,25 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                 } else if buttons[2].hit(tp.x, tp.y) {
                                     if state.swap_state == state::SwapState::ProofsReady {
                                         screen = AppScreen::ShowProofs;
-                                        display::render_status(
-                                            hw.display(),
-                                            "Generating proof QR...",
-                                        );
+                                        if let (Some(token), Some(proofs)) =
+                                            (&state.imported_token, &state.new_proofs)
+                                        {
+                                            display::render_show_proofs(
+                                                hw.display(),
+                                                token,
+                                                proofs,
+                                            );
+                                        } else {
+                                            display::render_status(
+                                                hw.display(),
+                                                "No proofs available",
+                                            );
+                                            screen = AppScreen::Home;
+                                            display::render_home(
+                                                hw.display(),
+                                                scanner_connected,
+                                            );
+                                        }
                                     } else {
                                         display::render_status(
                                             hw.display(),

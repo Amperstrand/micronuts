@@ -51,10 +51,7 @@ pub async fn handle_command<H: MicronutsHardware>(
                 .unwrap_or_else(|| Response::new(Status::Error))
         }
         Command::ScannerTrigger => match hw.trigger().await {
-            Ok(()) => {
-                display::render_status(hw.display(), "Scanning...");
-                Response::new(Status::Ok)
-            }
+            Ok(()) => Response::new(Status::Ok),
             Err(_) => {
                 display::render_error(hw.display(), "Scanner error");
                 Response::new(Status::ScannerNotConnected)
