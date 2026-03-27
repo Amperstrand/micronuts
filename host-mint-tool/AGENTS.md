@@ -29,3 +29,7 @@ Uses the same USB CDC binary protocol as the firmware. See `firmware/AGENTS.md` 
 
 - `serialport` — Cross-platform serial communication
 - `hex` — Hex encoding/decoding
+
+## Upstream Interaction Policy
+
+**NEVER file PRs or issues on upstream projects (embassy-rs, stm32-rs, etc.) without human review and approval.** AI-generated bug diagnoses can be confidently wrong. Document findings in Amperstrand repos first and let a human decide whether to escalate.
