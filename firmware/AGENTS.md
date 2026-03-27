@@ -254,48 +254,36 @@ When `probe-rs run` is attached, it halts the CPU every ~100ms for RTT reads. Th
 
 **Evidence**: gm65-scanner firmware (using old `usb-device`/`usbd-serial`, NOT embassy-usb) also fails enumeration with probe-rs attached, confirming it's a probe-rs + USB coexistence issue.
 
-## Embassy USB Fix Investigation (PR #5738)
+## Embassy USB SNAK Investigation (Closed)
 
-[embassy-rs/embassy#5738](https://github.com/embassy-rs/embassy/pull/5738) claims that `configure_endpoints()` setting SNAK on IN endpoints causes undefined behavior. The theory is sound (SNAK and CNAK are write-only trigger bits, ST HAL/TinyUSB don't do this), but we have NOT reproduced the hang on our hardware.
+[embassy-rs/embassy#5738](https://github.com/embassy-rs/embassy/pull/5738) was closed after we determined the claimed USB IN endpoint hang was a misdiagnosis caused by probe-rs breaking USB enumeration. The SNAK observation itself is valid (embassy is the only DWC2 driver that sets SNAK on IN endpoints during config), but we could not reproduce any hang on our hardware (600/600 stress test on upstream `84444a19`).
 
-**Current state**: Pinned to upstream `84444a19` (reverted from fork in `d579f5b`).
+**Current state**: Pinned to upstream `84444a19`.
 
-### False alarm retrospective
+See [Amperstrand/embassy#1](https://github.com/Amperstrand/embassy/issues/1) for ongoing SNAK investigation and [Amperstrand/micronuts#19](https://github.com/Amperstrand/micronuts/issues/19) for the full retrospective.
 
-We initially pinned to the fork because:
-1. probe-rs broke USB enumeration → we thought firmware was broken (issue #15)
-2. Fork logged "EPENA stuck, recovering" warnings → we thought this confirmed the bug
-3. But the warnings were observed WITH probe-rs attached — likely probe-rs artifacts
+## Debugging Guardrails
 
-Our 600/600 stress test at 504 cmds/sec passed on upstream without probe-rs. The fork pin was premature.
+### USB testing methodology
 
-### Test matrix
+**CRITICAL: Never use probe-rs during USB testing.** `probe-rs run` halts the CPU periodically for RTT reads, which breaks USB enumeration. Always use `st-flash` for deployment:
 
-To properly validate PR #5738, we created 5 minimal branches on `Amperstrand/embassy`:
+```bash
+arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware target/thumbv7em-none-eabihf/release/firmware.bin
+st-flash --connect-under-reset write target/thumbv7em-none-eabihf/release/firmware.bin 0x08000000
+st-flash --connect-under-reset reset
+sleep 15  # wait for boot + self-test
+python3 tests/usb_stress_test.py /dev/ttyACM1
+```
 
-| Branch | Change | Lines |
-|--------|--------|-------|
-| `test/remove-snak-only` | Remove `w.set_snak(true)` from `configure_endpoints()` | -1 |
-| `test/ahbidl-only` | Add `while !ahbidl() {}` before 3 FIFO flush sites | +6 |
-| `test/remove-snak+ahbidl` | Both combined | +6/-1 |
-| `test/remove-snak+ahbidl+disable` | Above + improved IN disable sequence | +28/-3 |
-| `test/debug-register-dump` | Bounded timeout + dump 8 registers on EPENA stuck | +34/-1 |
+### General debugging rules
 
-**None include write() EPENA recovery** — it changes "wait for !epena" into "force-disable" which can abort active transfers.
+1. **Isolate variables before escalating.** Remove the debugger, swap cables, try a different board. File issues on our own repos first — only escalate upstream after reproducing with correct methodology and getting confirmation from another user.
 
-Use `./tests/test_usb_variant.sh <branch-name>` to build each variant. See issue #17 for tracking.
+2. **Don't read registers while the debugger has the CPU halted.** The state is undefined. Register captures under probe-rs are not evidence of a firmware bug.
 
-### Hardware test results (2026-03-26)
+3. **One board with probe-rs is not evidence of a systematic bug.** If we're the only ones seeing it, the problem is probably in our test setup.
 
-Tested with auto-detecting wallet port (VID:PID 16c0:27dd). Previous session's
-timeouts were false negatives caused by talking to ST-LINK instead of wallet.
+4. **Minimal, separated changes.** One concern per PR. Don't bundle cleanup, errata workarounds, and speculative recovery paths into one commit.
 
-**Upstream baseline (84444a19)**: 600/600, 501 cmds/sec, 3.9ms max
-**debug-register-dump**: 1200/1200 across 2 runs (506 cmds/sec, 3.7ms max)
-
-The EPENA stuck detection (1M-poll bounded timeout in `write()`) **never fired**
-across 1200 total commands. Upstream embassy is stable on our hardware.
-
-**Conclusion**: No evidence of IN endpoint hang on STM32F469I-DISCO. Keep upstream
-`84444a19` pin. Test branches remain available if a minimal reproducer surfaces.
-See issue #17 for full details.
+5. **AI-assisted analysis needs skepticism.** A confident theory that's internally consistent can still be wrong. Always verify with hardware.
