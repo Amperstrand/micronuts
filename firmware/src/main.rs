@@ -3,8 +3,14 @@
 
 extern crate alloc;
 
+#[cfg(feature = "defmt")]
 use defmt_rtt as _;
+#[cfg(feature = "defmt")]
 use panic_probe as _;
+#[cfg(not(feature = "defmt"))]
+use panic_halt as _;
+
+use firmware::{fw_info, fw_warn};
 
 use embassy_executor::Spawner;
 use embassy_stm32::{bind_interrupts, interrupt::InterruptExt, peripherals, rcc::*, time::Hertz, usb, usart, Config};
@@ -92,11 +98,11 @@ async fn main(spawner: Spawner) {
     }
     let mut p = embassy_stm32::init(config);
 
-    defmt::info!("Micronuts firmware starting (embassy)...");
+    fw_info!("Micronuts firmware starting (embassy)...");
 
-    defmt::info!("Initializing SDRAM...");
+    fw_info!("Initializing SDRAM...");
     let sdram = SdramCtrl::new(&mut p, 168_000_000);
-    defmt::info!("SDRAM initialized");
+    fw_info!("SDRAM initialized");
 
     let rng = embassy_stm32::rng::Rng::new(p.RNG, Irqs);
 
@@ -104,16 +110,16 @@ async fn main(spawner: Spawner) {
         let heap_start = sdram.base_address() + FB_SIZE * 4;
         ALLOCATOR.lock().init(heap_start as *mut u8, HEAP_SIZE);
     }
-    defmt::info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
+    fw_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
-    defmt::info!("Initializing display...");
+    fw_info!("Initializing display...");
     let display = DisplayCtrl::new(&sdram, p.PH7);
-    defmt::info!("Display initialized");
+    fw_info!("Display initialized");
 
     let fb_buffer: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
     core::mem::forget(display);
 
-    defmt::info!("Initializing touch...");
+    fw_info!("Initializing touch...");
     let mut touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
         p.I2C1,
         p.PB8,
@@ -125,13 +131,13 @@ async fn main(spawner: Spawner) {
         .read_chip_id(&mut touch_i2c)
         .is_ok();
     if touch_available {
-        defmt::info!("Touch controller ready");
+        fw_info!("Touch controller ready");
     } else {
-        defmt::warn!("Touch controller not found");
+        fw_warn!("Touch controller not found");
     }
 
     {
-        defmt::info!("Running boot splash...");
+        fw_info!("Running boot splash...");
         let mut splash_state = boot_splash::SplashState::new();
         let mut splash_done = false;
         const MAX_SPLASH_FRAMES: u32 = 2 * 3 * 90;
@@ -149,21 +155,21 @@ async fn main(spawner: Spawner) {
             if touch_available {
                 if let Ok(status) = touch_ctrl.td_status(&mut touch_i2c) {
                     if status > 0 {
-                        defmt::info!("Touch detected, exiting splash");
+                        fw_info!("Touch detected, exiting splash");
                         splash_done = true;
                     }
                 }
             }
 
             if splash_state.global_frame >= MAX_SPLASH_FRAMES {
-                defmt::info!("Splash timeout, continuing boot");
+                fw_info!("Splash timeout, continuing boot");
                 splash_done = true;
             }
         }
-        defmt::info!("Boot splash complete");
+        fw_info!("Boot splash complete");
     }
 
-    defmt::info!("Initializing USB...");
+    fw_info!("Initializing USB...");
     static EP_OUT_BUFFER: StaticCell<[u8; 1024]> = StaticCell::new();
     let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 1024]);
     let mut usb_config = usb::Config::default();
@@ -205,9 +211,9 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(usb_task(usb_dev).expect("usb task token"));
 
-    defmt::info!("USB CDC initialized");
+    fw_info!("USB CDC initialized");
 
-    defmt::info!("Initializing QR scanner (USART6)...");
+    fw_info!("Initializing QR scanner (USART6)...");
     embassy_stm32::interrupt::USART6.disable();
 
     let mut uart_config = usart::Config::default();
@@ -219,16 +225,16 @@ async fn main(spawner: Spawner) {
 
     let scanner_connected = match scanner.init().await {
         Ok(model) => {
-            defmt::info!("QR scanner ready: {}", model);
+            fw_info!("QR scanner ready: {}", model);
             true
         }
         Err(e) => {
-            defmt::warn!("QR scanner init failed: {}", e);
+            fw_warn!("QR scanner init failed: {}", e);
             false
         }
     };
 
-    defmt::info!("Scanner state after init: connected={}", scanner_connected);
+    fw_info!("Scanner state after init: connected={}", scanner_connected);
 
     let mut hw = FirmwareHardware::new(
         RawFramebuffer::new(fb_buffer),
@@ -243,13 +249,13 @@ async fn main(spawner: Spawner) {
     );
 
     use micronuts_app::hardware::Scanner;
-    defmt::info!("--- Scanner register dump ---");
+    fw_info!("--- Scanner register dump ---");
     hw.debug_dump_settings();
-    defmt::info!("--- End dump ---");
+    fw_info!("--- End dump ---");
 
     self_test::run_all(&mut hw).await;
 
-    defmt::info!("Self-test complete, starting app...");
+    fw_info!("Self-test complete, starting app...");
     let raw_buf = hw.fb.as_raw();
     for px in raw_buf.iter_mut() {
         *px = 0x0000;

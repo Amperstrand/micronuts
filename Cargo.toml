@@ -5,6 +5,7 @@ members = [
     "cashu-core-lite",
     "host-mint-tool",
     "micronuts-app",
+    "usb-test-no-defmt",
 ]
 
 [workspace.package]
@@ -36,7 +37,7 @@ stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev 
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async"] }
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
 # To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>

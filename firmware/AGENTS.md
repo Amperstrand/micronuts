@@ -262,9 +262,39 @@ Covers: blind/unblind roundtrip, hash-to-curve (CDK vectors), signature verifica
 
 ## USB CDC Stress Test (2026-03-26)
 
-**IMPORTANT**: Do NOT use `probe-rs run` during USB testing. probe-rs halts the CPU periodically for RTT reads, causing USB disconnects and making enumeration fail. Flash with `st-flash`, reset, wait 15s for boot+self-test, then test via pyserial.
+**IMPORTANT**: Do NOT use `probe-rs run` during USB testing. probe-rs sets RTT to blocking mode; if it disconnects without restoring non-blocking mode (probe-rs#2425), defmt calls can freeze the firmware by spin-looping inside a critical section, masking USB interrupts. Flash with `st-flash`, reset, wait 15s for boot+self-test, then test via pyserial.
 
-**Correct test methodology**:
+### Alternative: RTT with `disable-blocking-mode`
+
+```toml
+# firmware/Cargo.toml
+[features]
+rtt-nonblocking = ["defmt", "dep:defmt-rtt", "defmt-rtt/disable-blocking-mode"]
+```
+
+Build with `--features rtt-nonblocking` to use probe-rs + RTT alongside USB CDC. Logs may be lost if the buffer fills, but the firmware will never freeze.
+
+### Alternative: ITM/SWO
+
+The STM32F469I-Discovery has SWO wired to the on-board ST-LINK. ITM writes are fire-and-forget (~1 CPU cycle, dropped if FIFO full). Use `defmt-itm` crate. See [Amperstrand/embassy-stm32f469i-disco#7](https://github.com/Amperstrand/embassy-stm32f469i-disco/issues/7) for details.
+
+### Alternative: Build without defmt
+
+```bash
+cargo build -p firmware --release --no-default-features --target thumbv7em-none-eabihf
+```
+
+Zero defmt, zero RTT, zero overhead. Uses `panic-halt`. For production or USB-only testing.
+
+### Alternative: DEFMT_LOG=off
+
+```bash
+DEFMT_LOG=off cargo build -p firmware --release --target thumbv7em-none-eabihf
+```
+
+Eliminates all defmt macro calls at compile time. RTT buffer still linked (~1.1KB RAM) but no runtime logging.
+
+**Correct test methodology (st-flash)**:
 ```bash
 arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware target/thumbv7em-none-eabihf/release/firmware.bin
 st-flash --connect-under-reset write target/thumbv7em-none-eabihf/release/firmware.bin 0x08000000
@@ -302,11 +332,15 @@ python3 tests/usb_stress_test.py /dev/ttyACM0
 
 When response length is a multiple of 64 bytes (USB FS max packet size), the host won't process the transfer until a short packet arrives. Fixed in `hardware_impl.rs::transport_send()` — sends ZLP after `write_all()` when `len % 64 == 0`.
 
-### probe-rs breaks USB enumeration (root cause of #15)
+### probe-rs + RTT breaks USB (root cause of #15, corrected)
 
-When `probe-rs run` is attached, it halts the CPU every ~100ms for RTT reads. This causes USB disconnects (`device disconnected` in dmesg, `unable to read config descriptor` in lsusb). The firmware's USB CDC works correctly — this is a test methodology issue, not a firmware bug.
+**Previous (incorrect) explanation**: "probe-rs halts the CPU for RTT reads."
 
-**Evidence**: gm65-scanner firmware (using old `usb-device`/`usbd-serial`, NOT embassy-usb) also fails enumeration with probe-rs attached, confirming it's a probe-rs + USB coexistence issue.
+**Correct explanation**: probe-rs sets defmt-rtt to `MODE_BLOCK_IF_FULL` when it connects. If probe-rs disconnects without restoring non-blocking mode ([probe-rs#2425](https://github.com/probe-rs/probe-rs/issues/2425)), any `defmt::info!()` call acquires a critical section and spin-loops waiting for the buffer to drain. Since probe-rs is gone, the firmware freezes with interrupts masked. The USB OTG ISR can't fire, so the host sees a disconnect.
+
+Without probe-rs ever connecting, RTT stays in `MODE_NON_BLOCKING_TRIM` (default) — writes never block, and USB CDC works perfectly (600/600 stress test proven).
+
+**Evidence**: gm65-scanner firmware (using old `usb-device`/`usbd-serial`, NOT embassy-usb) also fails enumeration with probe-rs attached, confirming it's a probe-rs + RTT coexistence issue, not an embassy bug.
 
 ## Embassy USB SNAK Investigation (Closed)
 
@@ -320,7 +354,7 @@ See [Amperstrand/embassy#1](https://github.com/Amperstrand/embassy/issues/1) for
 
 ### USB testing methodology
 
-**CRITICAL: Never use probe-rs during USB testing.** `probe-rs run` halts the CPU periodically for RTT reads, which breaks USB enumeration. Always use `st-flash` for deployment:
+**CRITICAL: Never use probe-rs during USB testing** unless using `disable-blocking-mode`. probe-rs sets RTT to blocking mode; if it disconnects improperly, defmt calls can freeze the firmware (see probe-rs#2425). Use `st-flash` for deployment:
 
 ```bash
 arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware target/thumbv7em-none-eabihf/release/firmware.bin
@@ -328,6 +362,15 @@ st-flash --connect-under-reset write target/thumbv7em-none-eabihf/release/firmwa
 st-flash --connect-under-reset reset
 sleep 15  # wait for boot + self-test
 python3 tests/usb_stress_test.py /dev/ttyACM1
+```
+
+### Connect-under-reset recovery
+
+If the firmware freezes (RTT blocking mode, probe-rs#2425):
+```bash
+st-flash --connect-under-reset reset
+st-flash --connect-under-reset write firmware.bin 0x08000000
+st-flash --connect-under-reset reset
 ```
 
 ### General debugging rules

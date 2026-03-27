@@ -170,7 +170,7 @@ impl Scanner for FirmwareHardware {
             settings & !(ScannerSettings::AIM)
         };
         if self.scanner.set_scanner_settings(new_settings).await {
-            defmt::info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
+            fw_info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
             Ok(())
         } else {
             Err(ScanError::IoError)
@@ -178,8 +178,8 @@ impl Scanner for FirmwareHardware {
     }
 
     fn debug_dump_settings(&mut self) {
-        defmt::info!("Scanner connected: {}", self.scanner.status().connected);
-        defmt::info!("Scanner model: {}", self.scanner.status().model);
+        fw_info!("Scanner connected: {}", self.scanner.status().connected);
+        fw_info!("Scanner model: {}", self.scanner.status().model);
     }
 }
 
@@ -237,7 +237,7 @@ impl MicronutsHardware for FirmwareHardware {
                     if x < 3 || x > 476 || y < 3 || y > 796 {
                         return None;
                     }
-                    defmt::info!("Touch: x={}, y={}", x, y);
+                    fw_info!("Touch: x={}, y={}", x, y);
                     return Some(TouchPoint {
                         x,
                         y,

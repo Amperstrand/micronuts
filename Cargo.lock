@@ -913,6 +913,7 @@ dependencies = [
  "linked_list_allocator",
  "micronuts-app",
  "nb 1.1.0",
+ "panic-halt",
  "panic-probe",
  "qrcodegen-no-heap",
  "rand_core 0.6.4",
@@ -1350,6 +1351,12 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "panic-halt"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a513e167849a384b7f9b746e517604398518590a9142f4846a32e3c2a4de7b11"
 
 [[package]]
 name = "panic-probe"
@@ -1950,6 +1957,21 @@ checksum = "98816b1accafbb09085168b90f27e93d790b4bfa19d883466b5e53315b5f06a6"
 dependencies = [
  "heapless 0.8.0",
  "portable-atomic",
+]
+
+[[package]]
+name = "usb-test-no-defmt"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-stm32",
+ "embassy-time",
+ "embassy-usb",
+ "embassy-usb-synopsys-otg",
+ "static_cell",
 ]
 
 [[package]]

@@ -28,11 +28,12 @@ sha2 = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 rand_core = { workspace = true }
 nb = { workspace = true }
+panic-halt = "1.0"
 
 # Embassy
-embassy-stm32 = { workspace = true, features = ["stm32f469ni", "time-driver-any", "exti", "defmt"] }
-embassy-time = { workspace = true, features = ["defmt"] }
-embassy-executor = { workspace = true, features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-stm32 = { workspace = true, features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-time = { workspace = true }
+embassy-executor = { workspace = true, features = ["platform-cortex-m", "executor-thread"] }
 embassy-usb = { workspace = true }
 embassy-usb-synopsys-otg = { workspace = true }
 embassy-sync = { workspace = true }
@@ -47,3 +48,4 @@ embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
 [features]
 default = ["defmt"]
 defmt = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]
+rtt-nonblocking = ["defmt", "dep:defmt-rtt", "defmt-rtt/disable-blocking-mode"]
