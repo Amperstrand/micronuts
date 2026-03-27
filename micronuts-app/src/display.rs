@@ -1,6 +1,7 @@
 extern crate alloc;
 
-use cashu_core_lite::token::{TokenV4, TokenV4Token};
+use crate::state::build_swap_token;
+use cashu_core_lite::token::TokenV4;
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
@@ -736,18 +737,7 @@ pub fn render_show_proofs<D: DrawTarget<Color = Rgb565>>(
     token: &TokenV4,
     proofs: &[cashu_core_lite::Proof],
 ) {
-    let new_token = TokenV4 {
-        mint: token.mint.clone(),
-        unit: token.unit.clone(),
-        memo: Some(alloc::string::String::from("Swapped via Micronuts")),
-        tokens: alloc::vec![TokenV4Token {
-            keyset_id: proofs
-                .first()
-                .map(|p| p.keyset_id.clone())
-                .unwrap_or_else(|| alloc::string::String::from("00")),
-            proofs: proofs.to_vec(),
-        }],
-    };
+    let new_token = build_swap_token(token, proofs);
 
     let cbor = match cashu_core_lite::encode_token(&new_token) {
         Ok(c) => c,
@@ -769,5 +759,167 @@ pub fn render_show_proofs<D: DrawTarget<Color = Rgb565>>(
 
     if !render_qr_binary(fb, &token_bytes) {
         render_error(fb, "QR encode failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::string::String;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use embedded_graphics::{
+        draw_target::DrawTarget,
+        geometry::{OriginDimensions, Size},
+        pixelcolor::Rgb565,
+        Pixel,
+    };
+
+    struct RecordingDisplay {
+        pixels: Vec<(u32, u32, Rgb565)>,
+        cleared: bool,
+    }
+
+    impl RecordingDisplay {
+        fn new() -> Self {
+            Self {
+                pixels: Vec::new(),
+                cleared: false,
+            }
+        }
+    }
+
+    impl OriginDimensions for RecordingDisplay {
+        fn size(&self) -> Size {
+            Size::new(480, 800)
+        }
+    }
+
+    impl DrawTarget for RecordingDisplay {
+        type Color = Rgb565;
+        type Error = core::convert::Infallible;
+
+        fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+        where
+            I: IntoIterator<Item = Pixel<Self::Color>>,
+        {
+            for Pixel(pos, color) in pixels {
+                self.pixels.push((pos.x as u32, pos.y as u32, color));
+            }
+            Ok(())
+        }
+
+        fn clear(&mut self, _color: Self::Color) -> Result<(), Self::Error> {
+            self.cleared = true;
+            self.pixels.clear();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_render_qr_code_simple_text() {
+        let mut display = RecordingDisplay::new();
+        let result = render_qr_code(&mut display, "hello");
+
+        assert!(result, "render_qr_code should succeed for 'hello'");
+        assert!(display.cleared, "display should be cleared");
+        assert!(display.pixels.len() > 10, "should have many QR pixels");
+
+        let has_black = display.pixels.iter().any(|(_, _, c)| c == &Rgb565::BLACK);
+        let has_white = display.pixels.iter().any(|(_, _, c)| c == &Rgb565::WHITE);
+        assert!(has_black, "QR should have black modules");
+        assert!(has_white, "QR should have white background");
+    }
+
+    #[test]
+    fn test_render_qr_binary_small_data() {
+        let mut display = RecordingDisplay::new();
+        let data = b"cashuB\x01\x02\x03";
+        let result = render_qr_binary(&mut display, data);
+
+        assert!(result, "render_qr_binary should succeed for small data");
+        assert!(display.cleared, "display should be cleared");
+        assert!(display.pixels.len() > 10, "should have many QR pixels");
+    }
+
+    #[test]
+    fn test_render_qr_binary_empty_data() {
+        let mut display = RecordingDisplay::new();
+        let result = render_qr_binary(&mut display, &[]);
+
+        assert!(!result, "render_qr_binary should fail for empty data");
+    }
+
+    #[test]
+    fn test_render_qr_binary_too_large() {
+        let mut display = RecordingDisplay::new();
+        let data = [0u8; 3000];
+        let result = render_qr_binary(&mut display, &data);
+
+        assert!(
+            !result,
+            "render_qr_binary should fail for data > 2953 bytes"
+        );
+    }
+
+    #[test]
+    fn test_render_show_proofs_with_sample_token() {
+        let token = cashu_core_lite::TokenV4 {
+            mint: String::from("https://example.com/mint"),
+            unit: String::from("sat"),
+            memo: None,
+            tokens: vec![cashu_core_lite::TokenV4Token {
+                keyset_id: String::from("00"),
+                proofs: vec![cashu_core_lite::Proof {
+                    amount: 1,
+                    keyset_id: String::from("00"),
+                    secret: String::from("test"),
+                    c: vec![0x02, 0xAB, 0xCD],
+                }],
+            }],
+        };
+
+        let mut display = RecordingDisplay::new();
+        render_show_proofs(&mut display, &token, &token.tokens[0].proofs);
+
+        assert!(display.cleared, "display should be cleared");
+        assert!(display.pixels.len() > 10, "should have QR pixels");
+    }
+
+    #[test]
+    fn test_render_qr_code_empty_string() {
+        let mut display = RecordingDisplay::new();
+        let result = render_qr_code(&mut display, "");
+
+        assert!(
+            result,
+            "render_qr_code succeeds for empty string (encodes as minimal QR)"
+        );
+        assert!(display.cleared);
+    }
+
+    #[test]
+    fn test_render_qr_code_2k_succeeds() {
+        let mut display = RecordingDisplay::new();
+        let long_text = "a".repeat(2000);
+        let result = render_qr_code(&mut display, &long_text);
+
+        assert!(
+            result,
+            "2000 bytes fits within QR version 40 capacity (~2953 bytes)"
+        );
+        assert!(display.cleared);
+    }
+
+    #[test]
+    fn test_render_qr_code_4k_fails() {
+        let mut display = RecordingDisplay::new();
+        let too_long = "x".repeat(4000);
+        let result = render_qr_code(&mut display, &too_long);
+
+        assert!(
+            !result,
+            "render_qr_code should fail for data exceeding QR capacity"
+        );
     }
 }

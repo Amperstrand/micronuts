@@ -6,11 +6,11 @@ use crate::display;
 use crate::hardware::MicronutsHardware;
 use crate::protocol::{Command, Response, Status, MAX_PAYLOAD_SIZE};
 use crate::qr;
-use crate::state::{FirmwareState, SwapState};
+use crate::state::{build_swap_token, FirmwareState, SwapState};
 use crate::util::{decode_hex, derive_demo_mint_key, encode_hex};
 use cashu_core_lite::{
     blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, PublicKey,
-    SecretKey, TokenV4, TokenV4Token,
+    SecretKey,
 };
 
 pub async fn handle_command<H: MicronutsHardware>(
@@ -278,18 +278,7 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
         None => return Response::new(Status::Error),
     };
 
-    let new_token = TokenV4 {
-        mint: token.mint.clone(),
-        unit: token.unit.clone(),
-        memo: Some(alloc::string::String::from("Swapped via Micronuts")),
-        tokens: alloc::vec![TokenV4Token {
-            keyset_id: proofs
-                .first()
-                .map(|p| p.keyset_id.clone())
-                .unwrap_or_else(|| alloc::string::String::from("00")),
-            proofs: proofs.clone(),
-        }],
-    };
+    let new_token = build_swap_token(token, proofs);
 
     let encoded = match encode_token(&new_token) {
         Ok(e) => e,

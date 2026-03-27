@@ -26,8 +26,8 @@ echo "---" | tee -a "$LOG_FILE"
 echo "Flashing firmware..."
 echo ">>> Watch the board display during self-test <<<"
 echo ">>> The screen will turn GREEN during the display test <<<"
-echo ">>> Tap the screen when prompted (60s timeout) <<<"
-echo ">>> Scan a QR code when prompted (60s timeout) <<<"
+echo ">>> Tap the screen when prompted (5s timeout) <<<"
+echo ">>> Scan a QR code when prompted (5s timeout) <<<"
 echo ""
 
 if ! probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware 2>&1 | tee -a "$LOG_FILE"; then

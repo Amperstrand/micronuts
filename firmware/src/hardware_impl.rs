@@ -234,7 +234,7 @@ impl MicronutsHardware for FirmwareHardware {
         if let Ok(status) = self.touch_ctrl.td_status(&mut self.touch_i2c) {
             if status > 0 {
                 if let Ok(BspTouchPoint { x, y }) = self.touch_ctrl.get_touch(&mut self.touch_i2c) {
-                    if x == 0 || x == 479 || y == 0 || y == 799 {
+                    if x < 3 || x > 476 || y < 3 || y > 796 {
                         return None;
                     }
                     defmt::info!("Touch: x={}, y={}", x, y);

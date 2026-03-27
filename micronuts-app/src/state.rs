@@ -1,6 +1,10 @@
 extern crate alloc;
 
+use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
+
+use cashu_core_lite::{Proof, TokenV4, TokenV4Token};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwapState {
@@ -11,13 +15,28 @@ pub enum SwapState {
 }
 
 pub struct FirmwareState {
-    pub imported_token: Option<cashu_core_lite::TokenV4>,
+    pub imported_token: Option<TokenV4>,
     pub blinded_messages: Option<Vec<cashu_core_lite::BlindedMessage>>,
     pub swap_secrets: Option<Vec<Vec<u8>>>,
     pub swap_amounts: Option<Vec<u64>>,
-    pub new_proofs: Option<Vec<cashu_core_lite::Proof>>,
+    pub new_proofs: Option<Vec<Proof>>,
     pub swap_state: SwapState,
     pub last_scan_data: Option<Vec<u8>>,
+}
+
+pub fn build_swap_token(token: &TokenV4, proofs: &[Proof]) -> TokenV4 {
+    TokenV4 {
+        mint: token.mint.clone(),
+        unit: token.unit.clone(),
+        memo: Some(String::from("Swapped via Micronuts")),
+        tokens: vec![TokenV4Token {
+            keyset_id: proofs
+                .first()
+                .map(|p| p.keyset_id.clone())
+                .unwrap_or_else(|| String::from("00")),
+            proofs: proofs.to_vec(),
+        }],
+    }
 }
 
 impl FirmwareState {
@@ -85,5 +104,83 @@ mod tests {
     fn test_new_state_is_const() {
         const STATE: FirmwareState = FirmwareState::new();
         assert_eq!(STATE.swap_state, SwapState::Idle);
+    }
+
+    #[test]
+    fn test_build_swap_token() {
+        let token = TokenV4 {
+            mint: String::from("https://mint.example.com"),
+            unit: String::from("sat"),
+            memo: Some(String::from("original")),
+            tokens: vec![],
+        };
+        let proofs = vec![
+            Proof {
+                amount: 2,
+                keyset_id: String::from("00"),
+                secret: String::from("secret1"),
+                c: vec![0x02, 0xAB],
+            },
+            Proof {
+                amount: 8,
+                keyset_id: String::from("00"),
+                secret: String::from("secret2"),
+                c: vec![0x02, 0xCD],
+            },
+        ];
+
+        let result = build_swap_token(&token, &proofs);
+
+        assert_eq!(result.mint, "https://mint.example.com");
+        assert_eq!(result.unit, "sat");
+        assert_eq!(result.memo.as_deref(), Some("Swapped via Micronuts"));
+        assert_eq!(result.tokens.len(), 1);
+        assert_eq!(result.tokens[0].keyset_id, "00");
+        assert_eq!(result.tokens[0].proofs.len(), 2);
+        assert_eq!(result.tokens[0].proofs[0].amount, 2);
+        assert_eq!(result.tokens[0].proofs[1].amount, 8);
+    }
+
+    #[test]
+    fn test_build_swap_token_empty_proofs() {
+        let token = TokenV4 {
+            mint: String::from("https://mint.example.com"),
+            unit: String::from("sat"),
+            memo: None,
+            tokens: vec![],
+        };
+        let proofs: Vec<Proof> = vec![];
+
+        let result = build_swap_token(&token, &proofs);
+
+        assert_eq!(result.tokens[0].keyset_id, "00");
+        assert_eq!(result.tokens[0].proofs.len(), 0);
+    }
+
+    #[test]
+    fn test_build_swap_token_uses_first_keyset_id() {
+        let token = TokenV4 {
+            mint: String::from("https://mint.example.com"),
+            unit: String::from("sat"),
+            memo: None,
+            tokens: vec![],
+        };
+        let proofs = vec![
+            Proof {
+                amount: 1,
+                keyset_id: String::from("aa"),
+                secret: String::from("s"),
+                c: vec![0x02],
+            },
+            Proof {
+                amount: 2,
+                keyset_id: String::from("bb"),
+                secret: String::from("t"),
+                c: vec![0x02],
+            },
+        ];
+
+        let result = build_swap_token(&token, &proofs);
+        assert_eq!(result.tokens[0].keyset_id, "aa");
     }
 }

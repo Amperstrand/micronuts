@@ -56,7 +56,9 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                     .await;
                     if frame.command == protocol::Command::ScannerTrigger {
                         last_scan_data = None;
-                        if hw.is_connected() {
+                        if hw.is_connected()
+                            && matches!(screen, AppScreen::Home | AppScreen::ShowProofs)
+                        {
                             screen = AppScreen::Scanning;
                             aim_on = true;
                             let _ = hw.set_aim(true).await;

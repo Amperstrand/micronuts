@@ -55,6 +55,7 @@ pub async fn run_all(hw: &mut FirmwareHardware) -> Vec<TestResult> {
     results.push(test_rng(hw));
     results.push(test_heap());
     results.push(test_display(hw).await);
+    results.push(test_qr_display(hw));
     results.push(test_touch(hw).await);
     results.push(test_scanner(hw).await);
 
@@ -206,6 +207,43 @@ async fn test_display(hw: &mut FirmwareHardware) -> TestResult {
     } else {
         defmt::error!("[FAIL] Display (framebuffer readback mismatch)");
         TestResult::fail("Display")
+    }
+}
+
+fn test_qr_display(hw: &mut FirmwareHardware) -> TestResult {
+    defmt::info!("[TEST] QR Display... (screen should show QR code)");
+
+    let result = micronuts_app::display::render_qr_code(
+        &mut hw.fb,
+        "MICRONUTS SELF-TEST OK",
+    );
+
+    if !result {
+        defmt::error!("[FAIL] QR Display (encode failed)");
+        let buf = hw.fb.as_raw();
+        for px in buf.iter_mut() {
+            *px = 0x0000;
+        }
+        return TestResult::fail("QR Display");
+    }
+
+    let center_x = FB_WIDTH as usize / 2;
+    let center_y = FB_HEIGHT as usize / 2;
+    let center_idx = center_y * FB_WIDTH as usize + center_x;
+
+    let buf = hw.fb.as_raw();
+    let has_white = buf[center_idx] != 0x0000;
+
+    for px in buf.iter_mut() {
+        *px = 0x0000;
+    }
+
+    if has_white {
+        defmt::info!("[PASS] QR Display (rendered, center pixel non-zero)");
+        TestResult::pass("QR Display")
+    } else {
+        defmt::error!("[FAIL] QR Display (center pixel was black — QR not rendered?)");
+        TestResult::fail("QR Display")
     }
 }
 
