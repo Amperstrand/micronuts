@@ -299,3 +299,7 @@ across 1200 total commands. Upstream embassy is stable on our hardware.
 **Conclusion**: No evidence of IN endpoint hang on STM32F469I-DISCO. Keep upstream
 `84444a19` pin. Test branches remain available if a minimal reproducer surfaces.
 See issue #17 for full details.
+
+## Upstream Interaction Policy
+
+**NEVER file PRs or issues on upstream projects (embassy-rs, stm32-rs, DougAnderson444, etc.) without human review and approval.** AI-generated bug diagnoses can be confidently wrong — see the SNAK investigation retrospective above (PR #5738 was a misdiagnosis caused by probe-rs artifacts, not a real bug). File issues and PRs on Amperstrand repos only. If you believe you've found an upstream bug, write it up in an Amperstrand issue with evidence and let a human decide whether to escalate.

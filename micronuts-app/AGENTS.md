@@ -79,3 +79,7 @@ Defined in `hardware.rs`. All methods use `impl Future` RPITIT syntax (async tra
 - 5 state machine tests — screen flow, transitions
 - 5 protocol codec tests — frame encode/decode
 - 30 cashu-core-lite tests — crypto, hash-to-curve, token encoding
+
+## Upstream Interaction Policy
+
+**NEVER file PRs or issues on upstream projects (embassy-rs, stm32-rs, etc.) without human review and approval.** AI-generated bug diagnoses can be confidently wrong. Document findings in Amperstrand repos first and let a human decide whether to escalate.

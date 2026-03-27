@@ -36,3 +36,7 @@ Core types for Cashu V4 token operations on embedded hardware:
 ```bash
 cargo test
 ```
+
+## Upstream Interaction Policy
+
+**NEVER file PRs or issues on upstream projects without human review and approval.** AI-generated bug diagnoses can be confidently wrong. Document findings in Amperstrand repos first and let a human decide whether to escalate.
