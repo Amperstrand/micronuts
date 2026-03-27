@@ -150,8 +150,9 @@ Runs automatically at boot after all peripherals are initialized. Tests:
 2. **RNG** — fill 256 bytes, check >150 unique values, <10 zeros, <10 0xFF
 3. **Heap** — alloc 1024 bytes, write pattern, verify readback
 4. **Display** — fill framebuffer green (0x07E0), wait 3s for visual confirmation, verify readback
-5. **Touch** — wait up to 5s for touch event (SKIP if no touch)
-6. **Scanner** — enable aim laser, trigger scan, wait up to 5s for QR data, stop scan after (SKIP if no scan)
+5. **QR Display** — render "MICRONUTS SELF-TEST OK" as QR code, verify center pixel is non-zero (white QR background), clear to black
+6. **Touch** — wait up to 5s for touch event (SKIP if no touch)
+7. **Scanner** — enable aim laser, trigger scan, wait up to 5s for QR data, stop scan after (SKIP if no scan)
 
 Results logged via defmt RTT. Interactive tests (touch/scanner) SKIP after 5s timeout (reduced from 60s for faster boot).
 
@@ -172,7 +173,7 @@ After timeout, callers call `hw.stop()` which sends `stop_scan()` command + `can
 Tested on STM32F469I-Discovery board with ST-Link V2-1 probe.
 
 **Commit**: `a46db97` (embassy branch)
-**Dependency revs**: Embassy `84444a19`, BSP `3646aa87`, GM65 `c6c9487`, stm32f469i-disc `da9fdb2`
+**Dependency revs**: Embassy `84444a19`, BSP `a407fcd`, GM65 `85734ba`, stm32f469i-disc `da9fdb2`
 
 ### Test run 1 (2026-03-26, initial — before scanner fix)
 
@@ -205,6 +206,59 @@ Tested on STM32F469I-Discovery board with ST-Link V2-1 probe.
 | App flow | PASS | Extensive touch interaction after self-test |
 
 ### Conclusion: All subsystems verified on hardware. Embassy async port is functional.
+
+**NOTE**: QR display self-test added in `3b28197` but not yet verified on hardware (pending flash).
+
+## Software Tests (CI)
+
+Run with `cargo test --workspace --exclude firmware`. No hardware needed.
+
+### Test counts (2026-03-27)
+
+| Crate | Tests | Status |
+|-------|-------|--------|
+| micronuts-app | 39 | All passing |
+| cashu-core-lite | 30 | All passing |
+| **Total** | **69** | All passing |
+
+### micronuts-app tests (39)
+
+| Test | What it verifies |
+|------|-----------------|
+| `test_full_swap_flow` | ImportToken → GetBlinded → SendSignatures → GetProofs roundtrip |
+| `test_import_token_valid` | Token import + state transition |
+| `test_import_token_invalid` | Invalid CBOR rejected |
+| `test_get_blinded_after_import` | Blinded message generation |
+| `test_send_signatures_wrong_count` | Signature count mismatch detected |
+| `test_get_proofs_no_proofs` | Error when no proofs available |
+| `test_get_token_info_after_import` | Token info response format |
+| `test_scanner_status_connected` | Scanner status payload |
+| `test_scanner_status_disconnected` | Scanner disconnected status |
+| `test_scanner_trigger_connected` | Trigger returns Ok |
+| `test_scanner_trigger_disconnected` | Trigger returns ScannerNotConnected |
+| `test_scanner_data_no_data` | No data returns NoScanData |
+| `test_scanner_data_with_data` | Data returned with type byte |
+| `test_render_qr_code_simple_text` | QR rendering produces black+white pixels |
+| `test_render_qr_binary_small_data` | Binary QR encoding works |
+| `test_render_qr_binary_empty_data` | Empty data rejected |
+| `test_render_qr_binary_too_large` | Data >2953 bytes rejected |
+| `test_render_show_proofs_with_sample_token` | ShowProofs QR rendering doesn't panic |
+| `test_render_qr_code_empty_string` | Empty string encodes as minimal QR |
+| `test_render_qr_code_2k_succeeds` | 2000 bytes fits QR capacity |
+| `test_render_qr_code_4k_fails` | 4000 bytes exceeds QR capacity |
+| `test_build_swap_token` | Token construction preserves mint/unit/memo/proofs |
+| `test_build_swap_token_empty_proofs` | Empty proofs handled gracefully |
+| `test_build_swap_token_uses_first_keyset_id` | First proof's keyset_id used |
+| `test_new_state_is_idle` | Initial state is Idle |
+| `test_swap_state_progression` | State transitions work correctly |
+| `test_swap_state_equality` | State comparison works |
+| `test_swap_state_copy` | State is Copy |
+| `test_new_state_is_const` | State is const-constructible |
+| + 7 protocol/frame tests | Frame encode/decode, response encoding |
+
+### cashu-core-lite tests (30)
+
+Covers: blind/unblind roundtrip, hash-to-curve (CDK vectors), signature verification, token encode/decode, amount calculation. See `cashu-core-lite/AGENTS.md`.
 
 ## USB CDC Stress Test (2026-03-26)
 
