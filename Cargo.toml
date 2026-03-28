@@ -50,7 +50,7 @@ embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embas
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 
 # Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "a407fcd" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "b58cc10" }
 
 linked_list_allocator = "0.10"
 static_cell = "2.1"

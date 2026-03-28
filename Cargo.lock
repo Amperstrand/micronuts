@@ -657,7 +657,7 @@ dependencies = [
 [[package]]
 name = "embassy-stm32f469i-disco"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=a407fcd#a407fcd89de3babafe1b0afe9424f32f955c362a"
+source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=b58cc10#b58cc10703145171134e3fee2fe820d5551e7377"
 dependencies = [
  "cortex-m",
  "embassy-stm32",
@@ -666,6 +666,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-hal 1.0.0",
  "nt35510",
+ "otm8009a",
  "stm32-fmc",
 ]
 
@@ -1351,6 +1352,16 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "otm8009a"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e56059a2e83de4409e5fa0854d3ae891b0f949af86c74ccf76a8bffe4ce6dc6d"
+dependencies = [
+ "embedded-display-controller",
+ "embedded-hal 0.2.7",
+]
 
 [[package]]
 name = "panic-halt"
