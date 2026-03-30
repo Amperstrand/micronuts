@@ -129,7 +129,7 @@ async fn main(spawner: Spawner) {
     );
     let touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new();
     let touch_available = touch_ctrl
-        .read_chip_id(&mut touch_i2c)
+        .read_vendor_id(&mut touch_i2c)
         .is_ok();
     if touch_available {
         fw_info!("Touch controller ready");
