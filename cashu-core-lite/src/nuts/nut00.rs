@@ -111,6 +111,7 @@ pub fn decompose_amount(amount: u64) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
     use alloc::vec;
 
     #[test]
