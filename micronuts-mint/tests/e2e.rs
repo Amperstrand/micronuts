@@ -9,16 +9,20 @@
 //!   - Build works in host/native mode without STM32 hardware
 
 use cashu_core_lite::nuts::{nut04, nut05, nut07};
+use cashu_core_lite::rpc::RpcMintClient;
 use cashu_core_lite::Wallet;
-use micronuts_mint::{DemoMint, DirectTransport};
+use micronuts_mint::{DemoMint, LoopbackTransport};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 /// Helper: create a deterministic wallet + mint pair for testing.
-fn test_wallet() -> (Wallet<DirectTransport>, cashu_core_lite::nuts::nut01::KeySet) {
+fn test_wallet() -> (
+    Wallet<RpcMintClient<LoopbackTransport<DemoMint>>>,
+    cashu_core_lite::nuts::nut01::KeySet,
+) {
     let mint = DemoMint::new();
     let keyset = mint.public_keyset();
-    let transport = DirectTransport::new(mint);
+    let transport = RpcMintClient::new(LoopbackTransport::from_demo_mint(mint));
     let wallet = Wallet::new("https://demo.micronuts.local", transport);
     (wallet, keyset)
 }

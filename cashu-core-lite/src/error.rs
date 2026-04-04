@@ -4,34 +4,47 @@
 use alloc::string::String;
 
 use core::fmt;
+use minicbor::{Decode, Encode};
 
 /// Errors that can occur during Cashu wallet/mint operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum CashuError {
     /// Transport-level error (network, USB, serial, etc.).
-    Transport(String),
+    #[n(0)]
+    Transport(#[n(0)] String),
     /// Protocol-level error (malformed request/response).
-    Protocol(String),
+    #[n(1)]
+    Protocol(#[n(0)] String),
     /// Cryptographic error (invalid key, bad signature, etc.).
-    Crypto(String),
+    #[n(2)]
+    Crypto(#[n(0)] String),
     /// Requested amount is invalid (zero, overflow, etc.).
+    #[n(3)]
     InvalidAmount,
     /// Quote not found on the mint.
+    #[n(4)]
     QuoteNotFound,
     /// Quote exists but hasn't been paid yet.
+    #[n(5)]
     QuoteNotPaid,
     /// Quote has already been issued.
+    #[n(6)]
     QuoteAlreadyIssued,
     /// Sum of input proofs is insufficient for the request.
+    #[n(7)]
     InsufficientInputs,
     /// Proof failed verification.
+    #[n(8)]
     InvalidProof,
     /// Keyset ID not recognized by the mint.
+    #[n(9)]
     KeysetNotFound,
     /// Input and output amounts don't balance (NUT-03).
+    #[n(10)]
     AmountMismatch,
     /// Generic / uncategorized error.
-    Unknown(String),
+    #[n(11)]
+    Unknown(#[n(0)] String),
 }
 
 impl fmt::Display for CashuError {

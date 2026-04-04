@@ -18,3 +18,8 @@ pub use mint_core::DemoMint;
 
 mod direct_transport;
 pub use direct_transport::DirectTransport;
+
+mod loopback_transport;
+pub use loopback_transport::{DemoRpcClient, LoopbackTransport};
+
+mod rpc_service;

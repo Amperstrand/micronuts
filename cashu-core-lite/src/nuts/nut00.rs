@@ -11,18 +11,22 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::keypair::PublicKey;
+use minicbor::{Decode, Encode};
 
 /// A blinded message sent from wallet to mint (NUT-00).
 ///
 /// The wallet blinds a secret `x` into `B_ = Y + r*G` where `Y = hash_to_curve(x)`.
 /// The mint signs `B_` with its private key for the given amount.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlindedMessage {
     /// The denomination value of this output.
+    #[n(0)]
     pub amount: u64,
     /// The keyset ID identifying which mint key to use.
+    #[n(1)]
     pub id: String,
     /// `B_`: the blinded secret (a curve point).
+    #[n(2)]
     pub b: PublicKey,
 }
 
@@ -30,13 +34,16 @@ pub struct BlindedMessage {
 ///
 /// The mint computes `C_ = k * B_` where `k` is the mint's private key
 /// for the requested amount.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlindSignature {
     /// The denomination value of this output.
+    #[n(0)]
     pub amount: u64,
     /// The keyset ID used for signing.
+    #[n(1)]
     pub id: String,
     /// `C_`: the blinded signature (a curve point).
+    #[n(2)]
     pub c: PublicKey,
 }
 
@@ -44,22 +51,28 @@ pub struct BlindSignature {
 ///
 /// After unblinding: `C = C_ - r*K` where `K` is the mint's public key.
 /// The proof is `(secret, C)` which the mint can verify using its private key.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Proof {
     /// The denomination value of this proof.
+    #[n(0)]
     pub amount: u64,
     /// The keyset ID that was used to sign this proof.
+    #[n(1)]
     pub id: String,
     /// The secret `x` (hex-encoded).
+    #[n(2)]
     pub secret: String,
     /// `C`: the unblinded signature (a curve point).
+    #[n(3)]
     pub c: PublicKey,
 }
 
 /// Cashu error response (NUT-00).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ErrorResponse {
+    #[n(0)]
     pub detail: String,
+    #[n(1)]
     pub code: u32,
 }
 

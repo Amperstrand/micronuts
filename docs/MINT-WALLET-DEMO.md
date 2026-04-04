@@ -3,6 +3,11 @@
 Minimal viable demo implementing Cashu NUT protocol types and a transport-neutral
 wallet/mint architecture for the Micronuts hardware wallet project.
 
+The current milestone moves the host-side demo across a **real serialized RPC
+boundary**. The wallet no longer uses the mint via in-process function calls on
+the main demo/test path; it now encodes CBOR RPC frames, exchanges bytes, and
+decodes the mint response on the other side of a loopback byte transport.
+
 ## NUTs Implemented
 
 | NUT | Name | Status | Notes |
@@ -46,6 +51,11 @@ wallet/mint architecture for the Micronuts hardware wallet project.
 │                │ error.rs │  │  transport.rs      │  │
 │                │CashuError│  │  MintClient trait  │  │
 │                └──────────┘  └───────────────────┘  │
+│                ┌──────────┐  ┌───────────────────┐  │
+│                │  rpc.rs  │  │ RpcMintClient<T>  │  │
+│                │ CBOR RPC │  │ MintRpcHandler    │  │
+│                │ envelopes│  │ RpcByteTransport  │  │
+│                └──────────┘  └───────────────────┘  │
 │                              ┌───────────────────┐  │
 │                              │  wallet.rs        │  │
 │                              │  Wallet<T>        │  │
@@ -64,8 +74,16 @@ wallet/mint architecture for the Micronuts hardware wallet project.
 │  │  ID derivation│  │  post_swap, post_melt, ...  │  │
 │  └──────────────┘  └──────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐│
-│  │  direct_transport.rs (DirectTransport)           ││
-│  │  impl MintClient → calls DemoMint in-process     ││
+│  │ rpc_service.rs                                   ││
+│  │ impl MintService for DemoMint                    ││
+│  └──────────────────────────────────────────────────┘│
+│  ┌──────────────────────────────────────────────────┐│
+│  │ loopback_transport.rs                            ││
+│  │ encoded request bytes → handler → response bytes ││
+│  └──────────────────────────────────────────────────┘│
+│  ┌──────────────────────────────────────────────────┐│
+│  │ direct_transport.rs (reference only)             ││
+│  │ old in-process shortcut retained for comparison  ││
 │  └──────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────┘
 ```
@@ -75,9 +93,39 @@ wallet/mint architecture for the Micronuts hardware wallet project.
 The `MintClient` trait in `cashu-core-lite/src/transport.rs` defines how the wallet
 communicates with a mint. Implementations can be swapped without changing wallet code:
 
-- **`DirectTransport`** (current): calls `DemoMint` in-process — no I/O
-- **Future USB adapter**: wraps existing CDC protocol from `micronuts-app/src/protocol.rs`
-- **Future microfips adapter**: carries NUT requests over FIPS transport
+- **Old `DirectTransport`**: calls `DemoMint` in-process — kept only as a reference
+- **Current RPC path**: `RpcMintClient<LoopbackTransport<DemoMint>>`
+- **Future serial adapter**: wraps these same CBOR frames inside serial framing
+- **Future microfips adapter**: carries the same RPC frames over microfips/FIPS
+
+## Direct Path vs RPC Path
+
+### Old direct in-process path
+
+```text
+Wallet<T=DirectTransport>
+  -> MintClient methods
+  -> DemoMint methods directly
+```
+
+This was useful to validate wallet/mint logic, but it did not prove a real wire
+boundary.
+
+### New RPC loopback path
+
+```text
+Wallet<T=RpcMintClient<LoopbackTransport<DemoMint>>>
+  -> MintClient methods
+  -> encode MintRpcRequest with minicbor
+  -> LoopbackTransport exchanges request bytes
+  -> MintRpcHandler decodes bytes and dispatches by NUT operation
+  -> DemoMint service methods run
+  -> MintRpcHandler encodes MintRpcResponse
+  -> RpcMintClient decodes response bytes
+```
+
+This is the required precursor to microfips integration because the protocol is
+now expressed as a transport-neutral byte exchange instead of an in-process API.
 
 ## How to Build
 
@@ -87,7 +135,7 @@ communicates with a mint. Implementations can be swapped without changing wallet
 # Build the wallet + mint demo
 cargo build -p micronuts-mint
 
-# Run the interactive demo
+# Run the RPC loopback wallet/mint demo
 cargo run -p micronuts-mint --bin demo
 ```
 
@@ -121,6 +169,12 @@ cargo build -p firmware --release
 # Run all tests (unit + integration + e2e)
 cargo test -p micronuts-mint
 
+# Run RPC envelope tests in cashu-core-lite
+cargo test -p cashu-core-lite --features std --test rpc
+
+# Run byte-level loopback transport tests
+cargo test -p micronuts-mint --test rpc_loopback
+
 # Run all wallet/mint checks used by CI
 cargo test -p cashu-core-lite --features std -p micronuts-mint
 cargo run -p micronuts-mint --bin demo
@@ -144,10 +198,39 @@ cargo run -p micronuts-mint --bin demo
   our local implementation aligned without pulling server-oriented dependencies
   into the embedded build.
 - Those tests currently validate hash-to-curve, blind/sign/unblind flow,
-  quote-state strings, and greedy denomination splitting against upstream
-  `cashu` behavior.
+  quote-state strings, greedy denomination splitting, and now RPC-envelope
+  roundtrips against the local wire protocol.
 - This gives us reuse and regression protection now, while preserving a clean
   path for future transport adapters and embedded targets.
+
+## Module / Role Layout
+
+### `cashu-core-lite`
+
+- `src/transport.rs`
+  - wallet-side `MintClient` trait
+- `src/rpc.rs`
+  - `MintRpcRequest`
+  - `MintRpcResponse`
+  - `MintRpcMethod`
+  - `MintRpcResult`
+  - `MintService`
+  - `MintRpcHandler`
+  - `RpcByteTransport`
+  - `RpcMintClient<T>`
+
+### `micronuts-mint`
+
+- `src/mint_core.rs`
+  - `DemoMint` core mint logic
+- `src/rpc_service.rs`
+  - `impl MintService for DemoMint`
+- `src/loopback_transport.rs`
+  - host-side byte loopback implementation
+- `src/direct_transport.rs`
+  - legacy direct path kept as reference only
+- `src/bin/demo.rs`
+  - wallet-side demo using RPC loopback by default
 
 ### Expected Demo Output
 
@@ -192,7 +275,7 @@ cargo run -p micronuts-mint --bin demo
 | Multiple keysets | Single hardcoded | Multiple keysets with rotation |
 | DLEQ proofs | Not implemented | NUT-12 for public-key verification |
 | Restore | Not implemented | NUT-09 for wallet recovery |
-| Transport | Direct in-process | USB CDC, HTTP, microfips |
+| Transport | RPC loopback bytes | serial framing, USB CDC, microfips |
 
 ## Next Steps
 
@@ -205,10 +288,23 @@ cargo run -p micronuts-mint --bin demo
 
 ### Carry Request/Response Layer Over Microfips
 
-1. Implement `MintClient` trait over microfips transport
-2. Serialize/deserialize NUT types into microfips frames
-3. The wallet code (`Wallet<T>`) works unchanged — just swap the transport
-4. Add a `MicrofipsMintTransport` adapter implementing `MintClient`
+1. Keep `MintRpcRequest` / `MintRpcResponse` as the payload format
+2. Wrap the encoded CBOR bytes inside microfips frames
+3. Implement `RpcByteTransport` over microfips send/receive
+4. Reuse `RpcMintClient<T>` unchanged on the wallet side
+5. Reuse `MintRpcHandler<DemoMint>` unchanged on the mint side
+
+### What Can Replace Today’s Specialized Serial Commands
+
+The eventual replacement for the current specialized serial command set should be:
+
+1. a small serial framing layer
+2. carrying `MintRpcRequest` / `MintRpcResponse` CBOR payloads
+3. dispatched by `MintRpcHandler`
+4. consumed by `RpcMintClient`
+
+That lets serial, USB CDC, and microfips all share the same Cashu RPC payload
+layer instead of each transport inventing its own request-specific command set.
 
 ### Add Real Lightning Backend
 

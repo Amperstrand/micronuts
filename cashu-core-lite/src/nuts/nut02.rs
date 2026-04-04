@@ -11,25 +11,31 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::keypair::PublicKey;
+use minicbor::{Decode, Encode};
 use sha2::{Digest, Sha256};
 
 /// Keyset metadata (NUT-02).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct KeysetInfo {
     /// Keyset identifier (16 hex chars, e.g. "009a1f293253e41e").
+    #[n(0)]
     pub id: String,
     /// Unit (e.g. "sat").
+    #[n(1)]
     pub unit: String,
     /// Whether this keyset is currently active for new signatures.
+    #[n(2)]
     pub active: bool,
     /// Input fee in parts per thousand (NUT-02 fee field).
     /// Demo shortcut: typically 0 for demo mints.
+    #[n(3)]
     pub input_fee_ppk: u64,
 }
 
 /// Response for `GET /v1/keysets` (NUT-02).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct KeysetsResponse {
+    #[n(0)]
     pub keysets: Vec<KeysetInfo>,
 }
 

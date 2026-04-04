@@ -15,6 +15,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::keypair::PublicKey;
+use minicbor::{Decode, Encode};
 
 /// Proof state values as defined in NUT-07.
 pub mod state {
@@ -24,25 +25,30 @@ pub mod state {
 }
 
 /// Request body for `POST /v1/checkstate` (NUT-07).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct CheckStateRequest {
     /// `Y` values: `hash_to_curve(secret)` for each proof to check.
+    #[n(0)]
     pub ys: Vec<PublicKey>,
 }
 
 /// Individual proof state entry in the response (NUT-07).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofState {
     /// `Y = hash_to_curve(secret)` for this proof.
+    #[n(0)]
     pub y: PublicKey,
     /// Current state: "UNSPENT", "SPENT", or "PENDING".
+    #[n(1)]
     pub state: String,
     /// Optional witness data.
+    #[n(2)]
     pub witness: Option<String>,
 }
 
 /// Response body for `POST /v1/checkstate` (NUT-07).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct CheckStateResponse {
+    #[n(0)]
     pub states: Vec<ProofState>,
 }

@@ -16,6 +16,11 @@ use k256::{
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
     EncodedPoint, ProjectivePoint, PublicKey as K256PublicKey, SecretKey as K256SecretKey,
 };
+use minicbor::{
+    decode::Error as DecodeError,
+    encode::{Error as EncodeError, Write},
+    Decode, Decoder, Encode, Encoder,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PublicKey(K256PublicKey);
@@ -136,6 +141,28 @@ impl Deref for SecretKey {
 impl From<K256SecretKey> for SecretKey {
     fn from(sk: K256SecretKey) -> Self {
         Self(sk)
+    }
+}
+
+impl<C> Encode<C> for PublicKey {
+    fn encode<W: Write>(
+        &self,
+        e: &mut Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), EncodeError<W::Error>> {
+        e.bytes(&self.to_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for PublicKey {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, DecodeError> {
+        let bytes = d.bytes()?;
+        let compressed: [u8; 33] = bytes
+            .try_into()
+            .map_err(|_| DecodeError::message("invalid public key length"))?;
+        PublicKey::from_bytes(&compressed)
+            .ok_or_else(|| DecodeError::message("invalid compressed public key"))
     }
 }
 

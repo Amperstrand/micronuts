@@ -3,24 +3,27 @@
 //! Build and run:
 //!   cargo run -p micronuts-mint --bin demo
 //!
-//! This demonstrates the full flow without any hardware or network:
+//! This demonstrates the full flow without hardware or networking, but now
+//! across a real serialized RPC boundary:
 //!   1. Wallet gets mint info and keys
 //!   2. Wallet mints ecash (mint quote → mint)
 //!   3. Wallet swaps ecash (changes denominations)
 //!   4. Wallet melts ecash (pays a dummy invoice)
 
 use cashu_core_lite::nuts::nut00;
+use cashu_core_lite::rpc::RpcMintClient;
 use cashu_core_lite::Wallet;
-use micronuts_mint::{DemoMint, DirectTransport};
+use micronuts_mint::{DemoMint, LoopbackTransport};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 fn main() {
     println!("=== Micronuts Wallet ↔ Mint Demo ===\n");
 
-    // Create the demo mint and wire it directly to the wallet
+    // Create the demo mint service and connect the wallet through the
+    // serialized RPC loopback transport.
     let mint = DemoMint::new();
-    let transport = DirectTransport::new(mint);
+    let transport = RpcMintClient::new(LoopbackTransport::from_demo_mint(mint));
     let mut wallet = Wallet::new("https://demo.micronuts.local", transport);
     let mut rng = StdRng::seed_from_u64(1337);
 
