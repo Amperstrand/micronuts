@@ -70,7 +70,11 @@ fn test_get_keysets() {
     assert!(ki.active);
     assert_eq!(ki.unit, "sat");
     assert_eq!(ki.input_fee_ppk, 0);
-    assert!(ki.id.starts_with("00"), "keyset ID should start with version 00");
+    assert!(
+        ki.id.starts_with("00"),
+        "keyset ID '{}' should start with version 00",
+        ki.id
+    );
     assert_eq!(ki.id.len(), 16, "keyset ID should be 16 hex chars");
 }
 

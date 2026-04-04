@@ -312,7 +312,7 @@ impl DemoMint {
         entry.state = nut05::state::PAID.to_string();
 
         // Demo shortcut: dummy payment preimage (32 zero bytes hex)
-        let dummy_preimage_hex = "0".repeat(64);
+        let dummy_preimage_hex = "00".repeat(32);
 
         Ok(nut05::MeltResponse {
             paid: true,
