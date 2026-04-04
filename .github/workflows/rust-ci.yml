@@ -19,7 +19,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run wallet/mint tests
-        run: cargo test -p cashu-core-lite --features std -p micronuts-mint
+        run: cargo test -p cashu-core-lite --features std -p micronuts-mint -p micronuts-fips-bridge
 
       - name: Run demo flow
         run: cargo run -p micronuts-mint --bin demo

@@ -215,11 +215,14 @@ fn service_error_to_cashu_error(error: ServiceError) -> CashuError {
 #[cfg(test)]
 mod tests {
     use cashu_core_lite::error::CashuError;
-    use cashu_core_lite::rpc::RpcMintClient;
+    use cashu_core_lite::rpc::{RpcByteTransport, RpcMintClient};
     use cashu_core_lite::transport::MintClient;
     use micronuts_mint::DemoMint;
 
-    use super::{CashuRpcServiceAdapter, ServiceHandlerTransport};
+    use super::{
+        CashuRpcServiceAdapter, ServiceError, ServiceHandler, ServiceHandlerTransport,
+        ServiceMethod, ServiceReply, ServiceRequest, ServiceStatus,
+    };
 
     #[test]
     fn rpc_roundtrip_works_over_service_handler_transport() {
@@ -242,5 +245,66 @@ mod tests {
 
         let err = client.get_info().expect_err("small buffer should fail");
         assert!(matches!(err, CashuError::Transport(_)));
+    }
+
+    #[test]
+    fn adapter_rejects_non_post_requests() {
+        let mut adapter = CashuRpcServiceAdapter::new(DemoMint::new());
+        let mut response = [0u8; 64];
+        let err = adapter
+            .handle(
+                ServiceRequest {
+                    method: ServiceMethod::Get,
+                    route: super::CASHU_RPC_ROUTE,
+                    payload: &[],
+                },
+                &mut response,
+            )
+            .expect_err("GET should be rejected");
+
+        assert_eq!(err.status, ServiceStatus::MethodNotAllowed);
+    }
+
+    #[test]
+    fn adapter_rejects_unknown_route() {
+        let mut adapter = CashuRpcServiceAdapter::new(DemoMint::new());
+        let mut response = [0u8; 64];
+        let err = adapter
+            .handle(
+                ServiceRequest {
+                    method: ServiceMethod::Post,
+                    route: "/rpc/unknown",
+                    payload: &[],
+                },
+                &mut response,
+            )
+            .expect_err("unknown route should be rejected");
+
+        assert_eq!(err.status, ServiceStatus::NotFound);
+    }
+
+    struct AlwaysCreatedHandler;
+
+    impl ServiceHandler for AlwaysCreatedHandler {
+        fn handle(
+            &mut self,
+            _request: ServiceRequest<'_>,
+            _response: &mut [u8],
+        ) -> Result<ServiceReply, ServiceError> {
+            Ok(ServiceReply {
+                status: ServiceStatus::Created,
+                content_type: super::ContentType::Binary,
+                body_len: 0,
+            })
+        }
+    }
+
+    #[test]
+    fn transport_rejects_non_ok_reply_status() {
+        let mut transport = ServiceHandlerTransport::new(AlwaysCreatedHandler);
+        let err = transport
+            .exchange(&[0x01, 0x02])
+            .expect_err("non-OK status should fail");
+        assert!(matches!(err, CashuError::Protocol(_)));
     }
 }
