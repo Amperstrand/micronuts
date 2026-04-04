@@ -12,6 +12,7 @@ rand_core = { workspace = true }
 minicbor = { workspace = true }
 
 [dev-dependencies]
+cashu = "0.16.0"
 hex = "0.4"
 
 [features]

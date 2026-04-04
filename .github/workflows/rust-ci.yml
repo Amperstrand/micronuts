@@ -1,0 +1,45 @@
+name: Rust CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-wallet-mint:
+    name: Host wallet/mint checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run wallet/mint tests
+        run: cargo test -p cashu-core-lite --features std -p micronuts-mint
+
+      - name: Run demo flow
+        run: cargo run -p micronuts-mint --bin demo
+
+      - name: Check native simulator crate
+        run: cargo check -p micronuts-app
+
+  firmware:
+    name: Firmware build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build firmware
+        run: cargo build -p firmware --target thumbv7em-none-eabihf

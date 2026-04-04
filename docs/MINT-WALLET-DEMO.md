@@ -121,12 +121,33 @@ cargo build -p firmware --release
 # Run all tests (unit + integration + e2e)
 cargo test -p micronuts-mint
 
+# Run all wallet/mint checks used by CI
+cargo test -p cashu-core-lite --features std -p micronuts-mint
+cargo run -p micronuts-mint --bin demo
+cargo check -p micronuts-app
+
 # Run only e2e tests
 cargo test -p micronuts-mint --test e2e
 
 # Run the demo binary with full output
 cargo run -p micronuts-mint --bin demo
 ```
+
+## Upstream Cashu / CDK Reuse Strategy
+
+- `cashu-core-lite` remains `no_std`, so we do **not** depend on `cdk` or `cashu`
+  in production code.
+- Instead, Micronuts follows upstream Cashu/CDK request/response shapes and
+  mirrors selected helper semantics, especially amount splitting and quote-state
+  strings.
+- We use the upstream `cashu` crate in **std-only compatibility tests** to keep
+  our local implementation aligned without pulling server-oriented dependencies
+  into the embedded build.
+- Those tests currently validate hash-to-curve, blind/sign/unblind flow,
+  quote-state strings, and greedy denomination splitting against upstream
+  `cashu` behavior.
+- This gives us reuse and regression protection now, while preserving a clean
+  path for future transport adapters and embedded targets.
 
 ### Expected Demo Output
 

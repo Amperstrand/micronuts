@@ -65,19 +65,33 @@ pub struct ErrorResponse {
 
 /// Decompose an amount into powers of two (NUT-00 optimal split).
 ///
-/// Returns a sorted (ascending) vector of power-of-two denominations that sum
-/// to the given amount. For example, `decompose_amount(13)` returns `[1, 4, 8]`.
+/// Returns a vector of power-of-two denominations that sum to the given amount.
+/// For example, `decompose_amount(13)` returns `[8, 4, 1]`.
+///
+/// This intentionally mirrors the upstream Cashu/CDK greedy split semantics
+/// (`cashu::Amount::split` with power-of-two denominations and zero fee),
+/// while keeping the implementation `no_std`.
 pub fn decompose_amount(amount: u64) -> Vec<u64> {
+    if amount == 0 {
+        return Vec::new();
+    }
+
     let mut result = Vec::new();
     let mut remaining = amount;
     let mut denomination = 1u64;
-    while remaining > 0 {
-        if remaining & 1 == 1 {
-            result.push(denomination);
-        }
-        remaining >>= 1;
+
+    while denomination <= remaining / 2 {
         denomination <<= 1;
     }
+
+    while denomination > 0 {
+        if denomination <= remaining {
+            result.push(denomination);
+            remaining -= denomination;
+        }
+        denomination >>= 1;
+    }
+
     result
 }
 
@@ -90,9 +104,9 @@ mod tests {
         assert_eq!(decompose_amount(0), Vec::<u64>::new());
         assert_eq!(decompose_amount(1), vec![1]);
         assert_eq!(decompose_amount(2), vec![2]);
-        assert_eq!(decompose_amount(3), vec![1, 2]);
-        assert_eq!(decompose_amount(13), vec![1, 4, 8]);
+        assert_eq!(decompose_amount(3), vec![2, 1]);
+        assert_eq!(decompose_amount(13), vec![8, 4, 1]);
         assert_eq!(decompose_amount(64), vec![64]);
-        assert_eq!(decompose_amount(100), vec![4, 32, 64]);
+        assert_eq!(decompose_amount(100), vec![64, 32, 4]);
     }
 }
