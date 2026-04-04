@@ -209,10 +209,11 @@ The two repos have naturally compatible RPC boundaries:
 - ✅ Branches pushed to remote
 - ✅ GitHub issues created and updated
 - ✅ Documentation updated
+- ✅ microfips PR #55 MERGED (2026-04-04)
+- ✅ WiFi rework PR #56 created (awaiting Xtensa verification)
 
 ## What Was NOT Done (Per Original Instructions)
 
-- ❌ No PRs opened (pending human review)
 - ❌ No branches deleted
 - ❌ No unrelated cleanup
 - ❌ No architecture rewriting
@@ -221,22 +222,56 @@ The two repos have naturally compatible RPC boundaries:
 
 ---
 
-## Next Steps
+## Current Blockers (P1)
 
 ### micronuts
-- Open PR from `integration/micronuts-wallet-mint-rpc` → `main`
-- Review the 12 commits for merge strategy (squash-merge or rebase-merge recommended)
-- Post-merge: consider cleaning up feature branches (`feat/defmt-conditional-build`, `copilot/add-demo-role-for-micronuts`)
+- **PR #26** - Needs review and merge (blocks M10)
+  - 12 commits, 67 tests passing
+  - All fixes applied
+  - Ready for merge
 
 ### microfips
-- Open PR from `integration/microfips-service-layer` → `main`
-- Review the 5 commits (already well-structured, can merge as-is)
-- Post-merge: GitHub issue #52 remains open for WiFi reimplementation tracking
-- Post-merge: GitHub issue #51 closed as "documented expected behavior"
-- Consider reimplementing WiFi support against new modular architecture (see #52)
+- **PR #56** - Needs Xtensa toolchain verification (blocks WiFi feature)
+  - Host tests pass
+  - Requires Espressif toolchain for full verification
 
-### Cross-repo integration
-- Create `micronuts-fips-bridge` crate once both PRs land
-- Implement `RpcByteTransport` trait for microfips `ServiceHandler`
-- Add e2e test: mint/wallet flow over FSP transport
-- Estimated effort: 2–3 days
+---
+
+## Next Steps
+
+### Immediate (This Week)
+
+1. **Merge PRs:**
+   - Review and merge micronuts PR #26
+   - Verify and merge microfips PR #56
+
+2. **Start M10/M11 (Cross-Repo Integration):**
+   - Create \`micronuts-fips-bridge\` crate
+   - Implement \`RpcByteTransport\` trait for microfips \`ServiceHandler\`
+   - Add e2e test: mint/wallet flow over FSP transport
+   - **Estimated effort: 2–3 days**
+
+### Post-Merge
+
+3. **Clean up:**
+   - Delete old feature branches:
+     - \`feat/defmt-conditional-build\` (superseded by cherry-pick)
+     - \`copilot/add-demo-role-for-micronuts\` (merged via PR #26)
+     - \`copilot/add-wifi-connection-for-esp32\` (superseded by PR #56)
+   - Close completed issues
+
+### Next Milestone: M10/M11 - Cross-Repo Integration
+
+**Definition of Done:**
+- [ ] Both integration PRs merged (#26, #56)
+- [ ] Bridge crate created (\`micronuts-fips-bridge\`)
+- [ ] \`RpcByteTransport\` implemented for \`ServiceHandler\`
+- [ ] CBOR compatibility verified
+- [ ] Unit tests passing
+- [ ] Integration tests passing
+- [ ] CI updated for cross-crate testing
+- [ ] Documentation complete
+
+**Tracking Issues:**
+- micronuts #25 - M10
+- microfips #54 - M11
