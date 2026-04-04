@@ -5,7 +5,7 @@ members = [
     "cashu-core-lite",
     "host-mint-tool",
     "micronuts-app",
-    "micronuts-mint",
+    "micronuts-mint", "micronuts-fips-bridge",
 ]
 
 [workspace.package]
