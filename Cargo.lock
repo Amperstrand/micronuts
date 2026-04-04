@@ -1857,6 +1857,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "micronuts-fips-bridge"
+version = "0.1.0"
+dependencies = [
+ "cashu-core-lite",
+ "micronuts-mint",
+ "minicbor",
+]
+
+[[package]]
 name = "micronuts-mint"
 version = "0.1.0"
 dependencies = [

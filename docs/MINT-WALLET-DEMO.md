@@ -98,6 +98,23 @@ communicates with a mint. Implementations can be swapped without changing wallet
 - **Future serial adapter**: wraps these same CBOR frames inside serial framing
 - **Future microfips adapter**: carries the same RPC frames over microfips/FIPS
 
+### M10 Bridge Status (micronuts-fips-bridge)
+
+The workspace now includes a bridge crate, `micronuts-fips-bridge`, that proves
+the service-boundary integration seam used for microfips compatibility.
+
+What it currently provides:
+
+- `CashuRpcServiceAdapter<S: MintService>`: exposes `MintRpcHandler` behind a
+  microfips-style service `handle()` boundary (`ServiceRequest`/`ServiceReply`)
+- `ServiceHandlerTransport<H>`: implements `RpcByteTransport` by calling any
+  `ServiceHandler`, so `RpcMintClient<T>` can run unchanged over that boundary
+- Roundtrip tests and error-mapping tests for method/route validation, payload
+  limits, and status handling
+
+This keeps cross-repo wiring explicit and testable without hard-coupling
+`micronuts-mint` to microfips runtime internals.
+
 ## Direct Path vs RPC Path
 
 ### Old direct in-process path
