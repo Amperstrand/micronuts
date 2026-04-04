@@ -1,0 +1,133 @@
+//! NUT-00: Notation, ID, and Units
+//!
+//! Core data models for blinded messages, blind signatures, and proofs
+//! used throughout the Cashu protocol.
+//!
+//! Reference: https://github.com/cashubtc/nuts/blob/main/00.md
+
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
+use crate::keypair::PublicKey;
+use minicbor::{Decode, Encode};
+
+/// A blinded message sent from wallet to mint (NUT-00).
+///
+/// The wallet blinds a secret `x` into `B_ = Y + r*G` where `Y = hash_to_curve(x)`.
+/// The mint signs `B_` with its private key for the given amount.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlindedMessage {
+    /// The denomination value of this output.
+    #[n(0)]
+    pub amount: u64,
+    /// The keyset ID identifying which mint key to use.
+    #[n(1)]
+    pub id: String,
+    /// `B_`: the blinded secret (a curve point).
+    #[n(2)]
+    pub b: PublicKey,
+}
+
+/// A blind signature returned from mint to wallet (NUT-00).
+///
+/// The mint computes `C_ = k * B_` where `k` is the mint's private key
+/// for the requested amount.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlindSignature {
+    /// The denomination value of this output.
+    #[n(0)]
+    pub amount: u64,
+    /// The keyset ID used for signing.
+    #[n(1)]
+    pub id: String,
+    /// `C_`: the blinded signature (a curve point).
+    #[n(2)]
+    pub c: PublicKey,
+}
+
+/// A proof of ecash ownership (NUT-00).
+///
+/// After unblinding: `C = C_ - r*K` where `K` is the mint's public key.
+/// The proof is `(secret, C)` which the mint can verify using its private key.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct Proof {
+    /// The denomination value of this proof.
+    #[n(0)]
+    pub amount: u64,
+    /// The keyset ID that was used to sign this proof.
+    #[n(1)]
+    pub id: String,
+    /// The secret `x` (hex-encoded).
+    #[n(2)]
+    pub secret: String,
+    /// `C`: the unblinded signature (a curve point).
+    #[n(3)]
+    pub c: PublicKey,
+}
+
+/// Cashu error response (NUT-00).
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct ErrorResponse {
+    #[n(0)]
+    pub detail: String,
+    #[n(1)]
+    pub code: u32,
+}
+
+/// Decompose an amount into powers of two (NUT-00 optimal split).
+///
+/// Returns a vector of power-of-two denominations that sum to the given amount.
+/// For example, `decompose_amount(13)` returns `[8, 4, 1]`.
+///
+/// This intentionally mirrors the upstream Cashu/CDK greedy split semantics
+/// (`cashu::Amount::split` with power-of-two denominations and zero fee),
+/// while keeping the implementation `no_std`.
+pub fn decompose_amount(amount: u64) -> Vec<u64> {
+    if amount == 0 {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    let mut remaining = amount;
+    let mut denomination = 1u64;
+
+    while denomination <= remaining / 2 {
+        denomination <<= 1;
+    }
+
+    while denomination > 0 {
+        if denomination <= remaining {
+            result.push(denomination);
+            remaining -= denomination;
+        }
+        denomination >>= 1;
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
+
+    #[test]
+    fn test_decompose_amount() {
+        assert_eq!(decompose_amount(0), Vec::<u64>::new());
+        assert_eq!(decompose_amount(1), vec![1]);
+        assert_eq!(decompose_amount(2), vec![2]);
+        assert_eq!(decompose_amount(3), vec![2, 1]);
+        assert_eq!(decompose_amount(13), vec![8, 4, 1]);
+        assert_eq!(decompose_amount(64), vec![64]);
+        assert_eq!(decompose_amount(100), vec![64, 32, 4]);
+        assert_eq!(decompose_amount(1u64 << 32), vec![1u64 << 32]);
+        assert_eq!(decompose_amount(1u64 << 63), vec![1u64 << 63]);
+        assert_eq!(
+            decompose_amount(u64::MAX),
+            (0..64).rev().map(|bit| 1u64 << bit).collect::<Vec<_>>()
+        );
+    }
+}

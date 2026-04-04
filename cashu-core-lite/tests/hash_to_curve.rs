@@ -29,11 +29,13 @@ fn test_hash_to_curve_different_inputs_produce_different_outputs() {
 
 #[test]
 fn test_hash_to_curve_cdk_vector_secret_zero() {
+    // These vectors were updated when Micronuts aligned `hash_to_curve` with the
+    // upstream Cashu/CDK reference, which hashes a 4-byte little-endian counter.
     let secret = [0u8; 32];
     let point = hash_to_curve(&secret).expect("should find valid point");
     assert_compressed_hex(
         &point,
-        "024c84933755027799375b5e661a0b084b92fb34402fc7bb15609c0a8c45017ab1",
+        "024cce997d3b518f739663b757deaec95bcd9473c30a14ac2fd04023a739d1a725",
     );
 }
 
@@ -44,7 +46,7 @@ fn test_hash_to_curve_cdk_vector_secret_one() {
     let point = hash_to_curve(&secret).expect("should find valid point");
     assert_compressed_hex(
         &point,
-        "02773f15d3489cad416a08d23fffa6ea03883e9a108be6cd353e0171afbc7ea881",
+        "022e7158e11c9506f1aa4248bf531298daa7febd6194f003edcd9b93ade6253acf",
     );
 }
 
@@ -55,6 +57,6 @@ fn test_hash_to_curve_cdk_vector_secret_two() {
     let point = hash_to_curve(&secret).expect("should find valid point");
     assert_compressed_hex(
         &point,
-        "02517a405ddf5a86949e2a20df024767cf4e7c102fa7b68767ba1e50c6d0941035",
+        "026cdbe15362df59cd1dd3c9c11de8aedac2106eca69236ecd9fbe117af897be4f",
     );
 }

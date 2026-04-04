@@ -16,6 +16,11 @@ use k256::{
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
     EncodedPoint, ProjectivePoint, PublicKey as K256PublicKey, SecretKey as K256SecretKey,
 };
+use minicbor::{
+    decode::Error as DecodeError,
+    encode::{Error as EncodeError, Write},
+    Decode, Decoder, Encode, Encoder,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PublicKey(K256PublicKey);
@@ -41,6 +46,17 @@ impl PublicKey {
 
     pub fn to_sec1_bytes(&self) -> Vec<u8> {
         self.0.to_encoded_point(false).as_bytes().to_vec()
+    }
+
+    /// Return the compressed SEC1 encoding.
+    ///
+    /// This mirrors the upstream `cashu` crate's `PublicKey::to_bytes()` helper
+    /// and makes interop/adaptation tests straightforward.
+    pub fn to_bytes(&self) -> [u8; 33] {
+        let encoded = self.0.to_encoded_point(true);
+        let mut bytes = [0u8; 33];
+        bytes.copy_from_slice(encoded.as_bytes());
+        bytes
     }
 
     pub fn to_encoded_point(&self, compress: bool) -> EncodedPoint {
@@ -98,6 +114,14 @@ impl SecretKey {
     pub fn to_scalar(&self) -> k256::Scalar {
         *self.0.to_nonzero_scalar()
     }
+
+    /// Return the canonical 32-byte secret scalar encoding.
+    ///
+    /// This mirrors the upstream `cashu` crate's `SecretKey::to_secret_bytes()`
+    /// pattern to ease future adapter work.
+    pub fn to_secret_bytes(&self) -> [u8; 32] {
+        self.0.to_bytes().into()
+    }
 }
 
 impl fmt::Debug for SecretKey {
@@ -117,6 +141,28 @@ impl Deref for SecretKey {
 impl From<K256SecretKey> for SecretKey {
     fn from(sk: K256SecretKey) -> Self {
         Self(sk)
+    }
+}
+
+impl<C> Encode<C> for PublicKey {
+    fn encode<W: Write>(
+        &self,
+        e: &mut Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), EncodeError<W::Error>> {
+        e.bytes(&self.to_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for PublicKey {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, DecodeError> {
+        let bytes = d.bytes()?;
+        let compressed: [u8; 33] = bytes
+            .try_into()
+            .map_err(|_| DecodeError::message("invalid public key length"))?;
+        PublicKey::from_bytes(&compressed)
+            .ok_or_else(|| DecodeError::message("invalid compressed public key"))
     }
 }
 

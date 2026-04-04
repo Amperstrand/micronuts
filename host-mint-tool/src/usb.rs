@@ -14,12 +14,17 @@ pub struct UsbConnection {
 
 impl UsbConnection {
     pub fn open(path: &Path, baud: u32) -> Result<Self> {
-        let port = serialport::new(path.to_string_lossy(), baud)
+        let mut port = serialport::new(path.to_string_lossy(), baud)
             .timeout(Duration::from_millis(TIMEOUT_MS))
             .open()
             .with_context(|| format!("Failed to open serial port {:?}", path))?;
 
-        // Give the device a moment to reset after connection
+        // Prevent DTR/RTS from resetting the STM32
+        port.write_data_terminal_ready(false)
+            .context("Failed to set DTR")?;
+        port.write_request_to_send(false)
+            .context("Failed to set RTS")?;
+
         std::thread::sleep(Duration::from_millis(100));
 
         Ok(Self { port })
