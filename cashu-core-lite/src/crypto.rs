@@ -26,7 +26,7 @@ impl std::error::Error for HashToCurveError {}
 /// NUT-00: `Y = PublicKey('02' || SHA256(msg_hash || counter))`
 ///
 /// where `msg_hash = SHA256("Secp256k1_HashToCurve_Cashu_" || x)`,
-/// counter is `u32` little-endian from 0 to `u16::MAX - 1`.
+/// counter is a 4-byte little-endian `u32` over the range `0..u16::MAX`.
 ///
 /// This matches the upstream Cashu/CDK reference implementation, which hashes a
 /// 4-byte little-endian counter (not 2-byte) while still limiting the search to

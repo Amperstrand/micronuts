@@ -29,6 +29,8 @@ fn test_hash_to_curve_different_inputs_produce_different_outputs() {
 
 #[test]
 fn test_hash_to_curve_cdk_vector_secret_zero() {
+    // These vectors were updated when Micronuts aligned `hash_to_curve` with the
+    // upstream Cashu/CDK reference, which hashes a 4-byte LE counter.
     let secret = [0u8; 32];
     let point = hash_to_curve(&secret).expect("should find valid point");
     assert_compressed_hex(
