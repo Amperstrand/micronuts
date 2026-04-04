@@ -54,9 +54,12 @@ pub async fn run_all(hw: &mut FirmwareHardware) -> Vec<TestResult> {
     results.push(test_sdram(hw).await);
     results.push(test_rng(hw));
     results.push(test_heap());
+    results.push(test_heap_stress());
     results.push(test_display(hw).await);
     results.push(test_touch(hw).await);
     results.push(test_scanner(hw).await);
+    results.push(test_crypto_blinding(hw));
+    results.push(test_usb_cdc_protocol());
 
     let passed = results.iter().filter(|r| r.status == TestStatus::Pass).count();
     let failed = results.iter().filter(|r| r.status == TestStatus::Fail).count();
@@ -171,6 +174,191 @@ fn test_heap() -> TestResult {
         defmt::error!("[FAIL] Heap (pattern mismatch)");
         TestResult::fail("Heap")
     }
+}
+
+fn test_heap_stress() -> TestResult {
+    defmt::info!("[TEST] Heap stress (4KB walking pattern)...");
+
+    const ALLOC_SIZE: usize = 4096; // 4KB
+    const PATTERNS: [u8; 4] = [0x00, 0xFF, 0x55, 0x01];
+
+    // Test each walking pattern
+    for (pattern_idx, &pattern) in PATTERNS.iter().enumerate() {
+        // Step 1: Allocate 4KB
+        let mut v: Vec<u8> = Vec::with_capacity(ALLOC_SIZE);
+        unsafe { v.set_len(ALLOC_SIZE); }
+
+        // Step 2: Write walking pattern
+        for byte in v.iter_mut() {
+            *byte = pattern;
+        }
+
+        // Step 3: Verify readback
+        let ok = v.iter().all(|&b| b == pattern);
+        if !ok {
+            defmt::error!("[FAIL] Heap stress (pattern 0x{:02X} readback mismatch)", pattern);
+            return TestResult::fail("Heap stress");
+        }
+
+        defmt::info!("[TEST] Heap stress: pattern 0x{:02X} verified ({}/{})", pattern, pattern_idx + 1, PATTERNS.len());
+
+        // Step 4: Drop allocation
+        drop(v);
+    }
+
+    // Step 5: All allocations deallocated (Rust guarantees no use-after-free)
+    defmt::info!("[PASS] Heap stress (4KB x 4 patterns, all deallocated)");
+    TestResult::pass("Heap stress")
+}
+
+fn test_crypto_blinding(hw: &mut FirmwareHardware) -> TestResult {
+    defmt::info!("[TEST] Crypto blinding...");
+
+    // Step 1: Generate random secret (32 bytes)
+    let mut secret = [0u8; 32];
+    hw.rng_fill_bytes(&mut secret);
+
+    // Step 2: hash_to_curve(secret) - returns point on curve
+    let _y = match cashu_core_lite::crypto::hash_to_curve(&secret) {
+        Ok(y) => y,
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (hash_to_curve failed)");
+            return TestResult::fail("Crypto blinding");
+        }
+    };
+    defmt::info!("[TEST] Crypto: hash_to_curve OK");
+
+    // Step 3: Generate blinder from hardware RNG, ensure non-zero (OR 0x01 on last byte)
+    let mut blinder_bytes = [0u8; 32];
+    hw.rng_fill_bytes(&mut blinder_bytes);
+    blinder_bytes[31] |= 0x01;
+    let blinder = match cashu_core_lite::keypair::SecretKey::from_slice(&blinder_bytes) {
+        Ok(sk) => sk,
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (invalid blinder scalar)");
+            return TestResult::fail("Crypto blinding");
+        }
+    };
+
+    // Step 4: blind_message(secret, Some(blinder)) - returns blinded message
+    let blinded = match cashu_core_lite::crypto::blind_message(&secret, Some(blinder.clone())) {
+        Ok(bm) => bm,
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (blind_message failed)");
+            return TestResult::fail("Crypto blinding");
+        }
+    };
+    defmt::info!("[TEST] Crypto: blind_message OK");
+
+    // Step 5: Generate mint keypair and sign the blinded message
+    let mut mint_key_bytes = [0u8; 32];
+    hw.rng_fill_bytes(&mut mint_key_bytes);
+    mint_key_bytes[31] |= 0x01;
+    let mint_key = match cashu_core_lite::keypair::SecretKey::from_slice(&mint_key_bytes) {
+        Ok(sk) => sk,
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (invalid mint key)");
+            return TestResult::fail("Crypto blinding");
+        }
+    };
+    let mint_pubkey = mint_key.public_key();
+
+    // sign_message(mint_key, blinded_message) - returns signature
+    let blinded_sig = cashu_core_lite::crypto::sign_message(&mint_key, &blinded.blinded);
+    defmt::info!("[TEST] Crypto: sign_message OK");
+
+    // Step 6: unblind_signature(blinded_sig, blinder, mint_pubkey) - returns unblinded signature
+    let unblinded = match cashu_core_lite::crypto::unblind_signature(
+        &blinded_sig, &blinded.blinder, &mint_pubkey
+    ) {
+        Ok(c) => c,
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (unblind_signature failed)");
+            return TestResult::fail("Crypto blinding");
+        }
+    };
+
+    // Step 7: verify_signature(secret, unblinded_sig, mint_key) - returns true/false
+    // SUCCESS CRITERIA: a * hash_to_curve(secret) == unblinded_sig
+    match cashu_core_lite::crypto::verify_signature(&secret, &unblinded, &mint_key) {
+        Ok(true) => {
+            defmt::info!("[PASS] Crypto blinding (full round-trip verified)");
+            TestResult::pass("Crypto blinding")
+        }
+        Ok(false) => {
+            defmt::error!("[FAIL] Crypto blinding (signature verification failed)");
+            TestResult::fail("Crypto blinding")
+        }
+        Err(_) => {
+            defmt::error!("[FAIL] Crypto blinding (verify_signature error)");
+            TestResult::fail("Crypto blinding")
+        }
+    }
+}
+
+fn test_usb_cdc_protocol() -> TestResult {
+    defmt::info!("[TEST] USB CDC protocol...");
+    
+    use micronuts_app::protocol::{Command, Frame, FrameDecoder};
+    
+    // Step 1: Create a test frame with ScannerStatus command (0x10)
+    let test_command = Command::ScannerStatus;
+    let frame = Frame::new(test_command);
+    defmt::info!("[TEST] USB CDC: created frame with command 0x{:02X}", test_command as u8);
+    
+    // Step 2: Encode the frame to bytes
+    let mut encode_buf = [0u8; 1027]; // MAX_PAYLOAD_SIZE + 3
+    let encoded_len = frame.encode(&mut encode_buf);
+    
+    if encoded_len == 0 {
+        defmt::error!("[FAIL] USB CDC protocol (encoding failed)");
+        return TestResult::fail("USB CDC protocol");
+    }
+    
+    defmt::info!("[TEST] USB CDC: encoded {} bytes", encoded_len);
+    
+    // Verify encoded bytes structure: [Command:1][LenHigh:1][LenLow:1][Payload:N]
+    if encode_buf[0] != test_command as u8 {
+        defmt::error!("[FAIL] USB CDC protocol (command byte mismatch)");
+        return TestResult::fail("USB CDC protocol");
+    }
+    
+    // ScannerStatus has no payload, so length should be 0
+    let payload_len = ((encode_buf[1] as u16) << 8) | (encode_buf[2] as u16);
+    if payload_len != 0 {
+        defmt::error!("[FAIL] USB CDC protocol (payload length mismatch)");
+        return TestResult::fail("USB CDC protocol");
+    }
+    
+    defmt::info!("[TEST] USB CDC: frame structure verified (cmd=0x{:02X}, len={})", 
+                 encode_buf[0], payload_len);
+    
+    // Step 3: Decode the bytes back to a frame
+    let mut decoder = FrameDecoder::new();
+    let decoded_frame = match decoder.decode(&encode_buf[..encoded_len]) {
+        Some(f) => f,
+        None => {
+            defmt::error!("[FAIL] USB CDC protocol (decoding failed)");
+            return TestResult::fail("USB CDC protocol");
+        }
+    };
+    
+    defmt::info!("[TEST] USB CDC: decoded frame successfully");
+    
+    // Step 4: Verify command matches
+    if decoded_frame.command != test_command {
+        defmt::error!("[FAIL] USB CDC protocol (command mismatch after decode)");
+        return TestResult::fail("USB CDC protocol");
+    }
+    
+    // Step 5: Verify payload matches (should be empty for ScannerStatus)
+    if decoded_frame.length != 0 {
+        defmt::error!("[FAIL] USB CDC protocol (payload length mismatch after decode)");
+        return TestResult::fail("USB CDC protocol");
+    }
+    
+    defmt::info!("[PASS] USB CDC protocol (encode/decode round-trip verified)");
+    TestResult::pass("USB CDC protocol")
 }
 
 async fn test_display(hw: &mut FirmwareHardware) -> TestResult {
