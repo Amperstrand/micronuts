@@ -1266,6 +1266,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "micronuts-mint"
+version = "0.1.0"
+dependencies = [
+ "cashu-core-lite",
+ "hex",
+ "k256",
+ "rand",
+ "rand_core 0.6.4",
+ "sha2",
+]
+
+[[package]]
 name = "minicbor"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

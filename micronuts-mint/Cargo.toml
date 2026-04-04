@@ -1,0 +1,21 @@
+[package]
+name = "micronuts-mint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Demo Cashu mint for Micronuts — in-memory, auto-approve, no persistence"
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+k256 = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+rand = "0.8"
+hex = "0.4"
+
+[dev-dependencies]
+rand = "0.8"
+
+[[bin]]
+name = "demo"
+path = "src/bin/demo.rs"
