@@ -12,6 +12,7 @@ use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut
 use crate::keyset::DemoKeyset;
 
 /// In-memory mint quote state.
+#[allow(dead_code)] // Fields kept for future use (e.g., quote lookup by unit)
 struct MintQuoteEntry {
     pub amount: u64,
     pub unit: String,
@@ -21,6 +22,7 @@ struct MintQuoteEntry {
 }
 
 /// In-memory melt quote state.
+#[allow(dead_code)] // Fields kept for future use (e.g., invoice replay check)
 struct MeltQuoteEntry {
     pub amount: u64,
     pub fee_reserve: u64,
