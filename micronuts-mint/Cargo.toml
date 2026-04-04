@@ -19,3 +19,11 @@ rand = "0.8"
 [[bin]]
 name = "demo"
 path = "src/bin/demo.rs"
+
+[[bin]]
+name = "wallet_demo"
+path = "src/bin/wallet_demo.rs"
+
+[[bin]]
+name = "mint_server"
+path = "src/bin/mint_server.rs"

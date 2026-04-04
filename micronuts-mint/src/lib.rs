@@ -23,3 +23,9 @@ mod loopback_transport;
 pub use loopback_transport::{DemoRpcClient, LoopbackTransport};
 
 mod rpc_service;
+
+mod demo_roles;
+pub use demo_roles::{
+    demo_mint_handler, handle_demo_mint_hex_request_line, handle_demo_mint_request_bytes,
+    run_mint_server_stdio, run_wallet_demo,
+};

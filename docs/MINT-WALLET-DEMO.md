@@ -129,21 +129,27 @@ now expressed as a transport-neutral byte exchange instead of an in-process API.
 
 ## How to Build
 
-### Wallet Role (library + demo)
+### Wallet Role (library + demo binaries)
 
 ```bash
-# Build the wallet + mint demo
+# Build the wallet + mint demos
 cargo build -p micronuts-mint
 
-# Run the RPC loopback wallet/mint demo
+# Run the explicit wallet-role demo
+cargo run -p micronuts-mint --bin wallet_demo
+
+# Backward-compatible alias for the wallet demo
 cargo run -p micronuts-mint --bin demo
 ```
 
-### Mint Server Role (library)
+### Mint Server Role (library + demo binary)
 
 ```bash
 # Build just the mint library
 cargo build -p micronuts-mint --lib
+
+# Run the explicit mint-role stdio demo server
+cargo run -p micronuts-mint --bin mint_server
 ```
 
 ### Core Library
@@ -175,9 +181,13 @@ cargo test -p cashu-core-lite --features std --test rpc
 # Run byte-level loopback transport tests
 cargo test -p micronuts-mint --test rpc_loopback
 
+# Run explicit mint-role helper tests
+cargo test -p micronuts-mint --test mint_role
+
 # Run all wallet/mint checks used by CI
 cargo test -p cashu-core-lite --features std -p micronuts-mint
 cargo run -p micronuts-mint --bin demo
+cargo run -p micronuts-mint --bin wallet_demo
 cargo check -p micronuts-app
 
 # Run only e2e tests
@@ -223,14 +233,39 @@ cargo run -p micronuts-mint --bin demo
 
 - `src/mint_core.rs`
   - `DemoMint` core mint logic
+- `src/demo_roles.rs`
+  - wallet-role demo flow
+  - mint-role stdio server helpers
 - `src/rpc_service.rs`
   - `impl MintService for DemoMint`
 - `src/loopback_transport.rs`
   - host-side byte loopback implementation
 - `src/direct_transport.rs`
   - legacy direct path kept as reference only
+- `src/bin/wallet_demo.rs`
+  - explicit wallet-role demo binary
+- `src/bin/mint_server.rs`
+  - explicit mint-role demo binary
 - `src/bin/demo.rs`
-  - wallet-side demo using RPC loopback by default
+  - compatibility alias for the wallet-role demo
+
+## Explicit Roles
+
+### Wallet role
+
+- binary: `wallet_demo`
+- behavior: runs the end-to-end mint/swap/melt demo as a wallet client
+- transport: `RpcMintClient<LoopbackTransport<DemoMint>>`
+
+### Mint role
+
+- binary: `mint_server`
+- behavior: runs a host-side mint service entrypoint around `MintRpcHandler<DemoMint>`
+- stdin framing: one hex-encoded CBOR `MintRpcRequest` per line
+- stdout framing: one hex-encoded CBOR `MintRpcResponse` per line
+
+The stdio framing is only a host-side demo convenience. The important stable
+boundary is still the underlying CBOR RPC payload carried by `RpcByteTransport`.
 
 ### Expected Demo Output
 
