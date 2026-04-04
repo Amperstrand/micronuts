@@ -108,5 +108,11 @@ mod tests {
         assert_eq!(decompose_amount(13), vec![8, 4, 1]);
         assert_eq!(decompose_amount(64), vec![64]);
         assert_eq!(decompose_amount(100), vec![64, 32, 4]);
+        assert_eq!(decompose_amount(1u64 << 32), vec![1u64 << 32]);
+        assert_eq!(decompose_amount(1u64 << 63), vec![1u64 << 63]);
+        assert_eq!(
+            decompose_amount(u64::MAX),
+            (0..64).rev().map(|bit| 1u64 << bit).collect::<Vec<_>>()
+        );
     }
 }

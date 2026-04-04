@@ -231,7 +231,8 @@ impl DemoMint {
 
         // Demo shortcut: extract amount from dummy invoice or default to 0.
         // In a real mint, the amount comes from decoding the bolt11 invoice.
-        let amount = parse_demo_invoice_amount(&request.request).unwrap_or(1);
+        let amount = parse_demo_invoice_amount(&request.request)
+            .ok_or_else(|| CashuError::Protocol("invalid demo invoice amount".to_string()))?;
 
         let entry = MeltQuoteEntry {
             amount,
@@ -311,12 +312,12 @@ impl DemoMint {
         entry.state = nut05::state::PAID.to_string();
 
         // Demo shortcut: dummy payment preimage (32 zero bytes hex)
-        let dummy_preimage = "0".repeat(64);
+        let dummy_preimage_hex = "0".repeat(64);
 
         Ok(nut05::MeltResponse {
             paid: true,
             state: nut05::state::PAID.to_string(),
-            payment_preimage: Some(dummy_preimage),
+            payment_preimage: Some(dummy_preimage_hex),
             change,
         })
     }
@@ -521,5 +522,15 @@ mod tests {
         assert_eq!(parse_demo_invoice_amount("lnbcdemo100sat1micronuts"), Some(100));
         assert_eq!(parse_demo_invoice_amount("lnbcdemo1sat1micronuts"), Some(1));
         assert_eq!(parse_demo_invoice_amount("garbage"), None);
+    }
+
+    #[test]
+    fn test_invalid_melt_quote_invoice_rejected() {
+        let mut mint = DemoMint::new();
+        let result = mint.post_melt_quote(nut05::MeltQuoteRequest {
+            request: "garbage".to_string(),
+            unit: "sat".to_string(),
+        });
+        assert!(result.is_err());
     }
 }

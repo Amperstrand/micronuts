@@ -270,7 +270,7 @@ impl<T: MintClient> Wallet<T> {
                 .map_err(|_| CashuError::Crypto("unblind failed".into()))?;
 
             // Hex-encode the secret for the proof
-            let secret_hex = hex_encode(&p.secret);
+            let secret_hex = hex::encode(&p.secret);
 
             proofs.push(nut00::Proof {
                 amount: p.amount,
@@ -284,25 +284,12 @@ impl<T: MintClient> Wallet<T> {
     }
 }
 
-/// Hex-encode bytes into a lowercase hex string.
-fn hex_encode(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for &byte in bytes {
-        result.push(HEX[(byte >> 4) as usize] as char);
-        result.push(HEX[(byte & 0x0F) as usize] as char);
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn test_hex_encode() {
-        assert_eq!(hex_encode(&[0xde, 0xad, 0xbe, 0xef]), "deadbeef");
-        assert_eq!(hex_encode(&[0x00, 0xff]), "00ff");
-        assert_eq!(hex_encode(&[]), "");
+    fn test_hex_encode_matches_expected_output() {
+        assert_eq!(hex::encode([0xde, 0xad, 0xbe, 0xef]), "deadbeef");
+        assert_eq!(hex::encode([0x00, 0xff]), "00ff");
+        assert_eq!(hex::encode([]), "");
     }
 }
