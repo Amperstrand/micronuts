@@ -21,9 +21,9 @@ The core business logic lives in `micronuts-app/`, which is platform-independent
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                              │ USB                   │
 └──────────────────────────────────────────────│───────────────────────┘
-                                               │
+                                                │
 ┌──────────────────────────────────────────────│───────────────────────┐
-│                          STM32F469I-DISCOVERY │                       │
+│                   STM32F469I-DISCOVERY        │                       │
 │  ┌────────────────────────────────────────────│───────────────────┐  │
 │  │  micronuts-app (shared core)              ▼                   │  │
 │  │  ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐     │  │
@@ -33,8 +33,9 @@ The core business logic lives in `micronuts-app/`, which is platform-independent
 │  │                    └──────────────┘                           │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  firmware/ (hardware adapter — impl MicronutsHardware)        │  │
-│  │  Display → LtdcFramebuffer │ Scanner → GM65 USART6 │ RNG → HW │  │
+│  │  firmware/ (Embassy async, impl MicronutsHardware)            │  │
+│  │  embassy-stm32 · embassy-usb · embassy-stm32f469i-disco BSP   │  │
+│  │  Display → RawFramebuffer │ Scanner → GM65 USART6 │ RNG → HW  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                       │
 │  Hardware: 180MHz Cortex-M4F, 2MB Flash, 384KB SRAM, 16MB SDRAM      │
@@ -44,7 +45,7 @@ The core business logic lives in `micronuts-app/`, which is platform-independent
 │  NATIVE SIMULATOR (same micronuts-app, different HW adapter)          │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │  examples/native_sim.rs — impl MicronutsHardware                │  │
-│  │  Display → Sdl2Display (800x480 SDL2 window, mouse→touch)      │  │
+│  │  Display → Sdl2Display (480x800 SDL2 window, mouse→touch)      │  │
 │  │  Scanner → mock (stdin paste) │ Transport → stdin/stdout        │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────┘
@@ -63,7 +64,7 @@ Platform-independent business logic, used by both the firmware and the native si
 - `k256`, `sha2` — secp256k1 blind signature operations
 
 **Responsibilities:**
-- `run()` main loop — polls transport, dispatches commands, renders display
+- `run()` async main loop — yields on USB transport or 5ms ticker, dispatches commands, renders display
 - USB CDC binary protocol (Command, Response, Frame, FrameDecoder)
 - Display rendering (generic over `DrawTarget<Color = Rgb565>`)
 - All command handlers (token import, blind/unblind, scanner control)
@@ -80,16 +81,18 @@ The embedded firmware running on the STM32F469I-Discovery. Initializes periphera
 
 **Dependencies:**
 - `micronuts-app` (workspace member) — shared business logic
-- `stm32f469i-disc` BSP (git dependency, pinned commit)
+- `embassy-stm32f469i-disco` BSP (git dependency, pinned commit)
 - `gm65-scanner` (git dependency, pinned commit)
 - `cashu-core-lite` (workspace member)
+- `embassy-stm32`, `embassy-usb`, `embassy-time`, `embassy-executor`, `embassy-futures`, `embassy-sync`
 - `cortex-m`, `cortex-m-rt`, `defmt`, `rand_core`
 
 **Responsibilities:**
 - Initialize hardware (display, USB, SDRAM, RNG, QR scanner)
 - Boot splash animation
 - Implement `MicronutsHardware` trait for STM32 peripherals
-- USB CDC transport (CdcPort wrapper)
+- USB CDC transport (embassy-usb CDC-ACM `Receiver`/`Sender`)
+- Run Embassy executor (single `usb_task` spawned, main loop on executor thread)
 
 **Build target:** `thumbv7em-none-eabihf`
 
@@ -174,7 +177,7 @@ The STM32F469NI has a hardware RNG peripheral (reference manual section 24):
 - **Source**: Analog ring oscillators — true physical entropy, not a PRNG
 - **Output**: 32-bit words via `RNG->DR` register
 - **Health checks**: CECS (clock error) and SECS (seed error) detection
-- **HAL**: `stm32f4xx-hal::rng::Rng` implements `rand_core::RngCore`
+- **HAL**: `embassy_stm32::rng::Rng` (interrupt-driven via `HASH_RNG`)
 - **Requirement**: `PLL48CLK` must be active (already enabled for USB)
 - **Throughput**: ~40 cycles per word at 48 MHz
 
@@ -186,9 +189,10 @@ All git dependencies are pinned to specific commits for reproducibility:
 
 | Crate | Pin | Why |
 |-------|-----|-----|
-| `stm32f469i-disc` | `a412876` | Sync BSP with `rng` feature forward. Based on `fa6dc86` which has working display/SDRAM/SDIO/USB. Upstream `main` diverged to a different HAL version. |
-| `stm32f4xx-hal` | `789e5e86` | Pinned by BSP. Includes DSI, SDRAM, SDIO, USB FS, RNG support for STM32F469. |
-| `gm65-scanner` | `5b1cf56` | Post-merge main with async+sync dual-mode driver, HIL-tested on hardware. Removed `embedded-hal` feature (replaced by `sync`). |
+| `embassy-stm32` | `84444a19` | Upstream Embassy. MCU peripheral drivers (RNG, I2C, USART, USB OTG, RCC config). Same rev used for all Embassy crates below. |
+| `embassy-usb` | `84444a19` | Upstream Embassy. USB device stack and CDC-ACM class. |
+| `embassy-stm32f469i-disco` | `a407fcd` | Embassy BSP for STM32F469I-Discovery. Display (DSI/LTDC/NT35510), SDRAM controller, FT6X06 touch. |
+| `gm65-scanner` | `85734ba` | QR scanner async driver. HIL-tested on hardware. |
 
 ## Dual-Run Architecture
 
@@ -196,14 +200,14 @@ The `MicronutsHardware` trait (defined in `micronuts-app/src/hardware.rs`) abstr
 
 | Method | Firmware impl | Simulator impl |
 |--------|--------------|----------------|
-| `Display` (DrawTarget) | `LtdcFramebuffer<u16>` via LTDC/SDRAM | `Sdl2Display` → SDL2 texture (RGB565) |
+| `Display` (DrawTarget) | `RawFramebuffer` (direct SDRAM buffer) | `Sdl2Display` → SDL2 texture (RGB565) |
 | `Touch` | FT6X06 I2C capacitive touch controller | Mouse click → (x, y) mapping |
-| `Scanner` | GM65 module on USART6 | Mock (stdin paste) |
-| `Transport` | USB CDC (CdcPort) | stdin/stdout (mock frames) |
-| `RNG` | STM32 hardware RNG (ring oscillators) | `rand::thread_rng()` |
-| `Delay` | `SysDelay` (cortex-m SYST) | `std::thread::sleep` |
+| `Scanner` | GM65 module on USART6 (async driver) | Mock (stdin paste) |
+| `Transport` | embassy-usb CDC-ACM `Receiver`/`Sender` | stdin/stdout (mock frames) |
+| `RNG` | `embassy_stm32::rng::Rng` (ring oscillators) | `rand::thread_rng()` |
+| `Delay` | `embassy_time::Timer::after()` | `std::thread::sleep` |
 
-Both adapters call `micronuts_app::run(&mut hw)` which runs the identical main loop. The simulator renders an 800x480 SDL2 window that shows exactly what the LCD would display. Mouse clicks map to touch coordinates.
+Both adapters call `micronuts_app::run(&mut hw).await` which runs the identical async main loop. The `MicronutsHardware` trait uses RPITIT async methods (no `async_trait` macro). The simulator renders a 480x800 portrait SDL2 window that shows exactly what the LCD would display. Mouse clicks map to touch coordinates.
 
 ### Running
 
@@ -223,8 +227,20 @@ probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
 The BSP is a git dependency:
 
 ```toml
-[dependencies]
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "a412876" }
+[workspace.dependencies]
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "a407fcd" }
 ```
 
-This preserves the BSP as a separate, versioned dependency rather than modifying it directly.
+Embassy crates are pinned to the same upstream commit:
+
+```toml
+[workspace.dependencies]
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
+```
+
+This preserves the BSP and Embassy as separate, versioned dependencies. The executor runs in `executor-thread` mode with a single spawned task (`usb_task`).
