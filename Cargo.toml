@@ -27,11 +27,12 @@ cortex-m-rt = "0.7"
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
+panic-halt = "1.0"
 embedded-hal = "1.0"
 embedded-graphics = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba" }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async", "defmt"] }
 qrcodegen-no-heap = "1.8.1"
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)

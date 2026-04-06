@@ -13,6 +13,13 @@ fn main() {
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rerun-if-changed=memory.x");
 
+    #[cfg(feature = "uart-log")]
+    {
+        let defmt_x = out.join("defmt.x");
+        std::fs::write(defmt_x, "").unwrap();
+        println!("cargo:rustc-link-search=native={}", out.display());
+    }
+
     println!("cargo:rerun-if-env-changed=GIT_HASH");
 
     let git_hash = env::var("GIT_HASH").unwrap_or_else(|_| {
