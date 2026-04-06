@@ -19,7 +19,6 @@ pub enum ScanError {
 
 pub trait Scanner {
     fn trigger(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
-    fn try_read(&mut self) -> Option<alloc::vec::Vec<u8>>;
     fn read_scan(&mut self) -> impl core::future::Future<Output = Option<alloc::vec::Vec<u8>>>;
     fn stop(&mut self) -> impl core::future::Future<Output = ()>;
     fn is_connected(&self) -> bool;

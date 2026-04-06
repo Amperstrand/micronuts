@@ -253,10 +253,6 @@ impl Scanner for MockHardware {
         Ok(())
     }
 
-    fn try_read(&mut self) -> Option<alloc::vec::Vec<u8>> {
-        None
-    }
-
     async fn read_scan(&mut self) -> Option<alloc::vec::Vec<u8>> {
         None
     }

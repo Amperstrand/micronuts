@@ -383,10 +383,6 @@ mod tests {
             }
         }
 
-        fn try_read(&mut self) -> Option<Vec<u8>> {
-            self.scan_data.take()
-        }
-
         fn read_scan(&mut self) -> impl core::future::Future<Output = Option<Vec<u8>>> {
             async move { self.scan_data.take() }
         }
