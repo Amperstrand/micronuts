@@ -3,8 +3,12 @@
 
 extern crate alloc;
 
+#[cfg(feature = "defmt-log")]
 use defmt_rtt as _;
+#[cfg(feature = "defmt-log")]
 use panic_probe as _;
+#[cfg(feature = "uart-log")]
+use panic_halt as _;
 
 use embassy_executor::Spawner;
 use embassy_stm32::{bind_interrupts, peripherals, rcc::*, time::Hertz, usb, usart, Config};
@@ -21,6 +25,8 @@ use gm65_scanner::{Gm65ScannerAsync, ScannerDriver};
 use linked_list_allocator::LockedHeap;
 
 use static_cell::StaticCell;
+
+pub use firmware::{log_error, log_info, log_warn};
 
 const HEAP_SIZE: usize = 128 * 1024;
 
@@ -93,11 +99,19 @@ async fn main(spawner: Spawner) {
     }
     let mut p = embassy_stm32::init(config);
 
-    defmt::info!("Micronuts firmware starting (embassy)...");
-
-    defmt::info!("Initializing SDRAM...");
     let sdram = SdramCtrl::new(&mut p, 168_000_000);
-    defmt::info!("SDRAM initialized");
+
+    #[cfg(feature = "uart-log")]
+    {
+        let mut dbg_config = embassy_stm32::usart::Config::default();
+        dbg_config.baudrate = 115200;
+        let dbg_uart = embassy_stm32::usart::Uart::new_blocking(p.USART2, p.PA3, p.PA2, dbg_config)
+            .unwrap();
+        firmware::uart_log::init(dbg_uart);
+    }
+
+    crate::log_info!("Micronuts firmware starting (embassy)...");
+    crate::log_info!("SDRAM initialized");
 
     let rng = embassy_stm32::rng::Rng::new(p.RNG, Irqs);
 
@@ -105,16 +119,16 @@ async fn main(spawner: Spawner) {
         let heap_start = sdram.base_address() + FB_SIZE * 4;
         ALLOCATOR.lock().init(heap_start as *mut u8, HEAP_SIZE);
     }
-    defmt::info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
+    crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
-    defmt::info!("Initializing display...");
+    crate::log_info!("Initializing display...");
     let display = DisplayCtrl::new(&sdram, p.PH7);
-    defmt::info!("Display initialized");
+    crate::log_info!("Display initialized");
 
     let fb_buffer: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
     core::mem::forget(display);
 
-    defmt::info!("Initializing touch...");
+    crate::log_info!("Initializing touch...");
     let mut touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
         p.I2C1,
         p.PB8,
@@ -126,13 +140,13 @@ async fn main(spawner: Spawner) {
         .read_chip_id(&mut touch_i2c)
         .is_ok();
     if touch_available {
-        defmt::info!("Touch controller ready");
+        crate::log_info!("Touch controller ready");
     } else {
-        defmt::warn!("Touch controller not found");
+        crate::log_warn!("Touch controller not found");
     }
 
     {
-        defmt::info!("Running boot splash...");
+        crate::log_info!("Running boot splash...");
         let mut splash_state = boot_splash::SplashState::new();
         let mut splash_done = false;
         const MAX_SPLASH_FRAMES: u32 = 2 * 3 * 90;
@@ -150,21 +164,21 @@ async fn main(spawner: Spawner) {
             if touch_available {
                 if let Ok(status) = touch_ctrl.td_status(&mut touch_i2c) {
                     if status > 0 {
-                        defmt::info!("Touch detected, exiting splash");
+                        crate::log_info!("Touch detected, exiting splash");
                         splash_done = true;
                     }
                 }
             }
 
             if splash_state.global_frame >= MAX_SPLASH_FRAMES {
-                defmt::info!("Splash timeout, continuing boot");
+                crate::log_info!("Splash timeout, continuing boot");
                 splash_done = true;
             }
         }
-        defmt::info!("Boot splash complete");
+        crate::log_info!("Boot splash complete");
     }
 
-    defmt::info!("Initializing USB...");
+    crate::log_info!("Initializing USB...");
     static EP_OUT_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
     let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 512]);
     let mut usb_config = usb::Config::default();
@@ -206,9 +220,9 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(usb_task(usb_dev).expect("usb task token"));
 
-    defmt::info!("USB CDC initialized");
+    crate::log_info!("USB CDC initialized");
 
-    defmt::info!("Initializing QR scanner (USART6)...");
+    crate::log_info!("Initializing QR scanner (USART6)...");
     static UART_TX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
     static UART_RX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
 
@@ -229,16 +243,16 @@ async fn main(spawner: Spawner) {
 
     let scanner_connected = match scanner.init().await {
         Ok(model) => {
-            defmt::info!("QR scanner ready: {}", model);
+            crate::log_info!("QR scanner ready: {}", model);
             true
         }
         Err(e) => {
-            defmt::warn!("QR scanner init failed: {}", e);
+            crate::log_warn!("QR scanner init failed: {}", e);
             false
         }
     };
 
-    defmt::info!("Scanner state after init: connected={}", scanner_connected);
+    crate::log_info!("Scanner state after init: connected={}", scanner_connected);
 
     let mut hw = FirmwareHardware::new(
         RawFramebuffer::new(fb_buffer),
@@ -253,13 +267,13 @@ async fn main(spawner: Spawner) {
     );
 
     use micronuts_app::hardware::Scanner;
-    defmt::info!("--- Scanner register dump ---");
+    crate::log_info!("--- Scanner register dump ---");
     hw.debug_dump_settings();
-    defmt::info!("--- End dump ---");
+    crate::log_info!("--- End dump ---");
 
     self_test::run_all(&mut hw).await;
 
-    defmt::info!("Self-test complete, starting app...");
+    crate::log_info!("Self-test complete, starting app...");
     let raw_buf = hw.fb.as_raw();
     for px in raw_buf.iter_mut() {
         *px = 0x0000;

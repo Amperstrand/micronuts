@@ -165,7 +165,7 @@ impl Scanner for FirmwareHardware {
             settings & !(ScannerSettings::AIM)
         };
         if self.scanner.set_scanner_settings(new_settings).await {
-            defmt::info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
+            crate::log_info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
             Ok(())
         } else {
             Err(ScanError::IoError)
@@ -173,8 +173,8 @@ impl Scanner for FirmwareHardware {
     }
 
     fn debug_dump_settings(&mut self) {
-        defmt::info!("Scanner connected: {}", self.scanner.status().connected);
-        defmt::info!("Scanner model: {}", self.scanner.status().model);
+        crate::log_info!("Scanner connected: {}", self.scanner.status().connected);
+        crate::log_info!("Scanner model: {}", self.scanner.status().model);
     }
 }
 
@@ -229,7 +229,7 @@ impl MicronutsHardware for FirmwareHardware {
         if let Ok(status) = self.touch_ctrl.td_status(&mut self.touch_i2c) {
             if status > 0 {
                 if let Ok(BspTouchPoint { x, y }) = self.touch_ctrl.get_touch(&mut self.touch_i2c) {
-                    defmt::info!("Touch: x={}, y={}", x, y);
+                    crate::log_info!("Touch: x={}, y={}", x, y);
                     return Some(TouchPoint {
                         x,
                         y,
