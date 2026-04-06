@@ -44,6 +44,6 @@ embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
 
 
 [features]
-default = ["defmt-log"]
-defmt-log = ["dep:defmt", "dep:defmt-rtt", "dep:panic-probe", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]
-uart-log = ["dep:defmt", "dep:panic-halt"]
+default = ["uart-log"]
+defmt-log = ["dep:defmt", "dep:defmt-rtt", "defmt-rtt/disable-blocking-mode", "dep:panic-probe", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]
+uart-log = ["dep:panic-halt"]

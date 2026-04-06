@@ -28,26 +28,6 @@ where
 
 static mut LOGGER: Option<UartLogger<Uart<'static, Blocking>>> = None;
 
-#[defmt::global_logger]
-struct DefmtFallbackLogger;
-
-unsafe impl defmt::Logger for DefmtFallbackLogger {
-    fn acquire() {}
-
-    unsafe fn flush() {}
-
-    unsafe fn release() {}
-
-    unsafe fn write(_bytes: &[u8]) {}
-}
-
-#[defmt::panic_handler]
-fn defmt_panic() -> ! {
-    loop {}
-}
-
-defmt::timestamp!("{=u8}", 0);
-
 pub fn init(uart: Uart<'static, Blocking>) {
     unsafe {
         LOGGER = Some(UartLogger::new(uart));

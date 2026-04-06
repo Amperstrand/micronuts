@@ -101,15 +101,6 @@ async fn main(spawner: Spawner) {
 
     let sdram = SdramCtrl::new(&mut p, 168_000_000);
 
-    #[cfg(feature = "uart-log")]
-    {
-        let mut dbg_config = embassy_stm32::usart::Config::default();
-        dbg_config.baudrate = 115200;
-        let dbg_uart = embassy_stm32::usart::Uart::new_blocking(p.USART2, p.PA3, p.PA2, dbg_config)
-            .unwrap();
-        firmware::uart_log::init(dbg_uart);
-    }
-
     crate::log_info!("Micronuts firmware starting (embassy)...");
     crate::log_info!("SDRAM initialized");
 
@@ -238,6 +229,15 @@ async fn main(spawner: Spawner) {
         uart_config,
     )
     .unwrap();
+
+    #[cfg(feature = "uart-log")]
+    {
+        let mut dbg_config = embassy_stm32::usart::Config::default();
+        dbg_config.baudrate = 115200;
+        let dbg_uart = embassy_stm32::usart::Uart::new_blocking(p.USART3, p.PD9, p.PD8, dbg_config)
+            .unwrap();
+        firmware::uart_log::init(dbg_uart);
+    }
 
     let mut scanner = Gm65ScannerAsync::with_default_config(uart);
 
