@@ -11,12 +11,11 @@ defmt = { workspace = true, optional = true }
 defmt-rtt = { workspace = true, optional = true }
 panic-probe = { workspace = true, optional = true }
 embedded-hal = { workspace = true }
-embedded-hal-02 = { workspace = true }
 embedded-graphics = { workspace = true }
 embedded-io = { workspace = true }
 embedded-io-async = { workspace = true }
 heapless = { workspace = true }
-gm65-scanner = { workspace = true }
+gm65-scanner = { workspace = true, features = ["async"] }
 qrcodegen-no-heap = { workspace = true }
 cashu-core-lite = { path = "../cashu-core-lite" }
 micronuts-app = { path = "../micronuts-app" }
@@ -27,7 +26,6 @@ k256 = { workspace = true }
 sha2 = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 rand_core = { workspace = true }
-nb = { workspace = true }
 
 # Embassy
 embassy-stm32 = { workspace = true, features = ["stm32f469ni", "time-driver-any", "exti", "defmt"] }

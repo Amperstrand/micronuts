@@ -14,7 +14,6 @@ use embedded_graphics::{
 };
 use embedded_graphics::pixelcolor::RgbColor;
 use embedded_graphics::prelude::IntoStorage;
-use embedded_hal_02::blocking::serial::Write as _;
 use sha2::Digest;
 
 use gm65_scanner::ScannerDriver;
@@ -95,7 +94,7 @@ impl OriginDimensions for RawFramebuffer {
 
 pub struct FirmwareHardware {
     pub fb: RawFramebuffer,
-    pub scanner: Gm65ScannerAsync<AsyncUart<'static>>,
+    pub scanner: Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>,
     pub usb_receiver: Receiver<'static, UsbDriverType>,
     pub usb_sender: Sender<'static, UsbDriverType>,
     pub decoder: FrameDecoder,
@@ -110,7 +109,7 @@ pub struct FirmwareHardware {
 impl FirmwareHardware {
     pub fn new(
         fb: RawFramebuffer,
-        scanner: Gm65ScannerAsync<AsyncUart<'static>>,
+        scanner: Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>,
         usb_receiver: Receiver<'static, UsbDriverType>,
         usb_sender: Sender<'static, UsbDriverType>,
         touch_ctrl: TouchCtrl,
@@ -138,10 +137,6 @@ impl FirmwareHardware {
 impl Scanner for FirmwareHardware {
     async fn trigger(&mut self) -> Result<(), ScanError> {
         self.scanner.trigger_scan().await.map_err(|_| ScanError::IoError)
-    }
-
-    fn try_read(&mut self) -> Option<Vec<u8>> {
-        None
     }
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
@@ -248,62 +243,5 @@ impl MicronutsHardware for FirmwareHardware {
 
     async fn delay_ms(&mut self, ms: u32) {
         embassy_time::Timer::after(Duration::from_millis(ms as u64)).await;
-    }
-}
-
-pub struct AsyncUart<'d> {
-    pub inner: embassy_stm32::usart::Uart<'d, embassy_stm32::mode::Blocking>,
-}
-
-impl<'d> embedded_io::ErrorType for AsyncUart<'d> {
-    type Error = embassy_stm32::usart::Error;
-}
-
-impl<'d> embedded_io_async::Read for AsyncUart<'d> {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-        let mut total = 0usize;
-        let yield_threshold = if buf.len() <= 8 { 2_000_000 } else { 100_000 };
-        for slot in buf.iter_mut() {
-            let mut spins = 0u32;
-            loop {
-                match embedded_hal_02::serial::Read::read(&mut self.inner) {
-                    Ok(byte) => {
-                        *slot = byte;
-                        total += 1;
-                        break;
-                    }
-                    Err(nb::Error::WouldBlock) => {
-                        spins += 1;
-                        if spins < yield_threshold {
-                            continue;
-                        }
-                        embassy_time::Timer::after_micros(100).await;
-                    }
-                    Err(nb::Error::Other(_e)) => {
-                        unsafe {
-                            const USART6_BASE: usize = 0x4001_1400;
-                            let _sr = core::ptr::read_volatile(USART6_BASE as *const u32);
-                            let _dr = core::ptr::read_volatile((USART6_BASE + 0x04) as *const u32);
-                        }
-                        embassy_time::Timer::after_micros(10).await;
-                    }
-                }
-            }
-        }
-        Ok(total)
-    }
-}
-
-impl<'d> embedded_io_async::Write for AsyncUart<'d> {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        self.inner.bwrite_all(buf)?;
-        Ok(buf.len())
-    }
-
-    async fn flush(&mut self) -> Result<(), Self::Error> {
-        self.inner.bflush()
     }
 }

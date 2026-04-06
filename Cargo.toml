@@ -28,16 +28,11 @@ defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-hal = "1.0"
-embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 embedded-graphics = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-
-stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev = "da9fdb2f3b10d26ba1cc6a54f68e4d4ddc5e3f23" }
-
-qrcodegen-no-heap = "1.8"
-
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba" }
+qrcodegen-no-heap = "1.8.1"
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
 # To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
@@ -56,7 +51,6 @@ linked_list_allocator = "0.10"
 static_cell = "2.1"
 heapless = "0.8"
 critical-section = "1.2"
-nb = "1.1"
 
 [profile.release]
 debug = true

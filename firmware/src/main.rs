@@ -7,7 +7,7 @@ use defmt_rtt as _;
 use panic_probe as _;
 
 use embassy_executor::Spawner;
-use embassy_stm32::{bind_interrupts, interrupt::InterruptExt, peripherals, rcc::*, time::Hertz, usb, usart, Config};
+use embassy_stm32::{bind_interrupts, peripherals, rcc::*, time::Hertz, usb, usart, Config};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
@@ -15,7 +15,7 @@ use embassy_usb::{Builder, UsbDevice};
 use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
 
 use firmware::boot_splash;
-use firmware::hardware_impl::{AsyncUart, FirmwareHardware, RawFramebuffer, UsbDriverType};
+use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
 use firmware::self_test;
 use gm65_scanner::{Gm65ScannerAsync, ScannerDriver};
 use linked_list_allocator::LockedHeap;
@@ -30,6 +30,7 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
     HASH_RNG => embassy_stm32::rng::InterruptHandler<peripherals::RNG>;
+    USART6 => embassy_stm32::usart::BufferedInterruptHandler<peripherals::USART6>;
 });
 
 #[allow(non_snake_case)]
@@ -208,14 +209,23 @@ async fn main(spawner: Spawner) {
     defmt::info!("USB CDC initialized");
 
     defmt::info!("Initializing QR scanner (USART6)...");
-    embassy_stm32::interrupt::USART6.disable();
+    static UART_TX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+    static UART_RX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
 
     let mut uart_config = usart::Config::default();
     uart_config.baudrate = 115200;
-    let uart = usart::Uart::new_blocking(p.USART6, p.PG9, p.PG14, uart_config).unwrap();
+    let uart = usart::BufferedUart::new(
+        p.USART6,
+        p.PG9,
+        p.PG14,
+        UART_TX_BUF.init([0; 256]),
+        UART_RX_BUF.init([0; 256]),
+        Irqs,
+        uart_config,
+    )
+    .unwrap();
 
-    let async_uart = AsyncUart { inner: uart };
-    let mut scanner = Gm65ScannerAsync::with_default_config(async_uart);
+    let mut scanner = Gm65ScannerAsync::with_default_config(uart);
 
     let scanner_connected = match scanner.init().await {
         Ok(model) => {
