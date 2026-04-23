@@ -16,7 +16,7 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
+use embassy_stm32f469i_disco::display::{BoardHint, DisplayCtrl, SdramCtrl, FB_SIZE};
 
 use firmware::boot_splash;
 use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
@@ -113,7 +113,7 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     crate::log_info!("Initializing display...");
-    let display = DisplayCtrl::new(&sdram, p.PH7);
+    let display = DisplayCtrl::new(&sdram, p.PH7, BoardHint::ForceNt35510);
     crate::log_info!("Display initialized");
 
     let fb_buffer: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
@@ -128,7 +128,7 @@ async fn main(spawner: Spawner) {
     );
     let touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new();
     let touch_available = touch_ctrl
-        .read_chip_id(&mut touch_i2c)
+        .read_chip_model(&mut touch_i2c)
         .is_ok();
     if touch_available {
         crate::log_info!("Touch controller ready");
