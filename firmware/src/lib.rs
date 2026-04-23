@@ -11,6 +11,8 @@ compile_error!("enable exactly one logging feature: `defmt-log` or `uart-log`");
 pub mod boot_splash;
 pub mod boot_splash_assets;
 pub mod build_info;
+#[cfg(feature = "uart-log")]
+pub mod defmt_squelch;
 pub mod hardware_impl;
 pub mod qr;
 pub mod self_test;
