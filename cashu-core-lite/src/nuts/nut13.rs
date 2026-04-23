@@ -205,9 +205,9 @@ mod tests {
         let seed_bytes = hex::decode(TEST_SEED_HEX).unwrap();
         assert_eq!(seed_bytes.len(), 64);
 
-        // For NUT-13, we use first 32 bytes as the seed
-        let seed_32 = &seed_bytes[..32];
-        assert_eq!(seed_32.len(), 32);
+        let mut result = [0u8; 32];
+        result.copy_from_slice(&seed_bytes[..32]);
+        result
     }
 
     // Note: The spec test vectors use a specific seed that we need to look up.
@@ -233,8 +233,8 @@ mod tests {
     fn test_derive_secret_deterministic() {
         let seed = [1u8; 32];
 
-        let secret1 = derive_secret(&seed, TEST_KEYSET_ID, 0).unwrap();
-        let secret2 = derive_secret(&seed, TEST_KEYSET_ID, 0).unwrap();
+        let secret1 = derive_secret(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        let secret2 = derive_secret(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
 
         assert_eq!(
             secret1, secret2,
@@ -247,8 +247,8 @@ mod tests {
     fn test_derive_blinder_deterministic() {
         let seed = [1u8; 32];
 
-        let blinder1 = derive_blinder(&seed, TEST_KEYSET_ID, 0).unwrap();
-        let blinder2 = derive_blinder(&seed, TEST_KEYSET_ID, 0).unwrap();
+        let blinder1 = derive_blinder(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        let blinder2 = derive_blinder(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
 
         assert_eq!(
             blinder1, blinder2,
@@ -261,8 +261,8 @@ mod tests {
     fn test_secret_vs_blinder_different() {
         let seed = [1u8; 32];
 
-        let secret = derive_secret(&seed, TEST_KEYSET_ID, 0).unwrap();
-        let blinder = derive_blinder(&seed, TEST_KEYSET_ID, 0).unwrap();
+        let secret = derive_secret(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        let blinder = derive_blinder(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
 
         // Secret and blinder should be different (different derivation type byte)
         assert_ne!(secret, blinder, "secret and blinder must differ");
@@ -272,9 +272,9 @@ mod tests {
     fn test_different_counters_different_secrets() {
         let seed = [1u8; 32];
 
-        let secret0 = derive_secret(&seed, TEST_KEYSET_ID, 0).unwrap();
-        let secret1 = derive_secret(&seed, TEST_KEYSET_ID, 1).unwrap();
-        let secret2 = derive_secret(&seed, TEST_KEYSET_ID, 2).unwrap();
+        let secret0 = derive_secret(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        let secret1 = derive_secret(&seed, TEST_V2_KEYSET_ID, 1).unwrap();
+        let secret2 = derive_secret(&seed, TEST_V2_KEYSET_ID, 2).unwrap();
 
         assert_ne!(secret0, secret1, "counter=0 and counter=1 should differ");
         assert_ne!(secret1, secret2, "counter=1 and counter=2 should differ");
@@ -286,8 +286,8 @@ mod tests {
         let seed1 = [1u8; 32];
         let seed2 = [2u8; 32];
 
-        let secret1 = derive_secret(&seed1, TEST_KEYSET_ID, 0).unwrap();
-        let secret2 = derive_secret(&seed2, TEST_KEYSET_ID, 0).unwrap();
+        let secret1 = derive_secret(&seed1, TEST_V2_KEYSET_ID, 0).unwrap();
+        let secret2 = derive_secret(&seed2, TEST_V2_KEYSET_ID, 0).unwrap();
 
         assert_ne!(
             secret1, secret2,
