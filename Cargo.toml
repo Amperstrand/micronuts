@@ -32,7 +32,7 @@ embedded-hal = "1.0"
 embedded-graphics = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "8b8b828", features = ["sync", "async", "defmt"] }
 qrcodegen-no-heap = "1.8.1"
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
