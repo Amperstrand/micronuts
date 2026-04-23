@@ -34,6 +34,21 @@ const HEAP_SIZE: usize = 128 * 1024;
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
+#[inline(always)]
+unsafe fn clear_ltdc_irq_flags() {
+    stm32_metapac::LTDC.icr().write(|w| {
+        w.set_clif(stm32_metapac::ltdc::vals::Clif::CLEAR);
+        w.set_cfuif(stm32_metapac::ltdc::vals::Cfuif::CLEAR);
+        w.set_cterrif(stm32_metapac::ltdc::vals::Cterrif::CLEAR);
+        w.set_crrif(stm32_metapac::ltdc::vals::Crrif::CLEAR);
+    });
+}
+
+#[inline(always)]
+unsafe fn nop_irq() {
+    cortex_m::asm::nop();
+}
+
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
     HASH_RNG => embassy_stm32::rng::InterruptHandler<peripherals::RNG>;
@@ -42,42 +57,32 @@ bind_interrupts!(struct Irqs {
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn LTDC() {
-    stm32_metapac::LTDC.icr().write(|w| {
-        w.set_clif(stm32_metapac::ltdc::vals::Clif::CLEAR);
-        w.set_cfuif(stm32_metapac::ltdc::vals::Cfuif::CLEAR);
-        w.set_cterrif(stm32_metapac::ltdc::vals::Cterrif::CLEAR);
-        w.set_crrif(stm32_metapac::ltdc::vals::Crrif::CLEAR);
-    });
+    clear_ltdc_irq_flags();
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn LTDC_ER() {
-    stm32_metapac::LTDC.icr().write(|w| {
-        w.set_clif(stm32_metapac::ltdc::vals::Clif::CLEAR);
-        w.set_cfuif(stm32_metapac::ltdc::vals::Cfuif::CLEAR);
-        w.set_cterrif(stm32_metapac::ltdc::vals::Cterrif::CLEAR);
-        w.set_crrif(stm32_metapac::ltdc::vals::Crrif::CLEAR);
-    });
+    clear_ltdc_irq_flags();
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn DSI() {
-    cortex_m::asm::nop();
+    nop_irq();
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn DSIHOST() {
-    cortex_m::asm::nop();
+    nop_irq();
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn DMA2D() {
-    cortex_m::asm::nop();
+    nop_irq();
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn FMC() {
-    cortex_m::asm::nop();
+    nop_irq();
 }
 
 #[embassy_executor::task]
@@ -133,10 +138,17 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     crate::log_info!("Initializing display...");
+    #[allow(unexpected_cfgs)]
+    #[cfg(not(rust_analyzer))]
     let display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    #[allow(unexpected_cfgs)]
+    #[cfg(rust_analyzer)]
+    let display: DisplayCtrl = loop {};
     crate::log_info!("Display initialized");
 
     let fb_buffer: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
+    // Keep the display controller alive so DSI/LTDC keep scanning out of SDRAM while the app
+    // writes the framebuffer directly instead of going through DisplayCtrl.
     core::mem::forget(display);
 
     crate::log_info!("Initializing touch...");
