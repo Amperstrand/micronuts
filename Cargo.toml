@@ -7,6 +7,7 @@ members = [
     "micronuts-app",
     "micronuts-mint", "micronuts-fips-bridge",
 ]
+default-members = ["firmware"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,7 +33,10 @@ embedded-hal = "1.0"
 embedded-graphics = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "8b8b828", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "f48be8b", features = ["sync", "async", "defmt"] }
+stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
+nb = "1.1"
 qrcodegen-no-heap = "1.8.1"
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
@@ -46,7 +50,7 @@ embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embas
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 
 # Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "373a9ae" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "5496d4b" }
 
 linked_list_allocator = "0.10"
 static_cell = "2.1"

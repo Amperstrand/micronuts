@@ -46,8 +46,7 @@ const VARIANT_DURATION_FRAMES: u32 = 300; // 10 seconds × 30 FPS
 /// Number of animation variants.
 const NUM_VARIANTS: usize = 3;
 
-/// Background color (RGB565 black).
-const BG_COLOR: u16 = 0x0000;
+const BG_COLOR: u32 = 0xFF000000;
 
 /// Spacing between tiles (pixels) — kept small for dense feel.
 const TILE_GAP: u16 = 2;
@@ -158,13 +157,7 @@ impl SplashState {
 // Core rendering
 // ---------------------------------------------------------------------------
 
-/// Render one frame of the boot splash directly into a raw u16 framebuffer.
-///
-/// `fb` must be a slice of at least `width * height` u16 values in row-major
-/// order (matches the LTDC framebuffer layout).
-///
-/// Returns `true` if the variant just cycled (so caller can detect transitions).
-pub fn render_frame(fb: &mut [u16], width: u32, height: u32, state: &mut SplashState) -> bool {
+pub fn render_frame(fb: &mut [u32], width: u32, height: u32, state: &mut SplashState) -> bool {
     let cfg = &VARIANTS[state.variant];
     let cat_len = TILE_CATALOG.len();
     let tile: &TileAsset = if cfg.tile_index < cat_len {
@@ -266,7 +259,7 @@ pub fn render_frame(fb: &mut [u16], width: u32, height: u32, state: &mut SplashS
 /// Blit a single tile onto the framebuffer at integer position (tx, ty).
 /// Clips to framebuffer bounds. No scaling.
 #[inline]
-fn blit_tile(fb: &mut [u16], fb_w: u32, fb_h: u32, tile: &TileAsset, tx: i32, ty: i32) {
+fn blit_tile(fb: &mut [u32], fb_w: u32, fb_h: u32, tile: &TileAsset, tx: i32, ty: i32) {
     let tw = tile.width as i32;
     let th = tile.height as i32;
 
@@ -300,7 +293,7 @@ fn blit_tile(fb: &mut [u16], fb_w: u32, fb_h: u32, tile: &TileAsset, tx: i32, ty
 
 /// Render a tiny variant indicator ("A", "B", "C") in the bottom-right corner.
 /// Uses a minimal 5x7 pixel font baked in as bitmaps.
-fn render_variant_indicator(fb: &mut [u16], width: u32, height: u32, variant: usize) {
+fn render_variant_indicator(fb: &mut [u32], width: u32, height: u32, variant: usize) {
     // 5x7 bitmap font for 'A', 'B', 'C' — each is 5 columns × 7 rows
     const FONT_A: [u8; 7] = [
         0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
@@ -326,7 +319,7 @@ fn render_variant_indicator(fb: &mut [u16], width: u32, height: u32, variant: us
     let oy = height.saturating_sub(gh + margin);
 
     // Dimmed white for subtlety
-    let color: u16 = 0x8410; // RGB565 ~mid-gray
+    let color: u32 = 0xFF848484;
 
     for row in 0..7u32 {
         let bits = glyph[row as usize];

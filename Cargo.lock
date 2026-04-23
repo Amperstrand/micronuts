@@ -928,17 +928,19 @@ dependencies = [
 [[package]]
 name = "embassy-stm32f469i-disco"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=373a9ae#373a9ae4aa856108964cd733cc9668a82c5a08a8"
+source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=5496d4b#5496d4ba4c60592e2ab5ea39c140339c7b86a42b"
 dependencies = [
  "cortex-m",
  "embassy-stm32",
  "embassy-time",
  "embedded-display-controller",
  "embedded-graphics",
+ "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "nt35510",
  "otm8009a",
  "stm32-fmc",
+ "stm32-metapac",
 ]
 
 [[package]]
@@ -1180,6 +1182,7 @@ dependencies = [
  "embassy-usb",
  "embassy-usb-synopsys-otg",
  "embedded-graphics",
+ "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-io",
  "embedded-io-async",
@@ -1189,12 +1192,14 @@ dependencies = [
  "k256",
  "linked_list_allocator",
  "micronuts-app",
+ "nb 1.1.0",
  "panic-halt",
  "panic-probe",
  "qrcodegen-no-heap",
  "rand_core 0.6.4",
  "sha2",
  "static_cell",
+ "stm32-metapac",
 ]
 
 [[package]]
@@ -1309,7 +1314,7 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?rev=8b8b828#8b8b828ddb20b7ffdd03c5ac5e6769a9cef018bb"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=f48be8b#f48be8bf55c4fd985f3d819573c06da1567e4fa2"
 dependencies = [
  "bitflags 2.11.0",
  "defmt 1.0.1",
@@ -1941,9 +1946,8 @@ dependencies = [
 
 [[package]]
 name = "nt35510"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91c66b704b492b02551fcd286376d138afd69577943c52996285cf6b9595bf13"
+version = "0.2.0"
+source = "git+https://github.com/Amperstrand/nt35510?rev=6252d17#6252d17c16db14887a9e3bda51a2da1f94fb486c"
 dependencies = [
  "embedded-display-controller",
  "embedded-hal 1.0.0",

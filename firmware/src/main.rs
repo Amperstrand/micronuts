@@ -11,6 +11,7 @@ use panic_probe as _;
 use panic_halt as _;
 
 use embassy_executor::Spawner;
+use embassy_stm32::interrupt::InterruptExt;
 use embassy_stm32::{bind_interrupts, peripherals, rcc::*, time::Hertz, usb, usart, Config};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
@@ -36,18 +37,27 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
     HASH_RNG => embassy_stm32::rng::InterruptHandler<peripherals::RNG>;
-    USART6 => embassy_stm32::usart::BufferedInterruptHandler<peripherals::USART6>;
 });
 
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn LTDC() {
-    cortex_m::asm::nop();
+    stm32_metapac::LTDC.icr().write(|w| {
+        w.set_clif(stm32_metapac::ltdc::vals::Clif::CLEAR);
+        w.set_cfuif(stm32_metapac::ltdc::vals::Cfuif::CLEAR);
+        w.set_cterrif(stm32_metapac::ltdc::vals::Cterrif::CLEAR);
+        w.set_crrif(stm32_metapac::ltdc::vals::Crrif::CLEAR);
+    });
 }
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "C" fn LTDC_ER() {
-    cortex_m::asm::nop();
+    stm32_metapac::LTDC.icr().write(|w| {
+        w.set_clif(stm32_metapac::ltdc::vals::Clif::CLEAR);
+        w.set_cfuif(stm32_metapac::ltdc::vals::Cfuif::CLEAR);
+        w.set_cterrif(stm32_metapac::ltdc::vals::Cterrif::CLEAR);
+        w.set_crrif(stm32_metapac::ltdc::vals::Crrif::CLEAR);
+    });
 }
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -85,21 +95,31 @@ async fn main(spawner: Spawner) {
         });
         config.rcc.pll_src = PllSource::HSE;
         config.rcc.pll = Some(Pll {
-            prediv: PllPreDiv::DIV4,
-            mul: PllMul::MUL168,
+            prediv: PllPreDiv::DIV8,
+            mul: PllMul::MUL360,
             divp: Some(PllPDiv::DIV2),
             divq: Some(PllQDiv::DIV7),
-            divr: None,
+            divr: Some(PllRDiv::DIV6),
         });
         config.rcc.ahb_pre = AHBPrescaler::DIV1;
         config.rcc.apb1_pre = APBPrescaler::DIV4;
         config.rcc.apb2_pre = APBPrescaler::DIV2;
         config.rcc.sys = Sysclk::PLL1_P;
-        config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
+        config.rcc.pllsai = Some(Pll {
+            prediv: PllPreDiv::DIV8,
+            mul: PllMul::MUL384,
+            divp: Some(PllPDiv::DIV8),
+            divq: Some(PllQDiv::DIV8),
+            divr: Some(PllRDiv::DIV7),
+        });
+        config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
     }
     let mut p = embassy_stm32::init(config);
+    stm32_metapac::RCC.dckcfgr2().modify(|w| {
+        w.set_clk48sel(mux::Clk48sel::PLLSAI1_Q);
+    });
 
-    let sdram = SdramCtrl::new(&mut p, 168_000_000);
+    let sdram = SdramCtrl::new(&mut p, 180_000_000);
 
     crate::log_info!("Micronuts firmware starting (embassy)...");
     crate::log_info!("SDRAM initialized");
@@ -113,10 +133,10 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     crate::log_info!("Initializing display...");
-    let display = DisplayCtrl::new(&sdram, p.PH7, BoardHint::ForceNt35510);
+    let display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
     crate::log_info!("Display initialized");
 
-    let fb_buffer: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
+    let fb_buffer: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
     core::mem::forget(display);
 
     crate::log_info!("Initializing touch...");
@@ -128,10 +148,12 @@ async fn main(spawner: Spawner) {
     );
     let touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new();
     let touch_available = touch_ctrl
-        .read_chip_model(&mut touch_i2c)
+        .read_vendor_id(&mut touch_i2c)
         .is_ok();
     if touch_available {
-        crate::log_info!("Touch controller ready");
+        // Set FT6X06 G_MODE to interrupt trigger mode (matches gm65-scanner init)
+        let _ = touch_i2c.blocking_write(0x38, &[0xA4, 0x01]);
+        crate::log_info!("Touch controller ready (G_MODE=interrupt trigger)");
     } else {
         crate::log_warn!("Touch controller not found");
     }
@@ -214,21 +236,14 @@ async fn main(spawner: Spawner) {
     crate::log_info!("USB CDC initialized");
 
     crate::log_info!("Initializing QR scanner (USART6)...");
-    static UART_TX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-    static UART_RX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-
+    embassy_stm32::interrupt::USART6.disable();
     let mut uart_config = usart::Config::default();
     uart_config.baudrate = 115200;
-    let uart = usart::BufferedUart::new(
-        p.USART6,
-        p.PG9,
-        p.PG14,
-        UART_TX_BUF.init([0; 256]),
-        UART_RX_BUF.init([0; 256]),
-        Irqs,
-        uart_config,
-    )
-    .unwrap();
+    let uart = usart::Uart::new_blocking(p.USART6, p.PG9, p.PG14, uart_config).unwrap();
+    let async_uart = firmware::hardware_impl::AsyncUart { inner: uart, uart_error_count: 0 };
+
+    embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
+    crate::log_info!("Scanner UART ready (115200 baud, USART6 PG14=TX PG9=RX)");
 
     #[cfg(feature = "uart-log")]
     {
@@ -239,7 +254,7 @@ async fn main(spawner: Spawner) {
         firmware::uart_log::init(dbg_uart);
     }
 
-    let mut scanner = Gm65ScannerAsync::with_default_config(uart);
+    let mut scanner = Gm65ScannerAsync::with_default_config(async_uart);
 
     let scanner_connected = match scanner.init().await {
         Ok(model) => {
@@ -276,7 +291,7 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Self-test complete, starting app...");
     let raw_buf = hw.fb.as_raw();
     for px in raw_buf.iter_mut() {
-        *px = 0x0000;
+        *px = 0x00000000;
     }
 
     micronuts_app::run(&mut hw).await;

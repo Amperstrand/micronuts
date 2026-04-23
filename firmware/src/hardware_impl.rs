@@ -9,11 +9,11 @@ use embassy_usb::class::cdc_acm::{Receiver, Sender};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Size},
-    pixelcolor::Rgb565,
+    pixelcolor::Rgb888,
     Pixel,
 };
 use embedded_graphics::pixelcolor::RgbColor;
-use embedded_graphics::prelude::IntoStorage;
+use embedded_hal_02::blocking::serial::Write as _;
 use sha2::Digest;
 
 use gm65_scanner::ScannerDriver;
@@ -25,22 +25,70 @@ use crate::qr::Gm65ScannerAsync;
 
 pub type UsbDriverType = embassy_stm32::usb::Driver<'static, peripherals::USB_OTG_FS>;
 
+pub struct AsyncUart<'d> {
+    pub inner: embassy_stm32::usart::Uart<'d, embassy_stm32::mode::Blocking>,
+    pub uart_error_count: u32,
+}
+
+impl<'d> embedded_io::ErrorType for AsyncUart<'d> {
+    type Error = embassy_stm32::usart::Error;
+}
+
+impl<'d> embedded_io_async::Read for AsyncUart<'d> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let mut total = 0usize;
+        for slot in buf.iter_mut() {
+            loop {
+                match embedded_hal_02::serial::Read::read(&mut self.inner) {
+                    Ok(byte) => {
+                        *slot = byte;
+                        total += 1;
+                        break;
+                    }
+                    Err(nb::Error::WouldBlock) => {
+                        embassy_time::Timer::after_micros(10).await;
+                    }
+                    Err(nb::Error::Other(_e)) => {
+                        self.uart_error_count = self.uart_error_count.saturating_add(1);
+                        embassy_time::Timer::after_micros(10).await;
+                    }
+                }
+            }
+        }
+        Ok(total)
+    }
+}
+
+impl<'d> embedded_io_async::Write for AsyncUart<'d> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.inner.bwrite_all(buf)?;
+        Ok(buf.len())
+    }
+
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        self.inner.bflush()
+    }
+}
+
 pub struct RawFramebuffer {
-    buffer: &'static mut [u16],
+    buffer: &'static mut [u32],
 }
 
 impl RawFramebuffer {
-    pub fn new(buffer: &'static mut [u16]) -> Self {
+    pub fn new(buffer: &'static mut [u32]) -> Self {
         Self { buffer }
     }
 
-    pub fn as_raw(&mut self) -> &mut [u16] {
+    pub fn as_raw(&mut self) -> &mut [u32] {
         self.buffer
     }
 }
 
 impl DrawTarget for RawFramebuffer {
-    type Color = Rgb565;
+    type Color = Rgb888;
     type Error = core::convert::Infallible;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -51,7 +99,11 @@ impl DrawTarget for RawFramebuffer {
             let x = coord.x as usize;
             let y = coord.y as usize;
             if x < FB_WIDTH as usize && y < FB_HEIGHT as usize {
-                self.buffer[y * FB_WIDTH as usize + x] = color.into_storage();
+                let raw = 0xFF000000
+                    | ((color.r() as u32) << 16)
+                    | ((color.g() as u32) << 8)
+                    | (color.b() as u32);
+                self.buffer[y * FB_WIDTH as usize + x] = raw;
             }
         }
         Ok(())
@@ -66,8 +118,11 @@ impl DrawTarget for RawFramebuffer {
         let left = area.top_left.x.max(0) as usize;
         let right = (area.top_left.x + area.size.width as i32).min(FB_WIDTH as i32) as usize;
 
-        let flat_color = color.into_iter().next().unwrap_or(Rgb565::BLACK);
-        let raw = flat_color.into_storage();
+        let flat_color = color.into_iter().next().unwrap_or(Rgb888::BLACK);
+        let raw = 0xFF000000
+            | ((flat_color.r() as u32) << 16)
+            | ((flat_color.g() as u32) << 8)
+            | (flat_color.b() as u32);
 
         for y in top..bottom {
             for x in left..right {
@@ -78,7 +133,10 @@ impl DrawTarget for RawFramebuffer {
     }
 
     fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
-        let raw = color.into_storage();
+        let raw = 0xFF000000
+            | ((color.r() as u32) << 16)
+            | ((color.g() as u32) << 8)
+            | (color.b() as u32);
         for px in self.buffer.iter_mut() {
             *px = raw;
         }
@@ -94,7 +152,7 @@ impl OriginDimensions for RawFramebuffer {
 
 pub struct FirmwareHardware {
     pub fb: RawFramebuffer,
-    pub scanner: Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>,
+    pub scanner: Gm65ScannerAsync<AsyncUart<'static>>,
     pub usb_receiver: Receiver<'static, UsbDriverType>,
     pub usb_sender: Sender<'static, UsbDriverType>,
     pub decoder: FrameDecoder,
@@ -109,7 +167,7 @@ pub struct FirmwareHardware {
 impl FirmwareHardware {
     pub fn new(
         fb: RawFramebuffer,
-        scanner: Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>,
+        scanner: Gm65ScannerAsync<AsyncUart<'static>>,
         usb_receiver: Receiver<'static, UsbDriverType>,
         usb_sender: Sender<'static, UsbDriverType>,
         touch_ctrl: TouchCtrl,

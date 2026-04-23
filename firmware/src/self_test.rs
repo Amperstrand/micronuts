@@ -98,20 +98,20 @@ async fn test_sdram(hw: &mut FirmwareHardware) -> TestResult {
         return TestResult::fail("SDRAM");
     }
 
-    let mut orig = [0u16; 4096];
+    let mut orig = [0u32; 4096];
     for (i, v) in orig.iter_mut().enumerate() {
         *v = buf[test_offset + i];
     }
 
     for i in 0..test_size {
-        buf[test_offset + i] = 0xAA55;
+        buf[test_offset + i] = 0xAA55AAAA;
     }
 
     embassy_time::Timer::after(Duration::from_millis(1)).await;
 
     let mut ok = true;
     for i in 0..test_size {
-        if buf[test_offset + i] != 0xAA55u16 {
+        if buf[test_offset + i] != 0xAA55AAAAu32 {
             ok = false;
             break;
         }
@@ -366,7 +366,7 @@ async fn test_display(hw: &mut FirmwareHardware) -> TestResult {
     let fb_size = (FB_WIDTH as usize) * (FB_HEIGHT as usize);
     crate::log_info!("[TEST] Display: framebuffer {} pixels ({}x{})", fb_size, FB_WIDTH, FB_HEIGHT);
 
-    let raw_green: u16 = 0x07E0;
+    let raw_green: u32 = 0xFF00CC00;
 
     let buf = hw.fb.as_raw();
     if buf.len() >= fb_size {
