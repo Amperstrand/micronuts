@@ -125,9 +125,8 @@ impl DrawTarget for RawFramebuffer {
             | (flat_color.b() as u32);
 
         for y in top..bottom {
-            for x in left..right {
-                self.buffer[y * FB_WIDTH as usize + x] = raw;
-            }
+            let row = &mut self.buffer[y * FB_WIDTH as usize + left..y * FB_WIDTH as usize + right];
+            row.fill(raw);
         }
         Ok(())
     }

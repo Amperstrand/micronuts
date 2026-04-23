@@ -5,7 +5,7 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb888,
     prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text, TextStyleBuilder},
 };
 use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
@@ -91,18 +91,15 @@ pub fn draw_button<D: DrawTarget<Color = Rgb888>>(fb: &mut D, btn: &Button) {
         Point::new(btn.x as i32, btn.y as i32),
         Size::new(btn.w, btn.h),
     );
-    rect.into_styled(PrimitiveStyle::with_fill(DARK_GRAY))
-        .draw(fb)
-        .ok();
-
-    let border = Rectangle::new(
-        Point::new(btn.x as i32, btn.y as i32),
-        Size::new(btn.w, btn.h),
-    );
-    border
-        .into_styled(PrimitiveStyle::with_stroke(ACCENT, 2))
-        .draw(fb)
-        .ok();
+    rect.into_styled(
+        PrimitiveStyleBuilder::new()
+            .fill_color(DARK_GRAY)
+            .stroke_color(ACCENT)
+            .stroke_width(2)
+            .build(),
+    )
+    .draw(fb)
+    .ok();
 
     let label_style = MonoTextStyle::new(&FONT_10X20, ACCENT);
     let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
@@ -233,18 +230,31 @@ fn format_amount(amount: u64, unit: &str) -> heapless::String<32> {
 }
 
 fn truncate_url(url: &str, max_len: usize) -> &str {
-    if url.len() <= max_len {
-        return url;
+    truncate_str(url, max_len)
+}
+
+fn floor_char_boundary(s: &str, max_len: usize) -> usize {
+    let mut end = core::cmp::min(max_len, s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
     }
-    &url[..max_len]
+    end
 }
 
 fn truncate_str(s: &str, max_len: usize) -> &str {
     if s.len() <= max_len {
         s
     } else {
-        &s[..max_len]
+        &s[..floor_char_boundary(s, max_len)]
     }
+}
+
+fn take_line(s: &str, start: usize, max_len: usize) -> (&str, usize) {
+    let mut end = floor_char_boundary(s, start + max_len);
+    if end == start {
+        end = start + s[start..].chars().next().map(char::len_utf8).unwrap_or(0);
+    }
+    (&s[start..end], end)
 }
 
 pub fn render_status<D: DrawTarget<Color = Rgb888>>(fb: &mut D, message: &str) {
@@ -355,14 +365,11 @@ pub fn render_scan_result<D: DrawTarget<Color = Rgb888>>(fb: &mut D, data: &[u8]
     let mut y = 110u32;
     let mut offset = 0;
     while offset < display_str.len() && y < HEIGHT - 30 {
-        let end = core::cmp::min(offset + chars_per_line, display_str.len());
-        let line = &display_str[offset..end];
-        if let Ok(line_str) = core::str::from_utf8(line.as_bytes()) {
-            Text::new(line_str, Point::new(20, y as i32), value_style)
-                .draw(fb)
-                .ok();
-        }
-        offset = end;
+        let (line, next_offset) = take_line(display_str, offset, chars_per_line);
+        Text::new(line, Point::new(20, y as i32), value_style)
+            .draw(fb)
+            .ok();
+        offset = next_offset;
         y += 22;
     }
 
@@ -490,12 +497,11 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb888>>(fb: &mut D, payload: &
     let chars_per_line = 48;
     let mut offset = 0;
     while offset < data_str.len() && y < HEIGHT - 20 {
-        let end = core::cmp::min(offset + chars_per_line, data_str.len());
-        let line = &data_str[offset..end];
+        let (line, next_offset) = take_line(data_str, offset, chars_per_line);
         Text::new(line, Point::new(20, y as i32), value_style)
             .draw(fb)
             .ok();
-        offset = end;
+        offset = next_offset;
         y += 22;
     }
 }
