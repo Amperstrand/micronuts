@@ -6,7 +6,7 @@ use std::thread;
 
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{OriginDimensions, Size};
-use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
+use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
 use embedded_graphics::Pixel;
 use rand::RngCore;
 use sdl2::event::Event;
@@ -18,15 +18,20 @@ use micronuts_app::display::{HEIGHT, WIDTH};
 use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
 
-fn rgb565_to_raw(color: Rgb565) -> u16 {
-    let r = color.r();
-    let g = color.g();
-    let b = color.b();
-    ((r & 0xF8) as u16) << 8 | ((g & 0xFC) as u16) << 3 | ((b & 0xF8) as u16) >> 3
+const SDL_RGB888_BYTES_PER_PIXEL: usize = 3;
+
+fn rgb888_to_argb8888(color: Rgb888) -> u32 {
+    0xFF00_0000 | ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | (color.b() as u32)
+}
+
+fn argb8888_to_rgb888_bytes(pixel: u32, dest: &mut [u8]) {
+    dest[0] = ((pixel >> 16) & 0xFF) as u8;
+    dest[1] = ((pixel >> 8) & 0xFF) as u8;
+    dest[2] = (pixel & 0xFF) as u8;
 }
 
 struct Sdl2Display {
-    pixels: Vec<u16>,
+    pixels: Vec<u32>,
     sdl: Sdl,
     canvas: sdl2::render::Canvas<sdl2::video::Window>,
     texture: sdl2::render::Texture<'static>,
@@ -54,11 +59,11 @@ impl Sdl2Display {
             let creator: &'static sdl2::render::TextureCreator<sdl2::video::WindowContext> =
                 core::mem::transmute(&texture_creator);
             creator
-                .create_texture_streaming(PixelFormatEnum::RGB565, WIDTH as u32, HEIGHT as u32)
+                .create_texture_streaming(PixelFormatEnum::RGB888, WIDTH as u32, HEIGHT as u32)
                 .expect("Failed to create texture")
         };
 
-        let pixels = vec![0u16; (WIDTH * HEIGHT) as usize];
+        let pixels = vec![0u32; (WIDTH * HEIGHT) as usize];
 
         Sdl2Display {
             pixels,
@@ -75,11 +80,18 @@ impl Sdl2Display {
         }
 
         let width = WIDTH as usize;
-        let raw_bytes: &[u8] = unsafe {
-            core::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 2)
-        };
+        let mut raw_bytes = vec![0u8; self.pixels.len() * SDL_RGB888_BYTES_PER_PIXEL];
+        for (i, &pixel) in self.pixels.iter().enumerate() {
+            let offset = i * SDL_RGB888_BYTES_PER_PIXEL;
+            argb8888_to_rgb888_bytes(
+                pixel,
+                &mut raw_bytes[offset..offset + SDL_RGB888_BYTES_PER_PIXEL],
+            );
+        }
 
-        self.texture.update(None, raw_bytes, width * 2).ok();
+        self.texture
+            .update(None, &raw_bytes, width * SDL_RGB888_BYTES_PER_PIXEL)
+            .expect("Failed to update texture");
 
         self.canvas.clear();
         self.canvas
@@ -128,7 +140,7 @@ impl OriginDimensions for Sdl2Display {
 }
 
 impl DrawTarget for Sdl2Display {
-    type Color = Rgb565;
+    type Color = Rgb888;
     type Error = core::convert::Infallible;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -136,21 +148,21 @@ impl DrawTarget for Sdl2Display {
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
         for Pixel(coord, color) in pixels {
-            let x = coord.x as u32;
-            let y = coord.y as u32;
-            if x < WIDTH && y < HEIGHT {
-                self.pixels[(y * WIDTH + x) as usize] = rgb565_to_raw(color);
-                self.dirty = true;
+            if coord.x >= 0 && coord.y >= 0 {
+                let x = coord.x as u32;
+                let y = coord.y as u32;
+                if x < WIDTH && y < HEIGHT {
+                    self.pixels[(y * WIDTH + x) as usize] = rgb888_to_argb8888(color);
+                    self.dirty = true;
+                }
             }
         }
         Ok(())
     }
 
     fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
-        let raw = rgb565_to_raw(color);
-        for px in self.pixels.iter_mut() {
-            *px = raw;
-        }
+        let raw = rgb888_to_argb8888(color);
+        self.pixels.fill(raw);
         self.dirty = true;
         Ok(())
     }
@@ -397,7 +409,7 @@ fn main() {
 
     println!("Micronuts Native Simulator (embassy)");
     println!("=====================================");
-    println!("Display: {}x{} RGB565 (portrait)", WIDTH, HEIGHT);
+    println!("Display: {}x{} RGB888 (portrait)", WIDTH, HEIGHT);
     println!("Transport: stdin/stdout (binary protocol)");
     println!("Click window to simulate touch input");
     println!("Press ESC or close window to exit");
