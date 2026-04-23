@@ -3,7 +3,7 @@ extern crate alloc;
 use cashu_core_lite::token::TokenV4;
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
-    pixelcolor::Rgb565,
+    pixelcolor::Rgb888,
     prelude::*,
     primitives::{PrimitiveStyle, Rectangle},
     text::{Alignment, Text, TextStyleBuilder},
@@ -15,13 +15,13 @@ use crate::qr::QrPayload;
 pub const WIDTH: u32 = 480;
 pub const HEIGHT: u32 = 800;
 
-const BLACK: Rgb565 = Rgb565::BLACK;
-const WHITE: Rgb565 = Rgb565::WHITE;
-const DARK_GRAY: Rgb565 = Rgb565::new(0x18, 0x18, 0x18);
-const MID_GRAY: Rgb565 = Rgb565::new(0x40, 0x40, 0x40);
-const ACCENT: Rgb565 = Rgb565::new(0x00, 0x7A, 0xCC);
-const GREEN: Rgb565 = Rgb565::new(0x00, 0xCC, 0x66);
-const YELLOW: Rgb565 = Rgb565::new(0xCC, 0xAA, 0x00);
+const BLACK: Rgb888 = Rgb888::BLACK;
+const WHITE: Rgb888 = Rgb888::WHITE;
+const DARK_GRAY: Rgb888 = Rgb888::new(0x18, 0x18, 0x18);
+const MID_GRAY: Rgb888 = Rgb888::new(0x40, 0x40, 0x40);
+const ACCENT: Rgb888 = Rgb888::new(0x00, 0x7A, 0xCC);
+const GREEN: Rgb888 = Rgb888::new(0x00, 0xCC, 0x66);
+const YELLOW: Rgb888 = Rgb888::new(0xCC, 0xAA, 0x00);
 const QR_BUF_SIZE: usize = Version::MAX.buffer_len();
 
 pub struct Button {
@@ -44,23 +44,23 @@ pub fn home_buttons() -> [Button; 3] {
     [
         Button {
             x: 40,
-            y: 60,
+            y: 100,
             w: WIDTH - 80,
-            h: 110,
+            h: 120,
             label: "SCAN QR CODE",
         },
         Button {
             x: 40,
-            y: 190,
+            y: 300,
             w: WIDTH - 80,
-            h: 110,
+            h: 120,
             label: "IMPORT TOKEN",
         },
         Button {
             x: 40,
-            y: 320,
+            y: 500,
             w: WIDTH - 80,
-            h: 110,
+            h: 120,
             label: "SHOW PROOFS",
         },
     ]
@@ -86,7 +86,7 @@ pub fn aim_button() -> Button {
     }
 }
 
-pub fn draw_button<D: DrawTarget<Color = Rgb565>>(fb: &mut D, btn: &Button) {
+pub fn draw_button<D: DrawTarget<Color = Rgb888>>(fb: &mut D, btn: &Button) {
     let rect = Rectangle::new(
         Point::new(btn.x as i32, btn.y as i32),
         Size::new(btn.w, btn.h),
@@ -116,14 +116,14 @@ pub fn draw_button<D: DrawTarget<Color = Rgb565>>(fb: &mut D, btn: &Button) {
     .ok();
 }
 
-pub fn draw_status_bar<D: DrawTarget<Color = Rgb565>>(fb: &mut D, right_text: &str) {
+pub fn draw_status_bar<D: DrawTarget<Color = Rgb888>>(fb: &mut D, right_text: &str) {
     let bar = Rectangle::new(Point::new(0, 0), Size::new(WIDTH, 44));
     bar.into_styled(PrimitiveStyle::with_fill(MID_GRAY))
         .draw(fb)
         .ok();
 
     let title_style = MonoTextStyle::new(&FONT_10X20, WHITE);
-    Text::new("MICRONUTS", Point::new(140, 14), title_style)
+    Text::new("MICRONUTS", Point::new(195, 14), title_style)
         .draw(fb)
         .ok();
 
@@ -138,16 +138,27 @@ pub fn draw_status_bar<D: DrawTarget<Color = Rgb565>>(fb: &mut D, right_text: &s
     .ok();
 }
 
-pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D, aim_on: bool) {
+pub fn draw_scanning<D: DrawTarget<Color = Rgb888>>(fb: &mut D, aim_on: bool) {
     fb.clear(BLACK).ok();
     draw_status_bar(fb, "SCANNING...");
 
-    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
     let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
 
+    let scan_style = MonoTextStyle::new(&FONT_10X20, GREEN);
     Text::with_text_style(
-        "Scanning for QR code...",
-        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 - 10),
+        "● SCANNING",
+        Point::new(WIDTH as i32 / 2, 120),
+        scan_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+
+    let label_style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+
+    Text::with_text_style(
+        "Point the scanner at a QR code",
+        Point::new(WIDTH as i32 / 2, 300),
         label_style,
         center,
     )
@@ -155,8 +166,8 @@ pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D, aim_on: bool) {
     .ok();
 
     Text::with_text_style(
-        "Point the scanner at a QR code",
-        Point::new(WIDTH as i32 / 2, HEIGHT as i32 / 2 + 30),
+        "Tap BACK to cancel",
+        Point::new(WIDTH as i32 / 2, 340),
         MonoTextStyle::new(&FONT_10X20, MID_GRAY),
         center,
     )
@@ -170,10 +181,10 @@ pub fn draw_scanning<D: DrawTarget<Color = Rgb565>>(fb: &mut D, aim_on: bool) {
     draw_button(fb, &aim_btn);
 }
 
-pub fn render_token_info<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &TokenV4) {
-    fb.clear(Rgb565::BLACK).ok();
+pub fn render_token_info<D: DrawTarget<Color = Rgb888>>(fb: &mut D, token: &TokenV4) {
+    fb.clear(Rgb888::BLACK).ok();
 
-    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
+    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_CYAN);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
 
     Text::with_text_style(
@@ -236,9 +247,9 @@ fn truncate_str(s: &str, max_len: usize) -> &str {
     }
 }
 
-pub fn render_status<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
-    fb.clear(Rgb565::BLACK).ok();
-    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+pub fn render_status<D: DrawTarget<Color = Rgb888>>(fb: &mut D, message: &str) {
+    fb.clear(Rgb888::BLACK).ok();
+    let style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
     Text::with_text_style(
         truncate_str(message, 60),
@@ -250,7 +261,7 @@ pub fn render_status<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
     .ok();
 }
 
-pub fn render_home<D: DrawTarget<Color = Rgb565>>(fb: &mut D, scanner_connected: bool) {
+pub fn render_home<D: DrawTarget<Color = Rgb888>>(fb: &mut D, scanner_connected: bool) {
     fb.clear(BLACK).ok();
 
     let right_text = if scanner_connected {
@@ -265,7 +276,7 @@ pub fn render_home<D: DrawTarget<Color = Rgb565>>(fb: &mut D, scanner_connected:
     }
 }
 
-pub fn render_waiting_token<D: DrawTarget<Color = Rgb565>>(fb: &mut D) {
+pub fn render_waiting_token<D: DrawTarget<Color = Rgb888>>(fb: &mut D) {
     fb.clear(BLACK).ok();
     draw_status_bar(fb, "IMPORT TOKEN");
     draw_button(fb, &back_button());
@@ -293,10 +304,10 @@ pub fn render_waiting_token<D: DrawTarget<Color = Rgb565>>(fb: &mut D) {
     .ok();
 }
 
-pub fn render_error<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
-    fb.clear(Rgb565::BLACK).ok();
-    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
-    let msg_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+pub fn render_error<D: DrawTarget<Color = Rgb888>>(fb: &mut D, message: &str) {
+    fb.clear(Rgb888::BLACK).ok();
+    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb888::RED);
+    let msg_style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
     Text::with_text_style(
         "ERROR",
@@ -316,12 +327,12 @@ pub fn render_error<D: DrawTarget<Color = Rgb565>>(fb: &mut D, message: &str) {
     .ok();
 }
 
-pub fn render_scan_result<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]) {
-    fb.clear(Rgb565::BLACK).ok();
+pub fn render_scan_result<D: DrawTarget<Color = Rgb888>>(fb: &mut D, data: &[u8]) {
+    fb.clear(Rgb888::BLACK).ok();
 
-    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
-    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_YELLOW);
-    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    let title_style = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_CYAN);
+    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_YELLOW);
+    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
     let center_text = TextStyleBuilder::new().alignment(Alignment::Center).build();
 
     Text::with_text_style(
@@ -368,7 +379,16 @@ pub fn render_scan_result<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]
     .ok();
 }
 
-pub fn render_decoded_scan<D: DrawTarget<Color = Rgb565>>(fb: &mut D, payload: &QrPayload) {
+pub fn render_decoded_scan<D: DrawTarget<Color = Rgb888>>(fb: &mut D, payload: &QrPayload) {
+    let raw = payload.raw_data();
+    if matches!(payload, QrPayload::PlainText(_) | QrPayload::Binary(_))
+        && raw.len() <= 200
+        && core::str::from_utf8(raw).is_ok()
+    {
+        render_qr_mirror(fb, raw);
+        return;
+    }
+
     fb.clear(BLACK).ok();
 
     draw_status_bar(fb, "SCAN RESULT");
@@ -384,7 +404,6 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb565>>(fb: &mut D, payload: &
         .draw(fb)
         .ok();
 
-    let raw = payload.raw_data();
     let len_label = format_u32_len(raw.len());
 
     let mut y = 80u32;
@@ -442,7 +461,24 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb565>>(fb: &mut D, payload: &
                 .ok();
             y += 30;
         }
-        QrPayload::PlainText(_) | QrPayload::Binary(_) => {}
+        QrPayload::PlainText(_) => {
+            Text::new("Type:", Point::new(20, y as i32), label_style)
+                .draw(fb)
+                .ok();
+            Text::new("Plain Text", Point::new(120, y as i32), value_style)
+                .draw(fb)
+                .ok();
+            y += 30;
+        }
+        QrPayload::Binary(_) => {
+            Text::new("Type:", Point::new(20, y as i32), label_style)
+                .draw(fb)
+                .ok();
+            Text::new("Binary", Point::new(120, y as i32), value_style)
+                .draw(fb)
+                .ok();
+            y += 30;
+        }
     }
 
     Text::new("Data:", Point::new(20, y as i32), label_style)
@@ -492,9 +528,9 @@ fn format_u32_len(len: usize) -> heapless::String<16> {
     s
 }
 
-fn render_token_fields<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &TokenV4, start_y: u32) {
-    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_YELLOW);
-    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+fn render_token_fields<D: DrawTarget<Color = Rgb888>>(fb: &mut D, token: &TokenV4, start_y: u32) {
+    let label_style = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_YELLOW);
+    let value_style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
 
     let mut y = start_y;
 
@@ -536,7 +572,7 @@ fn render_token_fields<D: DrawTarget<Color = Rgb565>>(fb: &mut D, token: &TokenV
         .ok();
 }
 
-fn render_token_fields_pretty<D: DrawTarget<Color = Rgb565>>(
+fn render_token_fields_pretty<D: DrawTarget<Color = Rgb888>>(
     fb: &mut D,
     token: &TokenV4,
     start_y: u32,
@@ -609,7 +645,7 @@ fn render_token_fields_pretty<D: DrawTarget<Color = Rgb565>>(
     }
 }
 
-pub fn render_qr_code<D: DrawTarget<Color = Rgb565>>(fb: &mut D, text: &str) -> bool {
+pub fn render_qr_code<D: DrawTarget<Color = Rgb888>>(fb: &mut D, text: &str) -> bool {
     let mut temp_buf = [0u8; QR_BUF_SIZE];
     let mut out_buf = [0u8; QR_BUF_SIZE];
 
@@ -659,7 +695,7 @@ pub fn render_qr_code<D: DrawTarget<Color = Rgb565>>(fb: &mut D, text: &str) -> 
         }
     }
 
-    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::CSS_CYAN);
+    let style = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_CYAN);
     let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
     let label = truncate_str(text, 50);
     Text::with_text_style(
@@ -674,7 +710,7 @@ pub fn render_qr_code<D: DrawTarget<Color = Rgb565>>(fb: &mut D, text: &str) -> 
     true
 }
 
-pub fn render_qr_mirror<D: DrawTarget<Color = Rgb565>>(fb: &mut D, data: &[u8]) {
+pub fn render_qr_mirror<D: DrawTarget<Color = Rgb888>>(fb: &mut D, data: &[u8]) {
     match core::str::from_utf8(data) {
         Ok(text) if data.len() <= 200 => {
             if !render_qr_code(fb, text) {

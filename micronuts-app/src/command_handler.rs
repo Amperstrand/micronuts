@@ -319,7 +319,7 @@ mod tests {
     use embedded_graphics::{
         draw_target::DrawTarget,
         geometry::{OriginDimensions, Size},
-        pixelcolor::Rgb565,
+        pixelcolor::Rgb888,
         Pixel,
     };
     use rand::RngCore;
@@ -333,7 +333,7 @@ mod tests {
     }
 
     impl DrawTarget for MockDisplay {
-        type Color = Rgb565;
+        type Color = Rgb888;
         type Error = core::convert::Infallible;
 
         fn draw_iter<I>(&mut self, _pixels: I) -> Result<(), Self::Error>

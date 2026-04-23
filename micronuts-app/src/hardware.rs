@@ -1,5 +1,5 @@
 use embedded_graphics::draw_target::DrawTarget;
-use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::pixelcolor::Rgb888;
 
 use crate::protocol::{Frame, Response};
 
@@ -30,7 +30,7 @@ pub trait Scanner {
 }
 
 pub trait MicronutsHardware: Scanner {
-    type Display: DrawTarget<Color = Rgb565>;
+    type Display: DrawTarget<Color = Rgb888>;
 
     fn display(&mut self) -> &mut Self::Display;
     fn rng_fill_bytes(&mut self, dest: &mut [u8]);
