@@ -74,16 +74,59 @@ impl<'d> embedded_io_async::Write for AsyncUart<'d> {
 }
 
 pub struct RawFramebuffer {
-    buffer: &'static mut [u32],
+    buf0: &'static mut [u32],
+    buf1: &'static mut [u32],
+    front_is_0: bool,
 }
 
 impl RawFramebuffer {
-    pub fn new(buffer: &'static mut [u32]) -> Self {
-        Self { buffer }
+    pub fn new_double(buf0: &'static mut [u32], buf1: &'static mut [u32]) -> Self {
+        debug_assert_eq!(buf0.len(), buf1.len());
+        buf1.copy_from_slice(buf0);
+        Self {
+            buf0,
+            buf1,
+            front_is_0: true,
+        }
+    }
+
+    fn back_buffer(&mut self) -> &mut [u32] {
+        if self.front_is_0 {
+            self.buf1
+        } else {
+            self.buf0
+        }
+    }
+
+    fn sync_back_buffer(&mut self) {
+        if self.front_is_0 {
+            self.buf1.copy_from_slice(self.buf0);
+        } else {
+            self.buf0.copy_from_slice(self.buf1);
+        }
     }
 
     pub fn as_raw(&mut self) -> &mut [u32] {
-        self.buffer
+        self.back_buffer()
+    }
+
+    pub fn present(&mut self) {
+        self.front_is_0 = !self.front_is_0;
+        let front_addr = if self.front_is_0 {
+            self.buf0.as_ptr()
+        } else {
+            self.buf1.as_ptr()
+        };
+
+        stm32_metapac::LTDC
+            .layer(0)
+            .cfbar()
+            .write(|w| w.set_cfbadd(front_addr as u32));
+        stm32_metapac::LTDC
+            .srcr()
+            .write(|w| w.set_vbr(stm32_metapac::ltdc::vals::Vbr::RELOAD));
+
+        self.sync_back_buffer();
     }
 }
 
@@ -103,7 +146,7 @@ impl DrawTarget for RawFramebuffer {
                     | ((color.r() as u32) << 16)
                     | ((color.g() as u32) << 8)
                     | (color.b() as u32);
-                self.buffer[y * FB_WIDTH as usize + x] = raw;
+                self.back_buffer()[y * FB_WIDTH as usize + x] = raw;
             }
         }
         Ok(())
@@ -123,9 +166,10 @@ impl DrawTarget for RawFramebuffer {
             | ((flat_color.r() as u32) << 16)
             | ((flat_color.g() as u32) << 8)
             | (flat_color.b() as u32);
+        let buffer = self.back_buffer();
 
         for y in top..bottom {
-            let row = &mut self.buffer[y * FB_WIDTH as usize + left..y * FB_WIDTH as usize + right];
+            let row = &mut buffer[y * FB_WIDTH as usize + left..y * FB_WIDTH as usize + right];
             row.fill(raw);
         }
         Ok(())
@@ -136,7 +180,7 @@ impl DrawTarget for RawFramebuffer {
             | ((color.r() as u32) << 16)
             | ((color.g() as u32) << 8)
             | (color.b() as u32);
-        for px in self.buffer.iter_mut() {
+        for px in self.back_buffer().iter_mut() {
             *px = raw;
         }
         Ok(())
@@ -244,6 +288,10 @@ impl MicronutsHardware for FirmwareHardware {
 
     fn display(&mut self) -> &mut Self::Display {
         &mut self.fb
+    }
+
+    fn swap_buffers(&mut self) {
+        self.fb.present();
     }
 
     fn rng_fill_bytes(&mut self, dest: &mut [u8]) {

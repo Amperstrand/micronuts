@@ -139,7 +139,7 @@ async fn main(spawner: Spawner) {
     let rng = embassy_stm32::rng::Rng::new(p.RNG, Irqs);
 
     unsafe {
-        let heap_start = sdram.base_address() + FB_SIZE * 4;
+        let heap_start = sdram.base_address() + (FB_SIZE * 2 * core::mem::size_of::<u32>());
         ALLOCATOR.lock().init(heap_start as *mut u8, HEAP_SIZE);
     }
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
@@ -153,10 +153,12 @@ async fn main(spawner: Spawner) {
     let display: DisplayCtrl = loop {};
     crate::log_info!("Display initialized");
 
-    let fb_buffer: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
+    let fb0: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
+    let fb1: &'static mut [u32] = sdram.subslice_mut(FB_SIZE, FB_SIZE);
     // Keep the display controller alive so DSI/LTDC keep scanning out of SDRAM while the app
     // writes the framebuffer directly instead of going through DisplayCtrl.
     core::mem::forget(display);
+    let mut fb = RawFramebuffer::new_double(fb0, fb1);
 
     crate::log_info!("Initializing touch...");
     let mut touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
@@ -185,11 +187,12 @@ async fn main(spawner: Spawner) {
         let mut ticker = Ticker::every(Duration::from_millis(33));
         while !splash_done {
             boot_splash::render_frame(
-                fb_buffer,
+                fb.as_raw(),
                 embassy_stm32f469i_disco::FB_WIDTH as u32,
                 embassy_stm32f469i_disco::FB_HEIGHT as u32,
                 &mut splash_state,
             );
+            fb.present();
 
             ticker.next().await;
 
@@ -337,7 +340,7 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Scanner state after init: connected={}", scanner_connected);
 
     let mut hw = FirmwareHardware::new(
-        RawFramebuffer::new(fb_buffer),
+        fb,
         scanner,
         usb_receiver,
         usb_sender,
