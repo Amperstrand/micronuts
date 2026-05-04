@@ -29,7 +29,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
     let scanner_connected = hw.is_connected();
     let mut screen = AppScreen::Home;
     let mut touch_active = false;
-    display::render_home(hw.display(), scanner_connected);
+    display::render_home(hw.display(), scanner_connected, false);
 
     let buttons = display::home_buttons();
     let back_btn = display::back_button();
@@ -38,7 +38,9 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
     let mut last_scan_data: Option<Vec<u8>> = None;
     let mut aim_on: bool = false;
     let mut scan_ticks: u32 = 0;
+    let mut scan_retries: u32 = 0;
     const SCAN_TIMEOUT_TICKS: u32 = 10 * 200;
+    const MAX_SCAN_RETRIES: u32 = 3;
 
     let mut poll_ticker = embassy_time::Ticker::every(Duration::from_millis(5));
 
@@ -80,10 +82,18 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                     let _ = hw.set_aim(true).await;
                                     let _ = hw.trigger().await;
                                     display::draw_scanning(hw.display(), true);
+                                    display::draw_scanning_progress(hw.display(), 0, 10);
                                     scan_ticks = 0;
+                                    scan_retries = 0;
                                 } else if buttons[1].hit(tp.x, tp.y) {
-                                    screen = AppScreen::WaitingToken;
-                                    display::render_waiting_token(hw.display());
+                                    if let Some(data) = last_scan_data.as_ref() {
+                                        let payload = qr::decode_qr(data);
+                                        screen = AppScreen::ScanResult;
+                                        display::render_decoded_scan(hw.display(), &payload);
+                                    } else {
+                                        screen = AppScreen::WaitingToken;
+                                        display::render_waiting_token(hw.display());
+                                    }
                                 } else if buttons[2].hit(tp.x, tp.y) {
                                     if state.swap_state == state::SwapState::ProofsReady {
                                         screen = AppScreen::ShowProofs;
@@ -97,7 +107,11 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                             "No proofs available yet",
                                         );
                                         screen = AppScreen::Home;
-                                        display::render_home(hw.display(), scanner_connected);
+                                        display::render_home(
+                                            hw.display(),
+                                            scanner_connected,
+                                            last_scan_data.is_some(),
+                                        );
                                     }
                                 }
                             }
@@ -118,13 +132,30 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                 let _ = hw.set_aim(false).await;
                                 aim_on = false;
                                 scan_ticks = 0;
+                                scan_retries = 0;
                                 display::render_decoded_scan(hw.display(), &payload);
                                 last_scan_data = Some(data);
                             }
                             _ => {
                                 scan_ticks += 1;
+                                if scan_ticks % 200 == 0 {
+                                    display::draw_scanning(hw.display(), aim_on);
+                                    display::draw_scanning_progress(
+                                        hw.display(),
+                                        scan_ticks / 200,
+                                        SCAN_TIMEOUT_TICKS / 200,
+                                    );
+                                }
                                 if scan_ticks > SCAN_TIMEOUT_TICKS {
-                                    go_home = true;
+                                    scan_retries += 1;
+                                    scan_ticks = 0;
+                                    if scan_retries < MAX_SCAN_RETRIES {
+                                        display::draw_scanning(hw.display(), aim_on);
+                                        display::draw_scanning_retry(hw.display());
+                                        let _ = hw.trigger().await;
+                                    } else {
+                                        go_home = true;
+                                    }
                                 }
                             }
                         }
@@ -138,6 +169,11 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                     aim_on = !aim_on;
                                     let _ = hw.set_aim(aim_on).await;
                                     display::draw_scanning(hw.display(), aim_on);
+                                    display::draw_scanning_progress(
+                                        hw.display(),
+                                        scan_ticks / 200,
+                                        SCAN_TIMEOUT_TICKS / 200,
+                                    );
                                 }
                             }
                         } else {
@@ -166,8 +202,9 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                     aim_on = false;
                     hw.stop().await;
                     screen = AppScreen::Home;
-                    display::render_home(hw.display(), scanner_connected);
+                    display::render_home(hw.display(), scanner_connected, last_scan_data.is_some());
                     scan_ticks = 0;
+                    scan_retries = 0;
                 }
             }
         }

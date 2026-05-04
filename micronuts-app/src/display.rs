@@ -24,6 +24,7 @@ const GREEN: Rgb888 = Rgb888::new(0x00, 0xCC, 0x66);
 const YELLOW: Rgb888 = Rgb888::new(0xCC, 0xAA, 0x00);
 const QR_BUF_SIZE: usize = Version::MAX.buffer_len();
 
+#[derive(Clone, Copy)]
 pub struct Button {
     pub x: u32,
     pub y: u32,
@@ -178,6 +179,41 @@ pub fn draw_scanning<D: DrawTarget<Color = Rgb888>>(fb: &mut D, aim_on: bool) {
     draw_button(fb, &aim_btn);
 }
 
+pub fn draw_scanning_progress<D: DrawTarget<Color = Rgb888>>(
+    fb: &mut D,
+    elapsed_secs: u32,
+    max_secs: u32,
+) {
+    let remaining = max_secs.saturating_sub(elapsed_secs);
+    let mut label = heapless::String::<32>::new();
+    let _ = label.push_str(&format_u32_len(remaining as usize));
+    let _ = label.push_str("s remaining");
+
+    let dim_style = MonoTextStyle::new(&FONT_10X20, MID_GRAY);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+    Text::with_text_style(
+        &label,
+        Point::new(WIDTH as i32 / 2, 380),
+        dim_style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+}
+
+pub fn draw_scanning_retry<D: DrawTarget<Color = Rgb888>>(fb: &mut D) {
+    let style = MonoTextStyle::new(&FONT_10X20, YELLOW);
+    let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
+    Text::with_text_style(
+        "Retrying...",
+        Point::new(WIDTH as i32 / 2, 380),
+        style,
+        center,
+    )
+    .draw(fb)
+    .ok();
+}
+
 pub fn render_token_info<D: DrawTarget<Color = Rgb888>>(fb: &mut D, token: &TokenV4) {
     fb.clear(Rgb888::BLACK).ok();
 
@@ -271,7 +307,11 @@ pub fn render_status<D: DrawTarget<Color = Rgb888>>(fb: &mut D, message: &str) {
     .ok();
 }
 
-pub fn render_home<D: DrawTarget<Color = Rgb888>>(fb: &mut D, scanner_connected: bool) {
+pub fn render_home<D: DrawTarget<Color = Rgb888>>(
+    fb: &mut D,
+    scanner_connected: bool,
+    has_last_scan: bool,
+) {
     fb.clear(BLACK).ok();
 
     let right_text = if scanner_connected {
@@ -281,9 +321,23 @@ pub fn render_home<D: DrawTarget<Color = Rgb888>>(fb: &mut D, scanner_connected:
     };
     draw_status_bar(fb, right_text);
 
-    for btn in &home_buttons() {
-        draw_button(fb, btn);
-    }
+    let buttons = home_buttons();
+    draw_button(fb, &buttons[0]);
+
+    let btn1 = if has_last_scan {
+        Button {
+            x: 40,
+            y: 300,
+            w: WIDTH - 80,
+            h: 120,
+            label: "VIEW LAST SCAN",
+        }
+    } else {
+        buttons[1]
+    };
+    draw_button(fb, &btn1);
+
+    draw_button(fb, &buttons[2]);
 }
 
 pub fn render_waiting_token<D: DrawTarget<Color = Rgb888>>(fb: &mut D) {
@@ -411,7 +465,8 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb888>>(fb: &mut D, payload: &
         .draw(fb)
         .ok();
 
-    let len_label = format_u32_len(raw.len());
+    let mut len_label = format_u32_len(raw.len());
+    let _ = len_label.push_str(" bytes");
 
     let mut y = 80u32;
 
@@ -506,7 +561,7 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb888>>(fb: &mut D, payload: &
     }
 }
 
-fn format_u32_len(len: usize) -> heapless::String<16> {
+pub(crate) fn format_u32_len(len: usize) -> heapless::String<16> {
     let mut s = heapless::String::new();
     if len < 10 {
         let _ = s.push((b'0' + len as u8) as char);
@@ -530,7 +585,6 @@ fn format_u32_len(len: usize) -> heapless::String<16> {
             let _ = s.push(digits[j] as char);
         }
     }
-    let _ = s.push_str(" bytes");
     s
 }
 
