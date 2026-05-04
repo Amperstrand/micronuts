@@ -133,6 +133,8 @@ impl fmt::Display for DecodedPayload {
 }
 
 pub fn decode_qr(data: &[u8]) -> QrPayload {
+    let data = strip_scanner_artifacts(data);
+
     if let Some(fragment) = parse_ur_fragment(data) {
         return QrPayload::UrFragment { parsed: fragment };
     }
@@ -149,6 +151,14 @@ pub fn decode_qr(data: &[u8]) -> QrPayload {
         PayloadType::Binary => QrPayload::Binary(data.to_vec()),
         PayloadType::UrFragment => QrPayload::PlainText(data.to_vec()),
     }
+}
+
+fn strip_scanner_artifacts(data: &[u8]) -> &[u8] {
+    let mut end = data.len();
+    while end > 0 && matches!(data[end - 1], 0x00 | 0x0A | 0x0D | b' ') {
+        end -= 1;
+    }
+    &data[..end]
 }
 
 pub fn is_qr_payload(data: &[u8]) -> bool {
