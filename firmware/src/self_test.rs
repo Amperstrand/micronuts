@@ -42,7 +42,6 @@ pub fn log_build_info() {
     crate::log_info!("Embassy rev: {}", build_info::EMBASSY_REV);
     crate::log_info!("BSP rev: {}", build_info::BSP_REV);
     crate::log_info!("GM65 rev: {}", build_info::GM65_REV);
-    crate::log_info!("stm32f469i-disc rev: {}", build_info::STM32F469I_DISC_REV);
     crate::log_info!("===========================");
 }
 

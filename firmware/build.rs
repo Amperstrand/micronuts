@@ -20,21 +20,21 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", out.display());
     }
 
-    println!("cargo:rerun-if-env-changed=GIT_HASH");
+    println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let git_hash = env::var("GIT_HASH").unwrap_or_else(|_| {
-        Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    });
+    let git_hash = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir("..")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=GIT_HASH={}", git_hash);
 
     let git_date = Command::new("git")
         .args(["log", "-1", "--format=%ci"])
+        .current_dir("..")
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -56,14 +56,11 @@ fn main() {
     let embassy_rev = extract_rev(&workspace_toml, "embassy");
     println!("cargo:rustc-env=EMBASSY_REV={}", embassy_rev);
 
-    let bsp_rev = extract_rev(&workspace_toml, "embassy-stm32f469i-disco");
+    let bsp_rev = extract_rev_exact(&workspace_toml, "embassy-stm32f469i-disco");
     println!("cargo:rustc-env=BSP_REV={}", bsp_rev);
 
-    let gm65_rev = extract_rev(&workspace_toml, "gm65-scanner");
+    let gm65_rev = extract_rev_exact(&workspace_toml, "gm65-scanner");
     println!("cargo:rustc-env=GM65_REV={}", gm65_rev);
-
-    let disc_rev = extract_rev(&workspace_toml, "stm32f469i-disc");
-    println!("cargo:rustc-env=STM32F469I_DISC_REV={}", disc_rev);
 }
 
 fn extract_rev(toml: &str, crate_name: &str) -> String {
@@ -73,6 +70,26 @@ fn extract_rev(toml: &str, crate_name: &str) -> String {
             continue;
         }
         if !trimmed.contains(crate_name) {
+            continue;
+        }
+        if let Some(pos) = trimmed.find("rev = \"") {
+            let start = pos + 7;
+            if let Some(end) = trimmed[start..].find('"') {
+                return trimmed[start..start + end].to_string();
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
+fn extract_rev_exact(toml: &str, package_name: &str) -> String {
+    let search = format!("package = \"{}\"", package_name);
+    for line in toml.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if !trimmed.contains(&search) && !trimmed.contains(&format!("{} =", package_name)) {
             continue;
         }
         if let Some(pos) = trimmed.find("rev = \"") {
