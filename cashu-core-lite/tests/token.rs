@@ -178,3 +178,63 @@ fn test_total_amount_zero_proofs() {
     assert_eq!(token.total_amount(), 0);
     assert_eq!(token.proof_count(), 0);
 }
+
+#[test]
+fn test_decode_cashu_b_base64url() {
+    let token = sample_token();
+    let raw_cbor = encode_token(&token).expect("should encode");
+
+    let b64 = base64_encode(&raw_cbor);
+    let mut with_prefix = b"cashuB".to_vec();
+    with_prefix.extend_from_slice(b64.as_bytes());
+
+    let decoded = decode_token(&with_prefix).expect("should decode cashuB + base64url");
+    assert_eq!(token, decoded);
+}
+
+#[test]
+fn test_decode_cashu_b_base64url_without_padding() {
+    let token = sample_token();
+    let raw_cbor = encode_token(&token).expect("should encode");
+
+    let b64 = base64_encode(&raw_cbor);
+    let b64_trimmed: String = b64.trim_end_matches('=').to_string();
+
+    let mut with_prefix = b"cashuB".to_vec();
+    with_prefix.extend_from_slice(b64_trimmed.as_bytes());
+
+    let decoded = decode_token(&with_prefix).expect("should decode without padding");
+    assert_eq!(token, decoded);
+}
+
+#[test]
+fn test_decode_raw_cbor_still_works() {
+    let token = sample_token();
+    let raw_cbor = encode_token(&token).expect("should encode");
+    let decoded = decode_token(&raw_cbor).expect("raw CBOR still decodes");
+    assert_eq!(token, decoded);
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
