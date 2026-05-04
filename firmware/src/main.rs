@@ -204,6 +204,54 @@ async fn main(spawner: Spawner) {
     }
 
     crate::log_info!("Initializing USB...");
+
+    // After a soft reset (SYSRESETREQ from st-flash), the USB OTG FS peripheral
+    // can be left in an inconsistent state where the PHY doesn't re-enumerate.
+    // Cycling the RCC clock + core soft reset + PHY power cycle ensures a clean
+    // start regardless of how we got here. See gm65-scanner #56, ccid-firmware-rs #15.
+    {
+        let rcc = stm32_metapac::RCC;
+
+        // SAFETY: RCC register writes are side-effect-only, no aliasing with other refs.
+        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(false));
+        cortex_m::asm::delay(100);
+        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(true));
+
+        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(true));
+        cortex_m::asm::delay(100);
+        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(false));
+        cortex_m::asm::delay(100);
+
+        // SAFETY: USB_OTG_FS_GLOBAL base address 0x5000_0000 is fixed by silicon.
+        // No other reference to this peripheral exists yet (driver created below).
+        let otg_global = 0x5000_0000usize as *mut u32;
+        unsafe {
+            // GRSTCTL.AHBIDL (bit 31) — wait for AHB idle before reset
+            let mut timeout = 100_000u32;
+            while otg_global.add(0x010 / 4).read_volatile() & (1 << 31) == 0 {
+                timeout -= 1;
+                if timeout == 0 {
+                    break;
+                }
+            }
+
+            // GRSTCTL.CSRST (bit 0) — core soft reset, self-clearing
+            otg_global.add(0x010 / 4).write_volatile(1);
+            timeout = 100_000u32;
+            while otg_global.add(0x010 / 4).read_volatile() & 1 != 0 {
+                timeout -= 1;
+                if timeout == 0 {
+                    break;
+                }
+            }
+
+            // GCCFG.PWRDWN (bit 16) — PHY power cycle
+            otg_global.add(0x038 / 4).write_volatile(0);
+            cortex_m::asm::delay(100);
+            otg_global.add(0x038 / 4).write_volatile(1 << 16);
+        }
+    }
+
     static EP_OUT_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
     let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 512]);
     let mut usb_config = usb::Config::default();
