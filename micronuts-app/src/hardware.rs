@@ -33,6 +33,7 @@ pub trait MicronutsHardware: Scanner {
     type Display: DrawTarget<Color = Rgb888>;
 
     fn display(&mut self) -> &mut Self::Display;
+    fn swap_buffers(&mut self) {}
     fn rng_fill_bytes(&mut self, dest: &mut [u8]);
     fn transport_recv_frame(&mut self) -> impl core::future::Future<Output = Option<Frame>>;
     fn transport_send(&mut self, response: &Response) -> impl core::future::Future<Output = ()>;
