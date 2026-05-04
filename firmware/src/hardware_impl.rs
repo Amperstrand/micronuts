@@ -197,7 +197,11 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
-        self.scanner.read_scan().await
+        let data = self.scanner.read_scan().await?;
+        crate::log_info!("SCAN: {} bytes", data.len());
+        let preview_len = data.len().min(40);
+        crate::log_info!("SCAN head: {:?}", &data[..preview_len]);
+        Some(data)
     }
 
     async fn stop(&mut self) {
