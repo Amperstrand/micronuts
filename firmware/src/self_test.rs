@@ -56,10 +56,35 @@ pub async fn run_all(hw: &mut FirmwareHardware) -> Vec<TestResult> {
     results.push(test_heap());
     results.push(test_heap_stress());
     results.push(test_display(hw).await);
-    results.push(test_touch(hw).await);
-    results.push(test_scanner(hw).await);
     results.push(test_crypto_blinding(hw));
     results.push(test_usb_cdc_protocol());
+
+    // Interactive test skip: tap within 2s to skip touch/scanner tests
+    crate::log_info!("Tap screen within 2s to skip interactive tests...");
+    let skip_interactive = {
+        let start = embassy_time::Instant::now();
+        let mut skip = false;
+        loop {
+            if embassy_time::Instant::now().duration_since(start) > Duration::from_secs(2) {
+                break;
+            }
+            if hw.touch_get().is_some() {
+                skip = true;
+                crate::log_info!("Touch detected — skipping interactive tests");
+                break;
+            }
+            embassy_time::Timer::after(Duration::from_millis(50)).await;
+        }
+        skip
+    };
+
+    if skip_interactive {
+        results.push(TestResult::skip("Touch"));
+        results.push(TestResult::skip("Scanner"));
+    } else {
+        results.push(test_touch(hw).await);
+        results.push(test_scanner(hw).await);
+    }
 
     let passed = results.iter().filter(|r| r.status == TestStatus::Pass).count();
     let failed = results.iter().filter(|r| r.status == TestStatus::Fail).count();

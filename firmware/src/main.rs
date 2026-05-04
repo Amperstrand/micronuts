@@ -126,6 +126,13 @@ async fn main(spawner: Spawner) {
 
     let sdram = SdramCtrl::new(&mut p, 180_000_000);
 
+    crate::log_info!("SDRAM quick test...");
+    if sdram.test_quick() {
+        crate::log_info!("SDRAM quick test: PASS");
+    } else {
+        crate::log_error!("SDRAM quick test: FAIL — display may be unreliable");
+    }
+
     crate::log_info!("Micronuts firmware starting (embassy)...");
     crate::log_info!("SDRAM initialized");
 
