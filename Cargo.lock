@@ -928,7 +928,7 @@ dependencies = [
 [[package]]
 name = "embassy-stm32f469i-disco"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=5496d4b#5496d4ba4c60592e2ab5ea39c140339c7b86a42b"
+source = "git+https://github.com/Amperstrand/embassy-stm32f469i-disco?rev=f856b6e#f856b6e036112c77bdb723ac2a7d918d48faefa9"
 dependencies = [
  "cortex-m",
  "embassy-stm32",
@@ -1947,7 +1947,7 @@ dependencies = [
 [[package]]
 name = "nt35510"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/nt35510?rev=6252d17#6252d17c16db14887a9e3bda51a2da1f94fb486c"
+source = "git+https://github.com/Amperstrand/nt35510?rev=263d8e4#263d8e41643908e6b1176a9cd81b12bb43c346ae"
 dependencies = [
  "embedded-display-controller",
  "embedded-hal 1.0.0",

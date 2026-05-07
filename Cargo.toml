@@ -41,6 +41,22 @@ qrcodegen-no-heap = "1.8.1"
 
 # Embassy — pinned to upstream 84444a19 (same as BSP)
 # To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19", features = ["tick-hz-32_768"] }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread"] }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
+embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
+
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "f856b6e" }
+
+linked_list_allocator = "0.10"
+static_cell = "2.1"
+heapless = "0.8"
+critical-section = "1.2"
+
+[patch.crates-io]
 embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
@@ -48,14 +64,6 @@ embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embass
 embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
-
-# Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "5496d4b" }
-
-linked_list_allocator = "0.10"
-static_cell = "2.1"
-heapless = "0.8"
-critical-section = "1.2"
 
 [profile.release]
 debug = true

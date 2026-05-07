@@ -12,7 +12,7 @@ use panic_halt as _;
 
 use embassy_executor::Spawner;
 use embassy_stm32::interrupt::InterruptExt;
-use embassy_stm32::{bind_interrupts, peripherals, rcc::*, time::Hertz, usb, usart, Config};
+use embassy_stm32::{bind_interrupts, peripherals, usb, usart};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
@@ -92,39 +92,9 @@ async fn usb_task(mut usb_dev: UsbDevice<'static, UsbDriverType>) {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let mut config = Config::default();
-    {
-        config.rcc.hse = Some(Hse {
-            freq: Hertz(8_000_000),
-            mode: HseMode::Oscillator,
-        });
-        config.rcc.pll_src = PllSource::HSE;
-        config.rcc.pll = Some(Pll {
-            prediv: PllPreDiv::DIV8,
-            mul: PllMul::MUL360,
-            divp: Some(PllPDiv::DIV2),
-            divq: Some(PllQDiv::DIV7),
-            divr: Some(PllRDiv::DIV6),
-        });
-        config.rcc.ahb_pre = AHBPrescaler::DIV1;
-        config.rcc.apb1_pre = APBPrescaler::DIV4;
-        config.rcc.apb2_pre = APBPrescaler::DIV2;
-        config.rcc.sys = Sysclk::PLL1_P;
-        config.rcc.pllsai = Some(Pll {
-            prediv: PllPreDiv::DIV8,
-            mul: PllMul::MUL384,
-            divp: Some(PllPDiv::DIV8),
-            divq: Some(PllQDiv::DIV8),
-            divr: Some(PllRDiv::DIV7),
-        });
-        config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
-    }
-    let mut p = embassy_stm32::init(config);
-    stm32_metapac::RCC.dckcfgr2().modify(|w| {
-        w.set_clk48sel(mux::Clk48sel::PLLSAI1_Q);
-    });
+    let mut p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
 
-    let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
 
     crate::log_info!("SDRAM quick test...");
     if sdram.test_quick() {
