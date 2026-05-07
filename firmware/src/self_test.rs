@@ -39,7 +39,7 @@ pub fn log_build_info() {
     crate::log_info!("=== MICRONUTS SELF-TEST ===");
     crate::log_info!("Git: {} ({})", build_info::GIT_HASH, build_info::GIT_DATE);
     crate::log_info!("Build: {}", build_info::BUILD_DATE);
-    crate::log_info!("Embassy rev: {}", build_info::EMBASSY_REV);
+    crate::log_info!("Embassy: {}", build_info::EMBASSY_REV);
     crate::log_info!("BSP rev: {}", build_info::BSP_REV);
     crate::log_info!("GM65 rev: {}", build_info::GM65_REV);
     crate::log_info!("===========================");

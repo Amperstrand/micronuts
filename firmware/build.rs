@@ -53,17 +53,18 @@ fn main() {
 
     let workspace_toml = std::fs::read_to_string("../Cargo.toml").unwrap_or_default();
 
-    let embassy_rev = extract_rev(&workspace_toml, "embassy");
-    println!("cargo:rustc-env=EMBASSY_REV={}", embassy_rev);
+    let embassy_ver = extract_field(&workspace_toml, "embassy-time", "version");
+    println!("cargo:rustc-env=EMBASSY_REV=crates.io {}", embassy_ver);
 
-    let bsp_rev = extract_rev_exact(&workspace_toml, "embassy-stm32f469i-disco");
+    let bsp_rev = extract_field(&workspace_toml, "embassy-stm32f469i-disco", "rev");
     println!("cargo:rustc-env=BSP_REV={}", bsp_rev);
 
-    let gm65_rev = extract_rev_exact(&workspace_toml, "gm65-scanner");
+    let gm65_rev = extract_field(&workspace_toml, "gm65-scanner", "rev");
     println!("cargo:rustc-env=GM65_REV={}", gm65_rev);
 }
 
-fn extract_rev(toml: &str, crate_name: &str) -> String {
+fn extract_field(toml: &str, crate_name: &str, field: &str) -> String {
+    let pattern = format!("{} = \"", field);
     for line in toml.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('#') {
@@ -72,28 +73,8 @@ fn extract_rev(toml: &str, crate_name: &str) -> String {
         if !trimmed.contains(crate_name) {
             continue;
         }
-        if let Some(pos) = trimmed.find("rev = \"") {
-            let start = pos + 7;
-            if let Some(end) = trimmed[start..].find('"') {
-                return trimmed[start..start + end].to_string();
-            }
-        }
-    }
-    "unknown".to_string()
-}
-
-fn extract_rev_exact(toml: &str, package_name: &str) -> String {
-    let search = format!("package = \"{}\"", package_name);
-    for line in toml.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            continue;
-        }
-        if !trimmed.contains(&search) && !trimmed.contains(&format!("{} =", package_name)) {
-            continue;
-        }
-        if let Some(pos) = trimmed.find("rev = \"") {
-            let start = pos + 7;
+        if let Some(pos) = trimmed.find(&pattern) {
+            let start = pos + pattern.len();
             if let Some(end) = trimmed[start..].find('"') {
                 return trimmed[start..start + end].to_string();
             }

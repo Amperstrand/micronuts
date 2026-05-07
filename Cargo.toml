@@ -33,37 +33,27 @@ embedded-hal = "1.0"
 embedded-graphics = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "ca62de9", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "fa9b750", features = ["sync", "async", "defmt"] }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 nb = "1.1"
 qrcodegen-no-heap = "1.8.1"
 
-# Embassy — pinned to upstream 84444a19 (same as BSP)
-# To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
-embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19", features = ["tick-hz-32_768"] }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread"] }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
-embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
+# Embassy — from crates.io
+embassy-time = { version = "0.5.1", features = ["tick-hz-32_768"] }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-usb = { version = "0.6.0" }
+embassy-usb-synopsys-otg = { version = "0.3.3" }
+embassy-sync = { version = "0.8.0" }
+embassy-futures = { version = "0.1.2" }
 
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "f856b6e" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "57c20e3" }
 
 linked_list_allocator = "0.10"
 static_cell = "2.1"
 heapless = "0.8"
 critical-section = "1.2"
-
-[patch.crates-io]
-embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
-embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 
 [profile.release]
 debug = true
