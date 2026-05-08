@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use embassy_stm32f469i_disco::display::{FB_HEIGHT, FB_WIDTH};
+use embassy_stm32f469i_disco::{FB_HEIGHT, FB_WIDTH};
 use embassy_time::Duration;
 
 use crate::build_info;

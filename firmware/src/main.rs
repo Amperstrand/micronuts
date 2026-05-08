@@ -17,7 +17,7 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::display::{BoardHint, DisplayCtrl, SdramCtrl, FB_SIZE};
+use embassy_stm32f469i_disco::{BoardHint, DisplayCtrl, SdramCtrl, FB_HEIGHT, FB_WIDTH};
 
 use firmware::boot_splash;
 use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
@@ -30,6 +30,7 @@ use static_cell::StaticCell;
 pub use firmware::{log_error, log_info, log_warn};
 
 const HEAP_SIZE: usize = 128 * 1024;
+const FB_SIZE: usize = (FB_WIDTH as usize) * (FB_HEIGHT as usize);
 
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
@@ -95,13 +96,21 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
 
     let sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
+    let sdram_base = sdram.base_address();
+    let heap_start = sdram_base + (FB_SIZE * 2 * core::mem::size_of::<u32>());
 
     crate::log_info!("SDRAM quick test...");
-    if sdram.test_quick() {
+    let sdram_ok = sdram.test_quick();
+    if sdram_ok {
         crate::log_info!("SDRAM quick test: PASS");
     } else {
         crate::log_error!("SDRAM quick test: FAIL — display may be unreliable");
     }
+
+    let sdram_bytes = sdram.into_bytes();
+    let fb_size_bytes = FB_SIZE * core::mem::size_of::<u32>();
+    let (display_bytes, rest) = sdram_bytes.split_at_mut(fb_size_bytes);
+    let (fb1_bytes, _) = rest.split_at_mut(fb_size_bytes);
 
     crate::log_info!("Micronuts firmware starting (embassy)...");
     crate::log_info!("SDRAM initialized");
@@ -109,7 +118,6 @@ async fn main(spawner: Spawner) {
     let rng = embassy_stm32::rng::Rng::new(p.RNG, Irqs);
 
     unsafe {
-        let heap_start = sdram.base_address() + (FB_SIZE * 2 * core::mem::size_of::<u32>());
         ALLOCATOR.lock().init(heap_start as *mut u8, HEAP_SIZE);
     }
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
@@ -117,14 +125,16 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Initializing display...");
     #[allow(unexpected_cfgs)]
     #[cfg(not(rust_analyzer))]
-    let display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    let display = DisplayCtrl::new(display_bytes, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
     #[allow(unexpected_cfgs)]
     #[cfg(rust_analyzer)]
     let display: DisplayCtrl = loop {};
     crate::log_info!("Display initialized");
 
-    let fb0: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
-    let fb1: &'static mut [u32] = sdram.subslice_mut(FB_SIZE, FB_SIZE);
+    let fb0: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(sdram_base as *mut u32, FB_SIZE) };
+    let fb1: &'static mut [u32] = unsafe {
+        core::slice::from_raw_parts_mut(fb1_bytes.as_mut_ptr() as *mut u32, FB_SIZE)
+    };
     // Keep the display controller alive so DSI/LTDC keep scanning out of SDRAM while the app
     // writes the framebuffer directly instead of going through DisplayCtrl.
     core::mem::forget(display);
@@ -137,13 +147,10 @@ async fn main(spawner: Spawner) {
         p.PB9,
         embassy_stm32::i2c::Config::default(),
     );
-    let touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new();
-    let touch_available = touch_ctrl
-        .read_vendor_id(&mut touch_i2c)
-        .is_ok();
+    let _ = touch_i2c.blocking_write(0x38, &[0xA4, 0x01]);
+    let mut touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new(touch_i2c);
+    let touch_available = touch_ctrl.read_vendor_id().is_ok();
     if touch_available {
-        // Set FT6X06 G_MODE to interrupt trigger mode (matches gm65-scanner init)
-        let _ = touch_i2c.blocking_write(0x38, &[0xA4, 0x01]);
         crate::log_info!("Touch controller ready (G_MODE=interrupt trigger)");
     } else {
         crate::log_warn!("Touch controller not found");
@@ -167,7 +174,7 @@ async fn main(spawner: Spawner) {
             ticker.next().await;
 
             if touch_available {
-                if let Ok(status) = touch_ctrl.td_status(&mut touch_i2c) {
+                if let Ok(status) = touch_ctrl.td_status() {
                     if status > 0 {
                         crate::log_info!("Touch detected, exiting splash");
                         splash_done = true;
@@ -315,7 +322,6 @@ async fn main(spawner: Spawner) {
         usb_receiver,
         usb_sender,
         touch_ctrl,
-        touch_i2c,
         touch_available,
         rng,
         scanner_connected,
