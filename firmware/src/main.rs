@@ -17,7 +17,8 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::{BoardHint, DisplayCtrl, SdramCtrl, FB_HEIGHT, FB_WIDTH};
+use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
+use embassy_stm32f469i_disco::BoardHint;
 
 use firmware::boot_splash;
 use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
@@ -96,8 +97,6 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
 
     let sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
-    let sdram_base = sdram.base_address();
-    let heap_start = sdram_base + (FB_SIZE * 2 * core::mem::size_of::<u32>());
 
     crate::log_info!("SDRAM quick test...");
     let sdram_ok = sdram.test_quick();
@@ -123,20 +122,30 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     crate::log_info!("Initializing display...");
+    let sdram_base = sdram.base_address();
+    let fb_size_bytes = FB_SIZE * core::mem::size_of::<u32>();
+    // SAFETY: sdram_base points to valid 16MB SDRAM. DisplayCtrl uses the first
+    // fb_size_bytes for the framebuffer. After forget(display), LTDC continues scanning.
+    // fb0/fb1 alias the same memory for double-buffering.
+    let framebuffer: &'static mut [u8] = unsafe {
+        core::slice::from_raw_parts_mut(sdram_base as *mut u8, fb_size_bytes)
+    };
     #[allow(unexpected_cfgs)]
     #[cfg(not(rust_analyzer))]
-    let display = DisplayCtrl::new(display_bytes, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    let display = DisplayCtrl::new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
     #[allow(unexpected_cfgs)]
     #[cfg(rust_analyzer)]
     let display: DisplayCtrl = loop {};
     crate::log_info!("Display initialized");
 
-    let fb0: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(sdram_base as *mut u32, FB_SIZE) };
-    let fb1: &'static mut [u32] = unsafe {
-        core::slice::from_raw_parts_mut(fb1_bytes.as_mut_ptr() as *mut u32, FB_SIZE)
+    // SAFETY: Same SDRAM region as framebuffer above, reinterpreted as u32 for
+    // double-buffered pixel access. DisplayCtrl is forgotten below — LTDC keeps scanning.
+    let fb0: &'static mut [u32] = unsafe {
+        core::slice::from_raw_parts_mut(sdram_base as *mut u32, FB_SIZE)
     };
-    // Keep the display controller alive so DSI/LTDC keep scanning out of SDRAM while the app
-    // writes the framebuffer directly instead of going through DisplayCtrl.
+    let fb1: &'static mut [u32] = unsafe {
+        core::slice::from_raw_parts_mut((sdram_base + fb_size_bytes) as *mut u32, FB_SIZE)
+    };
     core::mem::forget(display);
     let mut fb = RawFramebuffer::new_double(fb0, fb1);
 
@@ -147,14 +156,15 @@ async fn main(spawner: Spawner) {
         p.PB9,
         embassy_stm32::i2c::Config::default(),
     );
-    let _ = touch_i2c.blocking_write(0x38, &[0xA4, 0x01]);
-    let mut touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new(touch_i2c);
-    let touch_available = touch_ctrl.read_vendor_id().is_ok();
+    let mut vendor_buf = [0u8; 1];
+    let touch_available = touch_i2c.blocking_write_read(0x38, &[0xA8], &mut vendor_buf).is_ok();
     if touch_available {
+        let _ = touch_i2c.blocking_write(0x38, &[0xA4, 0x01]);
         crate::log_info!("Touch controller ready (G_MODE=interrupt trigger)");
     } else {
         crate::log_warn!("Touch controller not found");
     }
+    let mut touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new(touch_i2c);
 
     {
         crate::log_info!("Running boot splash...");
@@ -191,53 +201,7 @@ async fn main(spawner: Spawner) {
     }
 
     crate::log_info!("Initializing USB...");
-
-    // After a soft reset (SYSRESETREQ from st-flash), the USB OTG FS peripheral
-    // can be left in an inconsistent state where the PHY doesn't re-enumerate.
-    // Cycling the RCC clock + core soft reset + PHY power cycle ensures a clean
-    // start regardless of how we got here. See gm65-scanner #56, ccid-firmware-rs #15.
-    {
-        let rcc = stm32_metapac::RCC;
-
-        // SAFETY: RCC register writes are side-effect-only, no aliasing with other refs.
-        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(false));
-        cortex_m::asm::delay(100);
-        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(true));
-
-        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(true));
-        cortex_m::asm::delay(100);
-        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(false));
-        cortex_m::asm::delay(100);
-
-        // SAFETY: USB_OTG_FS_GLOBAL base address 0x5000_0000 is fixed by silicon.
-        // No other reference to this peripheral exists yet (driver created below).
-        let otg_global = 0x5000_0000usize as *mut u32;
-        unsafe {
-            // GRSTCTL.AHBIDL (bit 31) — wait for AHB idle before reset
-            let mut timeout = 100_000u32;
-            while otg_global.add(0x010 / 4).read_volatile() & (1 << 31) == 0 {
-                timeout -= 1;
-                if timeout == 0 {
-                    break;
-                }
-            }
-
-            // GRSTCTL.CSRST (bit 0) — core soft reset, self-clearing
-            otg_global.add(0x010 / 4).write_volatile(1);
-            timeout = 100_000u32;
-            while otg_global.add(0x010 / 4).read_volatile() & 1 != 0 {
-                timeout -= 1;
-                if timeout == 0 {
-                    break;
-                }
-            }
-
-            // GCCFG.PWRDWN (bit 16) — PHY power cycle
-            otg_global.add(0x038 / 4).write_volatile(0);
-            cortex_m::asm::delay(100);
-            otg_global.add(0x038 / 4).write_volatile(1 << 16);
-        }
-    }
+    embassy_stm32f469i_disco::reset_usb_phy();
 
     static EP_OUT_BUFFER: StaticCell<[u8; 512]> = StaticCell::new();
     let ep_out_buffer = EP_OUT_BUFFER.init([0u8; 512]);

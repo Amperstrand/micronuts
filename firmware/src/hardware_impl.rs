@@ -321,28 +321,21 @@ impl MicronutsHardware for FirmwareHardware {
         if len == 0 {
             return;
         }
-        let _ = embedded_io_async::Write::write_all(&mut self.usb_sender, &self.encoder_buf[..len]).await;
-        if len % 64 == 0 {
-            let _ = self.usb_sender.write_packet(&[]).await;
-        }
-        let _ = embedded_io_async::Write::flush(&mut self.usb_sender).await;
+        let _ = embassy_stm32f469i_disco::send_with_zlp(&mut self.usb_sender, &self.encoder_buf[..len]).await;
     }
 
     fn touch_get(&mut self) -> Option<TouchPoint> {
         if !self.touch_available {
             return None;
         }
-        if let Ok(status) = self.touch_ctrl.td_status() {
-            if status > 0 {
-                if let Ok(Some(BspTouchPoint { x, y })) = self.touch_ctrl.get_touch() {
-                    crate::log_info!("Touch: x={}, y={}", x, y);
-                    return Some(TouchPoint {
-                        x,
-                        y,
-                        detected: true,
-                    });
-                }
-            }
+        // get_touch() internally checks td_status(); returns Ok(None) if no touch.
+        if let Ok(Some(BspTouchPoint { x, y })) = self.touch_ctrl.get_touch() {
+            crate::log_info!("Touch: x={}, y={}", x, y);
+            return Some(TouchPoint {
+                x,
+                y,
+                detected: true,
+            });
         }
         None
     }
