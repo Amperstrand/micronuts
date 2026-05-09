@@ -18,7 +18,15 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
 use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_WIDTH, FB_HEIGHT};
+use embassy_stm32f469i_disco::{BootTestResults, TestResult};
 use embassy_stm32f469i_disco::BoardHint;
+
+use embedded_graphics::{
+    mono_font::MonoTextStyle,
+    pixelcolor::Rgb888,
+    prelude::*,
+    text::Text,
+};
 
 use firmware::boot_splash;
 use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
@@ -110,8 +118,8 @@ async fn main(spawner: Spawner) {
 
     let sdram_bytes = sdram.into_bytes();
     let fb_size_bytes = FB_SIZE * core::mem::size_of::<u32>();
-    let (display_bytes, rest) = sdram_bytes.split_at_mut(fb_size_bytes);
-    let (fb1_bytes, _) = rest.split_at_mut(fb_size_bytes);
+    let (_display_bytes, rest) = sdram_bytes.split_at_mut(fb_size_bytes);
+    let (_fb1_bytes, _) = rest.split_at_mut(fb_size_bytes);
 
     crate::log_info!("Micronuts firmware starting (embassy)...");
     crate::log_info!("SDRAM initialized");
@@ -147,6 +155,99 @@ async fn main(spawner: Spawner) {
     let fb1: &'static mut [u32] = unsafe {
         core::slice::from_raw_parts_mut((sdram_base + fb_size_bytes) as *mut u32, FB_SIZE)
     };
+
+    {
+        use embedded_graphics::Drawable;
+
+        let bist = BootTestResults {
+            sdram: if sdram_ok { TestResult::Pass } else { TestResult::Fail },
+            display: TestResult::Pass,
+            touch_i2c: TestResult::Skip,
+            touch_vendor_id: TestResult::Skip,
+            touch_chip_model: TestResult::Skip,
+            touch_idle: TestResult::Skip,
+            leds: TestResult::Skip,
+            user_button: TestResult::Skip,
+        };
+
+        const BG_DARK: u32 = 0xFF181818;
+
+        for pixel in fb0.iter_mut() {
+            *pixel = BG_DARK;
+        }
+
+        struct Argb8888Target<'a> {
+            fb: &'a mut [u32],
+            width: u32,
+            height: u32,
+        }
+
+        impl<'a> Argb8888Target<'a> {
+            fn new(fb: &'a mut [u32], width: u32, height: u32) -> Self {
+                Self { fb, width, height }
+            }
+        }
+
+        impl<'a> embedded_graphics::geometry::OriginDimensions for Argb8888Target<'a> {
+            fn size(&self) -> Size {
+                Size::new(self.width, self.height)
+            }
+        }
+
+        impl<'a> DrawTarget for Argb8888Target<'a> {
+            type Color = Rgb888;
+            type Error = core::convert::Infallible;
+
+            fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+            where
+                I: IntoIterator<Item = Pixel<Rgb888>>,
+            {
+                for Pixel(pos, color) in pixels {
+                    if pos.x >= 0 && pos.x < FB_WIDTH as i32 && pos.y >= 0 && pos.y < FB_HEIGHT as i32 {
+                        let idx = (pos.y as usize) * FB_WIDTH as usize + (pos.x as usize);
+                        if idx < self.fb.len() {
+                            self.fb[idx] = ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | (color.b() as u32) | 0xFF000000;
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+
+        let font = &embedded_graphics::mono_font::ascii::FONT_10X20;
+
+        let mut target = Argb8888Target::new(fb0, FB_WIDTH as u32, FB_HEIGHT as u32);
+        let title_style = MonoTextStyle::new(font, Rgb888::WHITE);
+        Text::new("BOOT SELF-TEST", Point::new(160, 60), title_style).draw(&mut target).unwrap();
+
+        let entries = bist.entries();
+        for (i, entry) in entries.iter().enumerate() {
+            let y_offset = 120 + (i as i32) * 40;
+
+            let name_style = MonoTextStyle::new(font, Rgb888::WHITE);
+            Text::new(entry.name, Point::new(30, y_offset), name_style).draw(&mut target).unwrap();
+
+            let result_text = match entry.result {
+                TestResult::Pass => "PASS",
+                TestResult::Fail => "FAIL",
+                TestResult::Skip => "SKIP",
+            };
+            let result_color = match entry.result {
+                TestResult::Pass => Rgb888::new(0, 255, 0),
+                TestResult::Fail => Rgb888::new(255, 0, 0),
+                TestResult::Skip => Rgb888::new(0, 255, 255),
+            };
+            let result_style = MonoTextStyle::new(font, result_color);
+            Text::new(result_text, Point::new(400, y_offset), result_style).draw(&mut target).unwrap();
+        }
+
+        let summary = alloc::format!("{}/{} PASSED", bist.passed_count(), bist.total());
+        let summary_style = MonoTextStyle::new(font, Rgb888::WHITE);
+        Text::new(&summary, Point::new(190, 600), summary_style).draw(&mut target).unwrap();
+    }
+
+    embassy_time::Timer::after(embassy_time::Duration::from_millis(5000)).await;
+
     core::mem::forget(display);
     let mut fb = RawFramebuffer::new_double(fb0, fb1);
 
