@@ -17,7 +17,7 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
+use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_WIDTH, FB_HEIGHT};
 use embassy_stm32f469i_disco::BoardHint;
 
 use firmware::boot_splash;
@@ -96,7 +96,9 @@ async fn usb_task(mut usb_dev: UsbDevice<'static, UsbDriverType>) {
 async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
 
-    let sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
+    let mut sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
+    let sdram_base = sdram.base_address();
+    let heap_start = sdram_base + (FB_SIZE * 2 * core::mem::size_of::<u32>());
 
     crate::log_info!("SDRAM quick test...");
     let sdram_ok = sdram.test_quick();
@@ -122,7 +124,6 @@ async fn main(spawner: Spawner) {
     crate::log_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     crate::log_info!("Initializing display...");
-    let sdram_base = sdram.base_address();
     let fb_size_bytes = FB_SIZE * core::mem::size_of::<u32>();
     // SAFETY: sdram_base points to valid 16MB SDRAM. DisplayCtrl uses the first
     // fb_size_bytes for the framebuffer. After forget(display), LTDC continues scanning.
