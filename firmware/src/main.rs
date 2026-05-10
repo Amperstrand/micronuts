@@ -17,7 +17,7 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_WIDTH, FB_HEIGHT};
+use embassy_stm32f469i_disco::display::{DisplayCtrl, FB_WIDTH, FB_HEIGHT};
 use embassy_stm32f469i_disco::{BootTestResults, TestResult};
 use embassy_stm32f469i_disco::BoardHint;
 
@@ -102,9 +102,9 @@ async fn usb_task(mut usb_dev: UsbDevice<'static, UsbDriverType>) {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let mut p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
+    let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
 
-    let mut sdram = SdramCtrl::new(&mut p, embassy_stm32f469i_disco::SYSCLK_HZ_180);
+    let mut sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let sdram_base = sdram.base_address();
     let heap_start = sdram_base + (FB_SIZE * 2 * core::mem::size_of::<u32>());
 
