@@ -37,20 +37,19 @@ stm32f469i-disc = { git = "https://github.com/Amperstrand/stm32f469i-disc", rev 
 
 qrcodegen-no-heap = "1.8"
 
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "85734ba", features = ["sync", "async"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "97ad33d", features = ["sync", "async"] }
 
-# Embassy — pinned to upstream 84444a19 (same as BSP)
-# To test USB fix variants, use: ./tests/test_usb_variant.sh <branch-name>
-embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19" }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
-embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb-synopsys-otg", rev = "84444a19" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
+# Embassy — from crates.io (aligned with BSP 365bdff)
+embassy-time = { version = "0.5.1", features = ["tick-hz-32_768"] }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-usb = { version = "0.6.0" }
+embassy-usb-synopsys-otg = { version = "0.3.3" }
+embassy-sync = { version = "0.8.0" }
+embassy-futures = { version = "0.1.2" }
 
 # Embassy BSP for STM32F469I-Discovery (display, SDRAM, touch)
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "b58cc10" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "365bdff" }
 
 linked_list_allocator = "0.10"
 static_cell = "2.1"

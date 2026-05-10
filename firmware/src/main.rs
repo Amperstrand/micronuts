@@ -18,7 +18,7 @@ use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, UsbDevice};
 
-use embassy_stm32f469i_disco::display::{DisplayCtrl, SdramCtrl, FB_SIZE};
+use embassy_stm32f469i_disco::display::{DisplayCtrl, FB_SIZE};
 use embassy_stm32f469i_disco::BoardHint;
 
 use firmware::boot_splash;
@@ -97,12 +97,12 @@ async fn main(spawner: Spawner) {
         config.rcc.sys = Sysclk::PLL1_P;
         config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
     }
-    let mut p = embassy_stm32::init(config);
+    let p = embassy_stm32::init(config);
 
     fw_info!("Micronuts firmware starting (embassy)...");
 
     fw_info!("Initializing SDRAM...");
-    let sdram = SdramCtrl::new(&mut p, 168_000_000);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     fw_info!("SDRAM initialized");
 
     let rng = embassy_stm32::rng::Rng::new(p.RNG, Irqs);
@@ -114,22 +114,28 @@ async fn main(spawner: Spawner) {
     fw_info!("Heap: {} bytes from SDRAM", HEAP_SIZE);
 
     fw_info!("Initializing display...");
-    let display = DisplayCtrl::new(&sdram, p.PH7, BoardHint::ForceNt35510);
+    let sdram_base = sdram.base_address();
+    let sdram_bytes = sdram.into_bytes();
+    let fb_size_bytes = FB_SIZE * 4;
+    let (framebuffer, _rest) = sdram_bytes.split_at_mut(fb_size_bytes);
+    let display = DisplayCtrl::new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
     fw_info!("Display initialized");
 
-    let fb_buffer: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
+    let fb_buffer: &'static mut [u16] = unsafe {
+        core::slice::from_raw_parts_mut(sdram_base as *mut u16, FB_SIZE)
+    };
     core::mem::forget(display);
 
     fw_info!("Initializing touch...");
-    let mut touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
+    let touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
         p.I2C1,
         p.PB8,
         p.PB9,
         embassy_stm32::i2c::Config::default(),
     );
-    let touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new();
+    let mut touch_ctrl = embassy_stm32f469i_disco::touch::TouchCtrl::new(touch_i2c);
     let touch_available = touch_ctrl
-        .read_vendor_id(&mut touch_i2c)
+        .read_vendor_id()
         .is_ok();
     if touch_available {
         fw_info!("Touch controller ready");
@@ -154,7 +160,7 @@ async fn main(spawner: Spawner) {
             ticker.next().await;
 
             if touch_available {
-                if let Ok(status) = touch_ctrl.td_status(&mut touch_i2c) {
+                if let Ok(status) = touch_ctrl.td_status() {
                     if status > 0 {
                         fw_info!("Touch detected, exiting splash");
                         splash_done = true;
@@ -243,7 +249,6 @@ async fn main(spawner: Spawner) {
         usb_receiver,
         usb_sender,
         touch_ctrl,
-        touch_i2c,
         touch_available,
         rng,
         scanner_connected,
