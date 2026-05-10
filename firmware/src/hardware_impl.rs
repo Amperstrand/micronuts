@@ -101,7 +101,6 @@ pub struct FirmwareHardware {
     pub decoder: FrameDecoder,
     pub encoder_buf: [u8; MAX_PAYLOAD_SIZE + 3],
     pub touch_ctrl: TouchCtrl,
-    pub touch_i2c: embassy_stm32::i2c::I2c<'static, embassy_stm32::mode::Blocking, embassy_stm32::i2c::Master>,
     pub touch_available: bool,
     pub rng: Rng<'static, peripherals::RNG>,
     pub scanner_connected: bool,
@@ -114,7 +113,6 @@ impl FirmwareHardware {
         usb_receiver: Receiver<'static, UsbDriverType>,
         usb_sender: Sender<'static, UsbDriverType>,
         touch_ctrl: TouchCtrl,
-        touch_i2c: embassy_stm32::i2c::I2c<'static, embassy_stm32::mode::Blocking, embassy_stm32::i2c::Master>,
         touch_available: bool,
         rng: Rng<'static, peripherals::RNG>,
         scanner_connected: bool,
@@ -127,7 +125,6 @@ impl FirmwareHardware {
             decoder: FrameDecoder::new(),
             encoder_buf: [0; MAX_PAYLOAD_SIZE + 3],
             touch_ctrl,
-            touch_i2c,
             touch_available,
             rng,
             scanner_connected,
@@ -231,9 +228,9 @@ impl MicronutsHardware for FirmwareHardware {
         if !self.touch_available {
             return None;
         }
-        if let Ok(status) = self.touch_ctrl.td_status(&mut self.touch_i2c) {
+        if let Ok(status) = self.touch_ctrl.td_status() {
             if status > 0 {
-                if let Ok(BspTouchPoint { x, y }) = self.touch_ctrl.get_touch(&mut self.touch_i2c) {
+                if let Ok(Some(BspTouchPoint { x, y })) = self.touch_ctrl.get_touch() {
                     if x < 3 || x > 476 || y < 3 || y > 796 {
                         return None;
                     }
