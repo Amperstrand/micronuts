@@ -74,3 +74,8 @@ state.json
 
 # Hardware test results (runtime artifacts)
 tests/results/
+
+# agent-loop / QA artifacts
+.sisyphus/
+.playwright-mcp/
+.omo/
