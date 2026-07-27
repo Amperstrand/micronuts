@@ -104,6 +104,7 @@ impl DemoMint {
     // ---- NUT-01: Mint Public Keys ----
 
     /// NUT-01: Return all active keysets with public keys.
+    // NUT #01: The mint **MUST** use the [compressed Secp256k1 public key format](https://learnmeabitcoin.com/technical/public-key#public-key-format) to represent its public keys.
     pub fn get_keys(&self) -> Result<nut01::KeysResponse, CashuError> {
         Ok(nut01::KeysResponse {
             keysets: vec![self.keyset.to_public_keyset()],
@@ -113,6 +114,7 @@ impl DemoMint {
     // ---- NUT-02: Keysets ----
 
     /// NUT-02: Return keyset metadata.
+    // NUT #02: Mints can have multiple keysets at the same time but **MUST** have at least one `active` keyset (see [NUT-01][01]).
     pub fn get_keysets(&self) -> Result<nut02::KeysetsResponse, CashuError> {
         Ok(nut02::KeysetsResponse {
             keysets: vec![self.keyset.to_keyset_info()],
@@ -201,6 +203,7 @@ impl DemoMint {
         }
 
         // Verify output amounts sum to quoted amount
+        // NUT #04: Mints **MUST NOT** issue ecash whose total output amount exceeds `amount_paid - amount_issued`.
         let output_sum: u64 = request.outputs.iter().map(|o| o.amount).sum();
         if output_sum != quoted_amount {
             return Err(CashuError::AmountMismatch);
@@ -387,6 +390,7 @@ impl DemoMint {
     ///
     /// For each output, looks up the mint's private key for that denomination
     /// and computes `C_ = k * B_`.
+    // NUT #02: new outputs (`BlindedMessages` and `BlindSignatures`) **MUST** be from `active` keysets only.
     fn sign_outputs(
         &self,
         outputs: &[nut00::BlindedMessage],

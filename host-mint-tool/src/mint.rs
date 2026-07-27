@@ -14,6 +14,7 @@ impl DemoMint {
         Self { key_1 }
     }
 
+    // NUT #01: The mint **MUST** use the [compressed Secp256k1 public key format](https://learnmeabitcoin.com/technical/public-key#public-key-format) to represent its public keys.
     pub fn public_key(&self) -> PublicKey {
         self.key_1.public_key()
     }

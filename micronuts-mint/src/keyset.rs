@@ -67,6 +67,7 @@ impl DemoKeyset {
     }
 
     /// NUT-01: Export as a public KeySet (no private keys).
+    // NUT #01: The mint **MUST** use the [compressed Secp256k1 public key format](https://learnmeabitcoin.com/technical/public-key#public-key-format) to represent its public keys.
     pub fn to_public_keyset(&self) -> KeySet {
         KeySet {
             id: self.id.clone(),
@@ -83,6 +84,7 @@ impl DemoKeyset {
     }
 
     /// NUT-02: Export keyset metadata.
+    // NUT #02: Mints can have multiple keysets at the same time but **MUST** have at least one `active` keyset (see [NUT-01][01]).
     pub fn to_keyset_info(&self) -> KeysetInfo {
         KeysetInfo {
             id: self.id.clone(),
