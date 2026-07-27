@@ -79,3 +79,5 @@ tests/results/
 .sisyphus/
 .playwright-mcp/
 .omo/
+nuts/
+.coverage
