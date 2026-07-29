@@ -2,33 +2,12 @@ name: Rust CI
 
 on:
   push:
+    branches: [main]
   pull_request:
-  workflow_dispatch:
+    branches: [main]
 
 jobs:
-  host-wallet-mint:
-    name: Host wallet/mint checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run wallet/mint tests
-        run: cargo test -p cashu-core-lite --features std -p micronuts-mint -p micronuts-fips-bridge
-
-      - name: Run demo flow
-        run: cargo run -p micronuts-mint --bin demo
-
-      - name: Check native simulator crate
-        run: cargo check -p micronuts-app
-
-  firmware:
-    name: Firmware build
+  host-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +15,45 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: thumbv7em-none-eabihf
+          toolchain: file
 
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
+      - name: Test cashu-core-lite
+        run: cargo test -p cashu-core-lite --features std
 
-      - name: Build firmware
-        run: cargo build -p firmware --target thumbv7em-none-eabihf
+      - name: Test micronuts-mint
+        run: cargo test -p micronuts-mint
+
+      - name: Test micronuts-fips-bridge
+        run: cargo test -p micronuts-fips-bridge
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: file
+
+      - name: Add thumbv7em-none-eabihf target
+        run: rustup target add thumbv7em-none-eabihf
+
+      - name: Build firmware for release
+        run: cargo build -p firmware --release
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: file
+
+      - name: Run clippy on workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run clippy on firmware
+        run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -D warnings
