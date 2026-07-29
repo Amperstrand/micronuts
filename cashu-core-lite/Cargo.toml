@@ -13,7 +13,7 @@ rand_core = { workspace = true }
 minicbor = { workspace = true }
 
 [dev-dependencies]
-cashu = "0.16.0"
+cashu = "0.17.3"
 
 [features]
 default = []
