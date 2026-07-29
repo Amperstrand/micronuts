@@ -127,26 +127,32 @@ All git dependencies are pinned to specific commits for reproducibility. Forked 
 
 | Crate | Pin | Source | Upstream Target |
 |-------|-----|--------|-----------------|
-| `stm32f469i-disc` | `89d22c6` | Amperstrand fork, `main` branch | Consider `stm32-rs` org or taking over from `tegimeki` |
-| `gm65-scanner` | `df13690` | Amperstrand original (not a fork) | N/A |
+| `embassy-stm32f469i-disco` | `365bdff` | Amperstrand fork, `main` branch | Embassy BSP for STM32F469I-DISCO |
+| `gm65-scanner` | `fa9b750` | Amperstrand original (not a fork) | N/A |
 
 ### Transitive / firmware-only dependencies (in `firmware/Cargo.toml`)
 
 | Crate | Pin | Source | Upstream Target |
 |-------|-----|--------|-----------------|
-| `stm32f4xx-hal` | `ec6dc08` | Amperstrand fork, `fix/ltdc-swap-buffers-vbr-wait` | Cherry-pick `swap_buffers` fix onto `pr1-core-dsi-ltdc`, then upstream via draft PR #866 to `stm32-rs/stm32f4xx-hal` |
-| `ft6x06` | `2ed36f7` | Amperstrand fork, `patch-2` branch | PR build fixes to `DougAnderson444/ft6x06` |
+| `embassy-stm32` | `0.6.0` | crates.io (embassy-rs) | Embassy async framework for STM32 |
+| `embassy-stm32f469i-disco` | `365bdff` | Amperstrand fork, `main` branch | Embassy BSP for STM32F469I-DISCO |
+| `embassy-time` | `0.5.1` | crates.io (embassy-rs) | Embassy time management |
+| `embassy-executor` | `0.10.0` | crates.io (embassy-rs) | Embassy task executor |
+| `embassy-usb` | `0.6.0` | crates.io (embassy-rs) | Embassy USB stack |
+| `embassy-usb-synopsys-otg` | `0.3.3` | crates.io (embassy-rs) | USB OTG driver for Synopsys controller |
+| `embassy-sync` | `0.8.0` | crates.io (embassy-rs) | Embassy synchronization primitives |
+| `embassy-futures` | `0.1.2` | crates.io (embassy-rs) | Embassy async futures |
 
 ### Dependency chain
 
 ```
 micronuts (this workspace)
-├── stm32f469i-disc @ 89d22c6  (BSP: board pin routing, DoubleFramebuffer, USB, SDRAM)
-│   └── stm32f4xx-hal @ ec6dc08  (HAL: DSI, LTDC, USB, FMC, SDIO, RNG)
-│       └── (upstream: stm32-rs/stm32f4xx-hal @ 59cbcac)
-├── ft6x06 @ 2ed36f7  (touch controller driver)
-│   └── (upstream: DougAnderson444/ft6x06 @ ce9f1ac)
-└── gm65-scanner @ df13690  (QR scanner driver)
+├── embassy-stm32f469i-disco @ 365bdff  (Embassy BSP: display DSI/LTDC, SDRAM, touch FT6X06)
+│   └── embassy-stm32 @ 0.6.0  (Embassy MCU peripheral drivers: RNG, I2C, USART, USB OTG)
+│       └── (upstream: embassy-rs/embassy @ main)
+├── gm65-scanner @ fa9b750  (QR scanner driver)
+│   └── (upstream: Amperstrand/gm65-scanner @ main)
+└── (crates.io): k256, sha2, rand_core 0.6, minicbor, embedded-graphics, defmt 1.0, heapless
 ```
 
 Other deps from crates.io: `k256`, `sha2`, `rand_core 0.6`, `minicbor`, `embedded-graphics`, `defmt 1.0`, `heapless`.
@@ -155,7 +161,7 @@ Other deps from crates.io: `k256`, `sha2`, `rand_core 0.6`, `minicbor`, `embedde
 
 ### Display Orientation
 
-The STM32F469I-DISCO panel is physically 480x800 portrait. The BSP (`stm32f469i-disc`) configures the LTDC and LCD controller in portrait mode (480 wide x 800 tall). `micronuts-app` uses the same portrait dimensions (`WIDTH=480, HEIGHT=800`), so rendering coordinates are identical on hardware and in the native simulator.
+The STM32F469I-DISCO panel is physically 480x800 portrait. The Embassy BSP (`embassy-stm32f469i-disco`) configures the LTDC and LCD controller in portrait mode (480 wide x 800 tall). `micronuts-app` uses the same portrait dimensions (`WIDTH=480, HEIGHT=800`), so rendering coordinates are identical on hardware and in the native simulator.
 
 The orientation is set at init time:
 - **NT35510** (B08 board revision): configured by the standalone `Amperstrand/nt35510` crate during `panel.init()`
@@ -305,7 +311,7 @@ The STM32F469I-DISCO has a microSD slot connected via SDIO. [Secure microSD card
 - BIP32-like key derivation (via parent Satochip applet)
 
 **What we'd need to build:**
-- A Rust APDU transport layer over SDIO (the `stm32f469i-disc` BSP has SDIO support, but we'd need the smartcard protocol layer on top — send SELECT, send CLA/INS/P1/P2/Lc/Data/Le, parse response SW1/SW2)
+- A Rust APDU transport layer over SDIO (the Embassy BSP `embassy-stm32f469i-disco` has SDIO support, but we'd need the smartcard protocol layer on top — send SELECT, send CLA/INS/P1/P2/Lc/Data/Le, parse response SW1/SW2)
 - Port the relevant subset of [pysatochip](https://github.com/Toporin/pysatochip) APDU logic to Rust
 - Integrate the secure element into the blind signature flow: instead of the firmware holding keys, it delegates signing to the card
 - Handle PIN entry via the touch screen
@@ -379,7 +385,7 @@ No real crypto needed for the demo mode — just the animations. Switch to "live
 
 ## Credits
 
-- BSP foundation: [stm32f469i-disc](https://github.com/Amperstrand/stm32f469i-disc)
+- BSP foundation: [embassy-stm32f469i-disco](https://github.com/Amperstrand/embassy-stm32f469i-disco)
 - Scanner: [gm65-scanner](https://github.com/Amperstrand/gm65-scanner)
 - Scanner protocol reference: [specter-diy](https://github.com/cryptoadvance/specter-diy)
 - Cashu protocol: [cashubtc/nuts](https://github.com/cashubtc/nuts)
