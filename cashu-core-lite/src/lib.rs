@@ -14,8 +14,9 @@ pub mod wallet;
 
 pub use crypto::{
     blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
-    BlindedMessage, HashToCurveError,
+    verify_signature_with_privkey, BlindedMessage, HashToCurveError,
 };
+pub use nuts::nut12::DleqError;
 pub use error::CashuError;
 pub use keypair::{PublicKey, SecretKey};
 pub use rpc::{

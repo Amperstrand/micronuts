@@ -7,8 +7,8 @@ use cashu::dhke::{
 use cashu::nuts::nut23::QuoteState;
 use cashu::Amount;
 use cashu_core_lite::{
-    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature, PublicKey,
-    SecretKey,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
+    verify_signature_with_privkey, PublicKey, SecretKey,
 };
 use cashu_core_lite::nuts::nut00::decompose_amount;
 
@@ -99,7 +99,7 @@ fn blind_sign_unblind_matches_upstream_cashu() {
     assert_eq!(our_unblinded.to_bytes(), cashu_unblinded.to_bytes());
 
     assert!(
-        verify_signature(&secret, &our_unblinded, &our_mint_key).expect("our verify succeeds")
+        verify_signature_with_privkey(&secret, &our_unblinded, &our_mint_key).expect("our verify succeeds")
     );
     cashu_verify_message(&cashu_mint_key, cashu_unblinded, &secret)
         .expect("cashu verify should succeed");

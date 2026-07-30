@@ -4,6 +4,7 @@ use k256::Scalar;
 use sha2::{Digest, Sha256};
 
 use crate::keypair::{PublicKey, SecretKey};
+use crate::nuts::nut12::DleqError;
 
 #[cfg(feature = "std")]
 use rand_core::OsRng;
@@ -123,8 +124,14 @@ pub fn sign_message(a: &SecretKey, blinded_message: &PublicKey) -> PublicKey {
 ///
 /// Verifies that an unblinded signature `C` was honestly produced by the mint
 /// holding private key `a`. Requires the mint's **private** key.
-/// For public-key-only verification, use NUT-12 DLEQ proofs (not yet implemented).
-pub fn verify_signature(
+/// For public-key-only verification, use NUT-12 DLEQ proofs (implemented in verify_signature).
+///
+/// # Why this is separate from verify_signature
+/// This function requires the mint's private key `a` to compute `a * hash_to_curve(x)`.
+/// It's useful for **audit/debug** scenarios where the verifier has access to the mint's private key
+/// (e.g., mint self-verification, firmware diagnostics). Wallets and clients should use the
+/// public-key-only `verify_signature` function which only requires the mint's public key.
+pub fn verify_signature_with_privkey(
     secret: &[u8],
     unblinded_sig: &PublicKey,
     a: &SecretKey,
@@ -136,4 +143,44 @@ pub fn verify_signature(
     let expected: ProjectivePoint = y_projective * k_scalar;
 
     Ok(expected == sig_projective)
+}
+
+/// NUT-00: Public-key-only signature verification using NUT-12 DLEQ proofs
+///
+/// Verifies that a mint signature was honestly produced using the mint's public key.
+/// This is the **primary** verification path for wallets and clients — it only requires
+/// the mint's public key, not the mint's private key.
+///
+/// Uses NUT-12 DLEQ proof verification: given blinded message `B'`, blinded signature `C'`,
+/// and DLEQ proof components `e` and `s`, verifies that the mint honestly signed `B'` using
+/// the claimed public key `A`.
+///
+/// # Algorithm
+/// - Verifies the DLEQ proof: `e' == e` where `e' = hash(R1, R2, A, C')`
+/// - `R1 = s*G + (-e*A)`
+/// - `R2 = s*B' - e*C'`
+///
+/// # Arguments
+/// * `blinded_message` — `B'` from the blind step
+/// * `blinded_signature` — `C'` from the mint's response
+/// * `e` — DLEQ proof witness (discrete log of B' to base A)
+/// * `s` — DLEQ proof witness (discrete log of C' to base A)
+/// * `mint_pubkey` — Mint's public key `A` (only!)
+///
+/// # Errors
+/// Returns `Err` if the computed `R1`/`R2` are the identity point (cannot be SEC1-encoded).
+///
+/// # Comparison to verify_signature_with_privkey
+/// - **Private-key path**: `verify_signature_with_privkey` requires the mint's private key.
+///   Used for mint self-verification, firmware diagnostics, offline audit.
+/// - **Public-key path**: `verify_signature` uses DLEQ and only requires the mint's public key.
+///   Used by wallets, clients, and standard mint operations.
+pub fn verify_signature(
+    blinded_message: &PublicKey,
+    blinded_signature: &PublicKey,
+    e: &SecretKey,
+    s: &SecretKey,
+    mint_pubkey: &PublicKey,
+) -> Result<bool, DleqError> {
+    crate::nuts::nut12::verify_dleq(blinded_message, blinded_signature, e, s, mint_pubkey)
 }

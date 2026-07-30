@@ -304,7 +304,8 @@ fn test_crypto_blinding(hw: &mut FirmwareHardware) -> TestResult {
 
     // Step 7: verify_signature(secret, unblinded_sig, mint_key) - returns true/false
     // SUCCESS CRITERIA: a * hash_to_curve(secret) == unblinded_sig
-    match cashu_core_lite::crypto::verify_signature(&secret, &unblinded, &mint_key) {
+    // Self-test: uses known mint private key for diagnostic verification
+    match cashu_core_lite::crypto::verify_signature_with_privkey(&secret, &unblinded, &mint_key) {
         Ok(true) => {
             crate::log_info!("[PASS] Crypto blinding (full round-trip verified)");
             TestResult::pass("Crypto blinding")

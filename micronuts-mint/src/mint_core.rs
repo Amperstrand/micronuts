@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use cashu_core_lite::crypto::{hash_to_curve, sign_message, verify_signature};
+use cashu_core_lite::crypto::{hash_to_curve, sign_message, verify_signature_with_privkey};
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07};
 
@@ -427,7 +427,8 @@ impl DemoMint {
                 hex::decode(&proof.secret).map_err(|_| CashuError::InvalidProof)?;
 
             // NUT-00: verify k * hash_to_curve(secret) == C
-            let valid = verify_signature(&secret_bytes, &proof.c, sk)
+            // Mint self-verification: mint has its own private key
+            let valid = verify_signature_with_privkey(&secret_bytes, &proof.c, sk)
                 .map_err(|_| CashuError::Crypto("verify_signature failed".to_string()))?;
 
             if !valid {
