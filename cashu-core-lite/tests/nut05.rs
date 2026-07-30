@@ -135,6 +135,7 @@ fn test_melt_response_with_change() {
             amount: 10,
             id: "00".to_string(),
             c: sample_public_key(),
+                dleq: None,
         }]),
     };
 

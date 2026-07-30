@@ -46,6 +46,7 @@ fn test_swap_response_cbor_roundtrip() {
             amount: 4,
             id: "009a1f293253e41e".to_string(),
             c: sample_public_key(),
+                dleq: None,
         }],
     };
 

@@ -66,4 +66,10 @@ pub trait MintClient {
         &mut self,
         request: nut07::CheckStateRequest,
     ) -> Result<nut07::CheckStateResponse, CashuError>;
+
+    /// NUT-09: Restore outputs from their Y values.
+    fn post_restore(
+        &mut self,
+        request: crate::nuts::nut09::RestoreRequest,
+    ) -> Result<crate::nuts::nut09::RestoreResponse, CashuError>;
 }

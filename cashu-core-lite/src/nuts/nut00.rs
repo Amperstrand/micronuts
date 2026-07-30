@@ -11,6 +11,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::keypair::PublicKey;
+use crate::nuts::nut12::BlindSignatureDleq;
 use minicbor::{Decode, Encode};
 
 /// A blinded message sent from wallet to mint (NUT-00).
@@ -45,6 +46,9 @@ pub struct BlindSignature {
     /// `C_`: the blinded signature (a curve point).
     #[n(2)]
     pub c: PublicKey,
+    /// NUT-12 DLEQ proof (optional — present when the mint supports DLEQ).
+    #[n(3)]
+    pub dleq: Option<BlindSignatureDleq>,
 }
 
 /// A proof of ecash ownership (NUT-00).

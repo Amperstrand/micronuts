@@ -27,6 +27,7 @@ fn sample_blind_signature(seed: u8) -> nut00::BlindSignature {
         amount: u64::from(seed),
         id: format!("keyset-{seed}"),
         c: sample_public_key(seed.saturating_add(10)),
+        dleq: None,
     }
 }
 

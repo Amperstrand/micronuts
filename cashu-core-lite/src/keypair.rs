@@ -166,6 +166,25 @@ impl<'b, C> Decode<'b, C> for PublicKey {
     }
 }
 
+impl<C> Encode<C> for SecretKey {
+    fn encode<W: Write>(
+        &self,
+        e: &mut Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), EncodeError<W::Error>> {
+        e.bytes(&self.to_secret_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for SecretKey {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, DecodeError> {
+        let bytes = d.bytes()?;
+        SecretKey::from_slice(bytes)
+            .map_err(|_| DecodeError::message("invalid secret key"))
+    }
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     const HEX_CHARS: &[u8] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);

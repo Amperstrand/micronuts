@@ -14,9 +14,10 @@ use cashu::dhke::{
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::keypair::PublicKey;
 use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use std::str::FromStr;
 
 use crate::keyset::DemoKeyset;
-use crate::type_conversion::{cashu_pk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu};
+use crate::type_conversion::{cashu_pk_to_lite, cashu_sk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu};
 
 /// In-memory mint quote state.
 #[allow(dead_code)] // Fields kept for future use (e.g., quote lookup by unit)
@@ -432,10 +433,31 @@ impl DemoMint {
                 .map_err(|_| CashuError::Crypto("cashu::dhke::sign_message failed".to_string()))?;
             let c_prime = cashu_pk_to_lite(&cashu_c_prime);
 
+            let dleq = {
+                let cashu_bs = cashu::nuts::nut00::BlindSignature::new(
+                    cashu::Amount::from(output.amount),
+                    cashu_c_prime,
+                    cashu::nuts::nut02::Id::from_str(&self.keyset.id)
+                        .map_err(|e| CashuError::Crypto(format!("invalid keyset id: {e}")))?,
+                    &cashu_blinded,
+                    cashu_sk,
+                )
+                .map_err(|e| CashuError::Crypto(format!("DLEQ construction failed: {e:?}")))?;
+
+                let dleq_ref = cashu_bs.dleq.as_ref().ok_or_else(|| {
+                    CashuError::Crypto("BlindSignature::new did not produce DLEQ".to_string())
+                })?;
+                cashu_core_lite::nuts::nut12::BlindSignatureDleq {
+                    e: cashu_sk_to_lite(&dleq_ref.e),
+                    s: cashu_sk_to_lite(&dleq_ref.s),
+                }
+            };
+
             signatures.push(nut00::BlindSignature {
                 amount: output.amount,
                 id: self.keyset.id.clone(),
                 c: c_prime,
+                dleq: Some(dleq),
             });
         }
         Ok(signatures)

@@ -45,10 +45,44 @@ impl std::error::Error for DleqError {}
 /// Defined in [NUT-12](https://github.com/cashubtc/nuts/blob/main/12.md).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlindSignatureDleq {
-    /// Challenge `e = hash(R1, R2, A, C')`.
+    /// Challenge scalar.
     pub e: SecretKey,
-    /// Response `s = (r + e*a) mod n`.
+    /// Response scalar.
     pub s: SecretKey,
+}
+
+impl<C> minicbor::Encode<C> for BlindSignatureDleq {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.map(2)?
+            .u64(0)?
+            .bytes(&self.e.to_secret_bytes())?
+            .u64(1)?
+            .bytes(&self.s.to_secret_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'b, C> minicbor::Decode<'b, C> for BlindSignatureDleq {
+    fn decode(
+        d: &mut minicbor::Decoder<'b>,
+        _ctx: &mut C,
+    ) -> Result<Self, minicbor::decode::Error> {
+        let len = d.map()?;
+        if len != Some(2) {
+            return Err(minicbor::decode::Error::message("expected map of 2 entries"));
+        }
+        d.u64()?;
+        let e = SecretKey::from_slice(d.bytes()?)
+            .map_err(|_| minicbor::decode::Error::message("invalid e scalar"))?;
+        d.u64()?;
+        let s = SecretKey::from_slice(d.bytes()?)
+            .map_err(|_| minicbor::decode::Error::message("invalid s scalar"))?;
+        Ok(Self { e, s })
+    }
 }
 
 /// DLEQ proof attached to a [`crate::token::Proof`].

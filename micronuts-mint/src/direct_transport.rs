@@ -99,4 +99,11 @@ impl MintClient for DirectTransport {
     ) -> Result<nut07::CheckStateResponse, CashuError> {
         self.mint.borrow().post_check_state(request)
     }
+
+    fn post_restore(
+        &mut self,
+        request: cashu_core_lite::nuts::nut09::RestoreRequest,
+    ) -> Result<cashu_core_lite::nuts::nut09::RestoreResponse, CashuError> {
+        self.mint.borrow().post_restore(request)
+    }
 }
