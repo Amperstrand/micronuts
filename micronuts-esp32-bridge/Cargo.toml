@@ -1,0 +1,21 @@
+[package]
+name = "micronuts-esp32-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bridge"
+path = "src/main.rs"
+
+[dependencies]
+esp-idf-svc = "0.51"
+esp-idf-hal = "0.45"
+esp-idf-sys = "0.36"
+log = "0.4"
+anyhow = "1"
+
+[build-dependencies]
+embuild = "0.33"
+
+[profile.release]
+opt-level = "s"

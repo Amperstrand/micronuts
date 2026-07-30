@@ -5,8 +5,9 @@ members = [
     "cashu-core-lite",
     "host-mint-tool",
     "micronuts-app",
-    "micronuts-mint", "micronuts-fips-bridge", "micronuts-audit-adapter",
+    "micronuts-mint", "micronuts-fips-bridge",
 ]
+exclude = ["micronuts-esp32-bridge"]
 default-members = ["firmware"]
 
 [workspace.package]
