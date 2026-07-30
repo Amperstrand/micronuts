@@ -26,6 +26,18 @@ jobs:
       - name: Test micronuts-fips-bridge
         run: cargo test -p micronuts-fips-bridge
 
+      - name: Demo smoke test
+        run: |
+          OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
+          echo "$OUTPUT" | grep "Demo complete" || (echo "Demo did not complete successfully" && exit 1)
+          echo "$OUTPUT" | grep "Remaining balance: 36 sats" || (echo "Demo output mismatch" && exit 1)
+
+      - name: Transport feature matrix
+        run: |
+          cargo build -p cashu-core-lite --no-default-features --features transport-serial
+          cargo build -p cashu-core-lite --no-default-features --features transport-usb-cdc
+          cargo build -p cashu-core-lite --no-default-features --features transport-microfips
+
   firmware-build:
     runs-on: ubuntu-latest
     steps:
@@ -57,3 +69,54 @@ jobs:
 
       - name: Run clippy on firmware
         run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -D warnings
+
+  adapter-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: file
+
+      - name: Build audit adapter
+        run: cargo build -p micronuts-audit-adapter
+
+      - name: Start adapter in background
+        run: |
+          cargo run -p micronuts-audit-adapter &
+          ADAPTER_PID=$!
+          echo "ADAPTER_PID=$ADAPTER_PID" >> $GITHUB_ENV
+          # Wait for adapter to start
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3030/v1/info > /dev/null 2>&1; then
+              echo "Adapter is up"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Smoke test /v1/info
+        run: |
+          RESPONSE=$(curl -s http://localhost:3030/v1/info)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'name' in d, 'missing name field'; print(f'Mint name: {d[\"name\"]}')"
+
+      - name: Smoke test /v1/keys
+        run: |
+          RESPONSE=$(curl -s http://localhost:3030/v1/keys)
+          echo "Response: $(echo $RESPONSE | head -c 200)..."
+          echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'keysets' in d, 'missing keysets'; print(f'Keysets: {len(d[\"keysets\"])}')"
+
+      - name: Smoke test /v1/keysets
+        run: |
+          RESPONSE=$(curl -s http://localhost:3030/v1/keysets)
+          echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'keysets' in d, 'missing keysets'; ks=d['keysets'][0]; assert 'input_fee_ppk' in ks, 'missing input_fee_ppk'; print(f'Keyset fee: {ks[\"input_fee_ppk\"]}')"
+
+      - name: Stop adapter
+        if: always()
+        run: |
+          kill ${ADAPTER_PID} 2>/dev/null || true
+          # Also kill any mint_server subprocess
+          pkill -f mint_server 2>/dev/null || true
