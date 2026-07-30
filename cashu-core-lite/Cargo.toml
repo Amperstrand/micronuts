@@ -6,7 +6,7 @@ license.workspace = true
 description = "Minimal Cashu library for embedded systems (no_std + alloc)"
 
 [dependencies]
-hex = { version = "0.4", default-features = false, features = ["alloc"] }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 k256 = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true }
