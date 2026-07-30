@@ -1,0 +1,15 @@
+[package]
+name = "micronuts-audit-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "HTTP-to-CBOR-RPC bridge that exposes micronuts-mint over Cashu REST endpoints"
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "signal"] }
+serde_json = "1"
+hex = "0.4"

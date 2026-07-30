@@ -5,7 +5,7 @@ members = [
     "cashu-core-lite",
     "host-mint-tool",
     "micronuts-app",
-    "micronuts-mint", "micronuts-fips-bridge",
+    "micronuts-mint", "micronuts-fips-bridge", "micronuts-audit-adapter",
 ]
 default-members = ["firmware"]
 
