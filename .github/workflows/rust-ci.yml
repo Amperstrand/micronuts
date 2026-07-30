@@ -48,7 +48,7 @@ jobs:
         run: rustup target add thumbv7em-none-eabihf
 
       - name: Build firmware for release
-        run: cargo build -p firmware --release --features defmt-log
+        run: cargo build -p firmware --release --no-default-features
 
   clippy:
     runs-on: ubuntu-latest
@@ -57,14 +57,15 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+
+      - name: Add clippy component
+        run: rustup component add clippy
 
       - name: Run clippy on workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run clippy on firmware
-        run: cargo clippy -p firmware --target thumbv7em-none-eabihf --features defmt-log -- -D warnings
+        run: cargo clippy -p firmware --target thumbv7em-none-eabihf --no-default-features -- -D warnings
 
   adapter-test:
     runs-on: ubuntu-latest
@@ -74,15 +75,15 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build audit adapter
-        run: cargo build -p micronuts-audit-adapter
+      - name: Build audit adapter (release)
+        run: cargo build -p micronuts-audit-adapter --release
 
       - name: Start adapter in background
         run: |
-          cargo run -p micronuts-audit-adapter &
+          ./target/release/micronuts-audit-adapter &
           ADAPTER_PID=$!
           echo "ADAPTER_PID=$ADAPTER_PID" >> $GITHUB_ENV
-          for i in $(seq 1 60); do
+          for i in $(seq 1 30); do
             if curl -s http://localhost:3030/v1/info > /dev/null 2>&1; then
               echo "Adapter is up"
               break
