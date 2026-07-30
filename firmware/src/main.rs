@@ -5,10 +5,11 @@ extern crate alloc;
 
 #[cfg(feature = "defmt-log")]
 use defmt_rtt as _;
-#[cfg(feature = "defmt-log")]
-use panic_probe as _;
-#[cfg(not(feature = "defmt-log"))]
-use panic_halt as _;
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
 
 use embassy_executor::Spawner;
 use embassy_stm32::interrupt::InterruptExt;
