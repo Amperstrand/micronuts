@@ -477,14 +477,12 @@ impl DemoMint {
                 .get_secret_key(proof.amount)
                 .ok_or(CashuError::KeysetNotFound)?;
 
-            let secret_bytes =
-                hex::decode(&proof.secret).map_err(|_| CashuError::InvalidProof)?;
-
             // NUT-00: verify k * hash_to_curve(secret) == C using the mint's
             // private key. `cashu::dhke::verify_message` returns Ok iff valid.
+            // Per DHKE spec, hash_to_curve operates on the secret STRING bytes.
             let cashu_sk = lite_sk_to_cashu(sk);
             let cashu_c = lite_pk_to_cashu(&proof.c);
-            cashu_verify_message(&cashu_sk, cashu_c, &secret_bytes)
+            cashu_verify_message(&cashu_sk, cashu_c, proof.secret.as_bytes())
                 .map_err(|_| CashuError::Crypto("verify_message failed".to_string()))?;
 
             total = total
@@ -500,9 +498,7 @@ impl DemoMint {
     /// across mint restarts, but within a session proofs are tracked.
     fn mark_spent(&mut self, proofs: &[nut00::Proof]) -> Result<(), CashuError> {
         for proof in proofs {
-            let secret_bytes =
-                hex::decode(&proof.secret).map_err(|_| CashuError::InvalidProof)?;
-            let cashu_y = cashu_hash_to_curve(&secret_bytes)
+            let cashu_y = cashu_hash_to_curve(proof.secret.as_bytes())
                 .map_err(|_| CashuError::Crypto("hash_to_curve failed".to_string()))?;
             let y = cashu_pk_to_lite(&cashu_y);
             let y_hex = hex::encode(y.to_encoded_point(true).as_bytes());
