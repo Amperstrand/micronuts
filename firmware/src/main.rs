@@ -7,7 +7,7 @@ extern crate alloc;
 use defmt_rtt as _;
 #[cfg(feature = "defmt-log")]
 use panic_probe as _;
-#[cfg(feature = "uart-log")]
+#[cfg(not(feature = "defmt-log"))]
 use panic_halt as _;
 
 use embassy_executor::Spawner;

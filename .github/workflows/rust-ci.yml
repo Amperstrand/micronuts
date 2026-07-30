@@ -57,6 +57,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Run clippy on workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -80,8 +82,7 @@ jobs:
           cargo run -p micronuts-audit-adapter &
           ADAPTER_PID=$!
           echo "ADAPTER_PID=$ADAPTER_PID" >> $GITHUB_ENV
-          # Wait for adapter to start
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if curl -s http://localhost:3030/v1/info > /dev/null 2>&1; then
               echo "Adapter is up"
               break
