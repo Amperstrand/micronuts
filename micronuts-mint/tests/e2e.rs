@@ -253,7 +253,7 @@ fn test_check_state_unspent_and_spent() {
     // Check state — should be UNSPENT
     let secrets: Vec<Vec<u8>> = proofs
         .iter()
-        .map(|p| hex::decode(&p.secret).unwrap())
+        .map(|p| p.secret.as_bytes().to_vec())
         .collect();
     let secret_refs: Vec<&[u8]> = secrets.iter().map(|s| s.as_slice()).collect();
     let state = wallet.check_state(&secret_refs).unwrap();

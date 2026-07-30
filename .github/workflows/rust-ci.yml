@@ -48,7 +48,7 @@ jobs:
         run: rustup target add thumbv7em-none-eabihf
 
       - name: Build firmware for release
-        run: cargo build -p firmware --release
+        run: cargo build -p firmware --release --features defmt-log
 
   clippy:
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run clippy on firmware
-        run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -D warnings
+        run: cargo clippy -p firmware --target thumbv7em-none-eabihf --features defmt-log -- -D warnings
 
   adapter-test:
     runs-on: ubuntu-latest

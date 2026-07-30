@@ -208,18 +208,16 @@ impl<T: MintClient> Wallet<T> {
         let mut pending = Vec::with_capacity(amounts.len());
 
         for &amount in amounts {
-            // Generate a random secret (32 bytes, hex-encoded when stored in proof)
             let mut secret_bytes = [0u8; 32];
             rng.fill_bytes(&mut secret_bytes);
+            let secret_hex = hex::encode(&secret_bytes);
 
-            // Generate a random blinding factor
             let mut blinder_bytes = [0u8; 32];
             rng.fill_bytes(&mut blinder_bytes);
             let blinder = SecretKey::from_slice(&blinder_bytes)
                 .map_err(|_| CashuError::Crypto("bad blinder scalar".into()))?;
 
-            // NUT-00: B_ = Y + r*G where Y = hash_to_curve(secret)
-            let bm = blind_message(&secret_bytes, Some(blinder.clone()))
+            let bm = blind_message(secret_hex.as_bytes(), Some(blinder.clone()))
                 .map_err(|_| CashuError::Crypto("blind_message failed".into()))?;
 
             messages.push(nut00::BlindedMessage {
@@ -229,7 +227,7 @@ impl<T: MintClient> Wallet<T> {
             });
 
             pending.push(PendingOutput {
-                secret: secret_bytes.to_vec(),
+                secret: secret_hex.into_bytes(),
                 blinder: bm.blinder,
                 amount,
             });
@@ -269,13 +267,13 @@ impl<T: MintClient> Wallet<T> {
             let c = unblind_signature(&sig.c, &p.blinder, mint_pubkey)
                 .map_err(|_| CashuError::Crypto("unblind failed".into()))?;
 
-            // Hex-encode the secret for the proof
-            let secret_hex = hex::encode(&p.secret);
+            let secret = String::from_utf8(p.secret.clone())
+                .map_err(|_| CashuError::Crypto("invalid secret string".into()))?;
 
             proofs.push(nut00::Proof {
                 amount: p.amount,
                 id: sig.id.clone(),
-                secret: secret_hex,
+                secret,
                 c,
             });
         }
