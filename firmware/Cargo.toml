@@ -50,4 +50,5 @@ embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
 
 [features]
-defmt-log = ["dep:defmt", "dep:defmt-rtt", "defmt-rtt/disable-blocking-mode", "dep:panic-probe", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]
+default = ["defmt-log"]
+defmt-log = ["dep:defmt", "dep:defmt-rtt", "defmt-rtt/disable-blocking-mode", "dep:panic-probe", "panic-probe/print-defmt", "gm65-scanner/defmt", "embassy-stm32/defmt", "embassy-time/defmt", "embassy-executor/defmt"]
