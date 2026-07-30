@@ -12,6 +12,7 @@
 //! - Payment preimages are dummy hex strings
 
 pub mod keyset;
+pub mod type_conversion;
 
 mod mint_core;
 pub use mint_core::DemoMint;

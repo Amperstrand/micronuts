@@ -5,11 +5,17 @@
 
 use std::collections::HashMap;
 
-use cashu_core_lite::crypto::{hash_to_curve, sign_message, verify_signature_with_privkey};
+// Crypto primitives delegate to the upstream `cashu` crate; conversions to
+// `cashu-core-lite` types (the MintService seam) happen at the call sites.
+use cashu::dhke::{
+    hash_to_curve as cashu_hash_to_curve, sign_message as cashu_sign_message,
+    verify_message as cashu_verify_message,
+};
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07};
 
 use crate::keyset::DemoKeyset;
+use crate::type_conversion::{cashu_pk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu};
 
 /// In-memory mint quote state.
 #[allow(dead_code)] // Fields kept for future use (e.g., quote lookup by unit)
@@ -386,7 +392,7 @@ impl DemoMint {
     /// NUT-00: Sign a set of blinded outputs.
     ///
     /// For each output, looks up the mint's private key for that denomination
-    /// and computes `C_ = k * B_`.
+    /// and computes `C_ = k * B_` via the upstream `cashu::dhke` primitive.
     fn sign_outputs(
         &self,
         outputs: &[nut00::BlindedMessage],
@@ -398,8 +404,13 @@ impl DemoMint {
                 .get_secret_key(output.amount)
                 .ok_or(CashuError::KeysetNotFound)?;
 
-            // NUT-00: C_ = k * B_
-            let c_prime = sign_message(sk, &output.b);
+            // NUT-00: C_ = k * B_ — cross the cashu-core-lite → cashu boundary,
+            // delegate to `cashu::dhke::sign_message`, then convert back.
+            let cashu_sk = lite_sk_to_cashu(sk);
+            let cashu_blinded = lite_pk_to_cashu(&output.b);
+            let cashu_c_prime = cashu_sign_message(&cashu_sk, &cashu_blinded)
+                .map_err(|_| CashuError::Crypto("cashu::dhke::sign_message failed".to_string()))?;
+            let c_prime = cashu_pk_to_lite(&cashu_c_prime);
 
             signatures.push(nut00::BlindSignature {
                 amount: output.amount,
@@ -412,7 +423,9 @@ impl DemoMint {
 
     /// Verify a set of proofs against mint keys.
     ///
-    /// Checks that `k * hash_to_curve(secret) == C` for each proof.
+    /// Checks that `k * hash_to_curve(secret) == C` for each proof via the
+    /// upstream `cashu::dhke::verify_message` primitive (mint holds the
+    /// private key, so the privkey verification path is used).
     /// Returns the total amount of verified proofs.
     fn verify_proofs(&self, proofs: &[nut00::Proof]) -> Result<u64, CashuError> {
         let mut total = 0u64;
@@ -422,18 +435,15 @@ impl DemoMint {
                 .get_secret_key(proof.amount)
                 .ok_or(CashuError::KeysetNotFound)?;
 
-            // Decode hex secret to bytes
             let secret_bytes =
                 hex::decode(&proof.secret).map_err(|_| CashuError::InvalidProof)?;
 
-            // NUT-00: verify k * hash_to_curve(secret) == C
-            // Mint self-verification: mint has its own private key
-            let valid = verify_signature_with_privkey(&secret_bytes, &proof.c, sk)
-                .map_err(|_| CashuError::Crypto("verify_signature failed".to_string()))?;
-
-            if !valid {
-                return Err(CashuError::InvalidProof);
-            }
+            // NUT-00: verify k * hash_to_curve(secret) == C using the mint's
+            // private key. `cashu::dhke::verify_message` returns Ok iff valid.
+            let cashu_sk = lite_sk_to_cashu(sk);
+            let cashu_c = lite_pk_to_cashu(&proof.c);
+            cashu_verify_message(&cashu_sk, cashu_c, &secret_bytes)
+                .map_err(|_| CashuError::Crypto("verify_message failed".to_string()))?;
 
             total = total
                 .checked_add(proof.amount)
@@ -450,8 +460,9 @@ impl DemoMint {
         for proof in proofs {
             let secret_bytes =
                 hex::decode(&proof.secret).map_err(|_| CashuError::InvalidProof)?;
-            let y = hash_to_curve(&secret_bytes)
+            let cashu_y = cashu_hash_to_curve(&secret_bytes)
                 .map_err(|_| CashuError::Crypto("hash_to_curve failed".to_string()))?;
+            let y = cashu_pk_to_lite(&cashu_y);
             let y_hex = hex::encode(y.to_encoded_point(true).as_bytes());
             // Demo shortcut: we allow double-spending for now (no error if already spent)
             self.spent_ys.insert(y_hex);
