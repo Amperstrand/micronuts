@@ -14,8 +14,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: file
 
       - name: Test cashu-core-lite
         run: cargo test -p cashu-core-lite --features std
@@ -45,8 +43,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: file
 
       - name: Add thumbv7em-none-eabihf target
         run: rustup target add thumbv7em-none-eabihf
@@ -61,8 +57,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: file
 
       - name: Run clippy on workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -77,8 +71,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: file
 
       - name: Build audit adapter
         run: cargo build -p micronuts-audit-adapter
