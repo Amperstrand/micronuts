@@ -16,5 +16,12 @@ minicbor = { workspace = true }
 cashu = "0.17.3"
 
 [features]
-default = []
+default = ["transport-serial"]
 std = ["hex/std", "rand_core/getrandom"]
+
+# Transport feature flags for forward compatibility
+# NOTE: These are compile-only flags. Only transport-serial is functional in v1.0.
+# transport-usb-cdc and transport-microfips are placeholders for future hardware variants.
+transport-serial = []
+transport-usb-cdc = []
+transport-microfips = []
