@@ -64,3 +64,6 @@ strip = "none"
 split-debuginfo = "off"
 panic = "abort"
 
+[patch.crates-io]
+embassy-executor = { git = "https://github.com/Amperstrand/embassy-executor-linux-fix", branch = "main" }
+
