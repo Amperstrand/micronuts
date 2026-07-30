@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use minicbor::{Decode, Encode};
 
 use crate::error::CashuError;
-use crate::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07};
+use crate::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
 use crate::transport::MintClient;
 
 /// NUT-04 quote lookup by quote id for the RPC layer.
@@ -91,6 +91,9 @@ pub enum MintRpcMethod {
     /// NUT-07: `POST /v1/checkstate`
     #[n(10)]
     CheckState(#[n(0)] nut07::CheckStateRequest),
+    /// NUT-09: `POST /v1/restore`
+    #[n(11)]
+    Restore(#[n(0)] nut09::RestoreRequest),
 }
 
 /// RPC response payload.
@@ -140,6 +143,9 @@ pub enum MintRpcResult {
     /// NUT-07: spent-state check.
     #[n(10)]
     CheckState(#[n(0)] nut07::CheckStateResponse),
+    /// NUT-09: restore.
+    #[n(11)]
+    Restore(#[n(0)] nut09::RestoreResponse),
 }
 
 /// Minimal service trait for mint-side RPC handling.
@@ -177,6 +183,11 @@ pub trait MintService {
         &mut self,
         request: nut07::CheckStateRequest,
     ) -> Result<nut07::CheckStateResponse, CashuError>;
+    /// NUT-09: restore outputs. Stateless demo — returns from current session only.
+    fn post_restore(
+        &mut self,
+        request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError>;
 }
 
 /// Encodes/decodes RPC envelopes and dispatches them to a mint service.
@@ -242,6 +253,9 @@ impl<S: MintService> MintRpcHandler<S> {
                 self.service.post_check_state(body),
                 MintRpcResult::CheckState,
             ),
+            MintRpcMethod::Restore(body) => {
+                rpc_success(self.service.post_restore(body), MintRpcResult::Restore)
+            }
         };
 
         MintRpcResponse {
@@ -407,6 +421,16 @@ impl<T: RpcByteTransport> MintClient for RpcMintClient<T> {
         match self.call(MintRpcMethod::CheckState(request))? {
             MintRpcResult::CheckState(resp) => Ok(resp),
             other => Err(unexpected_result("post_check_state", other)),
+        }
+    }
+
+    fn post_restore(
+        &mut self,
+        request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError> {
+        match self.call(MintRpcMethod::Restore(request))? {
+            MintRpcResult::Restore(resp) => Ok(resp),
+            other => Err(unexpected_result("post_restore", other)),
         }
     }
 }

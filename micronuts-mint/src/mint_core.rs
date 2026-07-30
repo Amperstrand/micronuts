@@ -12,7 +12,8 @@ use cashu::dhke::{
     verify_message as cashu_verify_message,
 };
 use cashu_core_lite::error::CashuError;
-use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07};
+use cashu_core_lite::keypair::PublicKey;
+use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
 
 use crate::keyset::DemoKeyset;
 use crate::type_conversion::{cashu_pk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu};
@@ -102,7 +103,7 @@ impl DemoMint {
             contact: vec![],
             nuts: nut06::NutSupport {
                 // NUTs implemented in this demo
-                supported: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                supported: vec![0, 1, 2, 3, 4, 5, 6, 7, 9],
             },
         })
     }
@@ -228,7 +229,7 @@ impl DemoMint {
     /// NUT-05: Create a new melt quote.
     ///
     /// Demo shortcut: the "invoice" can be any string; amount is parsed from it
-    /// or defaulted. Fee reserve is always 0.
+    /// or defaulted. Fee reserve comes from the keyset's `input_fee_ppk` (NUT-08).
     pub fn post_melt_quote(
         &mut self,
         request: nut05::MeltQuoteRequest,
@@ -240,9 +241,11 @@ impl DemoMint {
         let amount = parse_demo_invoice_amount(&request.request)
             .ok_or_else(|| CashuError::Protocol("invalid demo invoice amount".to_string()))?;
 
+        let fee_reserve = self.keyset.input_fee_ppk;
+
         let entry = MeltQuoteEntry {
             amount,
-            fee_reserve: 0, // Demo shortcut: no fees
+            fee_reserve,
             unit: request.unit.clone(),
             request: request.request.clone(),
             state: nut05::state::UNPAID.to_string(),
@@ -254,7 +257,7 @@ impl DemoMint {
         Ok(nut05::MeltQuoteResponse {
             quote: quote_id,
             amount,
-            fee_reserve: 0,
+            fee_reserve,
             paid: false,
             state: nut05::state::UNPAID.to_string(),
             expiry: u64::MAX,
@@ -385,6 +388,23 @@ impl DemoMint {
             .collect();
 
         Ok(nut07::CheckStateResponse { states })
+    }
+
+    // ---- NUT-09: Restore ----
+
+    /// NUT-09: Restore outputs by Y value.
+    ///
+    /// Demo limitation: v1.0 Restore is stateless — the mint does not persist
+    /// issued (Y, BlindSignature) pairs across the session. This returns empty
+    /// because no issued outputs are stored. A production mint would look up
+    /// the Y values in a durable store and return matching signatures.
+    pub fn post_restore(
+        &self,
+        _request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError> {
+        Ok(nut09::RestoreResponse {
+            outputs: Vec::new(),
+        })
     }
 
     // ---- Internal helpers ----
@@ -544,5 +564,15 @@ mod tests {
             unit: "sat".to_string(),
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_restore_stateless() {
+        let mint = DemoMint::new();
+        let request = nut09::RestoreRequest {
+            outputs: vec![],
+        };
+        let response = mint.post_restore(request).unwrap();
+        assert_eq!(response.outputs.len(), 0);
     }
 }

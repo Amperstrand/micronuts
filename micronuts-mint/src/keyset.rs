@@ -23,6 +23,8 @@ pub struct DemoKeyset {
     pub unit: String,
     /// Denomination → (private key, public key) pairs, sorted by amount ascending.
     pub keys: Vec<(u64, SecretKey, PublicKey)>,
+    /// NUT-08: input fee in parts per thousand (ppk). 0 = no fees.
+    pub input_fee_ppk: u64,
 }
 
 impl DemoKeyset {
@@ -30,7 +32,12 @@ impl DemoKeyset {
     ///
     /// Demo shortcut: keys are derived as `SHA256(seed || "cashu-key" || index_be)`.
     /// A real mint would use BIP-32 derivation from a mnemonic (NUT-13).
-    pub fn new(seed: &[u8], unit: &str) -> Self {
+    ///
+    /// # Arguments
+    /// * `seed` - Bytes for deterministic key derivation
+    /// * `unit` - Unit string (e.g., "sat")
+    /// * `input_fee_ppk` - NUT-08: input fee in parts per thousand (0 = no fees)
+    pub fn new(seed: &[u8], unit: &str, input_fee_ppk: u64) -> Self {
         let mut keys = Vec::with_capacity(DENOMINATIONS.len());
 
         for (i, &amount) in DENOMINATIONS.iter().enumerate() {
@@ -55,15 +62,24 @@ impl DemoKeyset {
             id,
             unit: unit.to_string(),
             keys,
+            input_fee_ppk,
         }
     }
 
-    /// Create the keyset from the default demo seed.
+    /// Create the keyset from the default demo seed with no input fees.
     pub fn demo_default() -> Self {
         let seed = Sha256::new()
             .chain_update(b"micronuts-demo-mint-seed")
             .finalize();
-        Self::new(&seed, "sat")
+        Self::new(&seed, "sat", 0)
+    }
+
+    /// Create the keyset from the default demo seed with a custom input fee.
+    pub fn demo_with_fee(input_fee_ppk: u64) -> Self {
+        let seed = Sha256::new()
+            .chain_update(b"micronuts-demo-mint-seed")
+            .finalize();
+        Self::new(&seed, "sat", input_fee_ppk)
     }
 
     /// NUT-01: Export as a public KeySet (no private keys).
@@ -88,8 +104,7 @@ impl DemoKeyset {
             id: self.id.clone(),
             unit: self.unit.clone(),
             active: true,
-            // Demo shortcut: no input fees
-            input_fee_ppk: 0,
+            input_fee_ppk: self.input_fee_ppk,
         }
     }
 
