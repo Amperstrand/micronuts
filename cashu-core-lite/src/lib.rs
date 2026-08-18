@@ -7,7 +7,9 @@ pub mod crypto;
 pub mod error;
 pub mod keypair;
 pub mod nuts;
+pub mod persistent;
 pub mod rpc;
+pub mod store;
 pub mod token;
 pub mod transport;
 pub mod wallet;
@@ -25,5 +27,7 @@ pub use rpc::{
     MintRpcResponse, MintRpcResult, MintService, RpcByteTransport, RpcMintClient,
 };
 pub use token::{decode_token, encode_token, Proof, TokenV4, TokenV4Token};
+pub use persistent::{PersistentWallet, RESTORE_HEADROOM};
+pub use store::{MemoryStore, ProofStore, StoreError};
 pub use transport::MintClient;
 pub use wallet::Wallet;

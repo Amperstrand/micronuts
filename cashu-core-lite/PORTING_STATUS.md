@@ -15,11 +15,11 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 | NUT-06 | ✅ Complete | Partial | Info types, minimal |
 | NUT-07 | ✅ Complete | Partial | State check, in-memory only |
 | NUT-08 | ❌ Missing | - | Fee return |
-| NUT-09 | ❌ Missing | - | Restore (uses NUT-13) |
+| NUT-09 | ✅ Wallet-side | Partial | Restore types + `PersistentWallet::restore()` (deterministic re-derivation via NUT-13); demo mint remains session-stateless |
 | NUT-10 | ❌ Missing | - | Spending conditions |
 | NUT-11 | ❌ Missing | - | Pay-to-script |
 | NUT-12 | ✅ Verify-only | Partial | DLEQ blind-signature verification (port of CDK verify_dleq, k256); proof *generation* not implemented |
-| NUT-13 | ✅ Complete | Full | Deterministic secrets/blinders |
+| NUT-13 | ✅ Complete | Full | Deterministic secrets/blinders — interop bug fixed 2026-08-18 (u64 counter, 64-byte seed per spec; official 13-tests.md vectors now asserted) |
 | NUT-14 | ❌ Missing | - | HTLCs |
 | NUT-15 | ❌ Missing | - | Multipart tokens |
 
@@ -184,7 +184,16 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 | `keyset_id_to_u32()` | ✅ | Helper for legacy paths |
 | `hmac_sha256()` | ✅ | RFC 2104 compliant |
 
-**Algorithm Match:** Full - HMAC-SHA256 KDF for v01+ keysets
+**Algorithm Match:** Full - HMAC-SHA256 KDF for v01+ keysets.
+
+**Interop fix (2026-08-18):** the module previously emitted the counter as
+u32 (4 bytes) and callers truncated the 64-byte BIP39 seed to 32 bytes —
+producing valid-looking but *different* secrets than CDK from the same
+mnemonic (a wallet would silently hold different funds). Construction now
+matches CDK 0.17.3 exactly (`(counter as u64).to_be_bytes()`, full seed),
+verified against the official 13-tests.md vectors. Historical note: the
+module carried `#![cfg(not(feature = "std"))]`, so it was compiled out of
+every std test build — the divergence was invisible until 2026-08-18.
 
 **CDK Reference:** [nut13.rs](https://github.com/cashubtc/cdk/blob/main/crates/cdk/src/nuts/nut13.rs)
 

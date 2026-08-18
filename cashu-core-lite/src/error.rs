@@ -45,6 +45,9 @@ pub enum CashuError {
     /// Generic / uncategorized error.
     #[n(11)]
     Unknown(#[n(0)] String),
+    /// Persistence-layer failure (proof store unavailable or write failed).
+    #[n(12)]
+    Storage(#[n(0)] String),
 }
 
 impl fmt::Display for CashuError {
@@ -62,6 +65,7 @@ impl fmt::Display for CashuError {
             Self::KeysetNotFound => write!(f, "keyset not found"),
             Self::AmountMismatch => write!(f, "input/output amount mismatch"),
             Self::Unknown(msg) => write!(f, "unknown error: {}", msg),
+            Self::Storage(msg) => write!(f, "storage error: {}", msg),
         }
     }
 }

@@ -18,7 +18,7 @@ use minicbor::{Decode, Encode};
 /// Request body for `POST /v1/restore` (NUT-09).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct RestoreRequest {
-    /// `Y` values: `hash_to_curve(secret)` for each proof to restore.
+    /// Blinded messages `B'` to restore (the spec's `outputs` list).
     #[n(0)]
     pub outputs: Vec<PublicKey>,
 }
@@ -26,7 +26,8 @@ pub struct RestoreRequest {
 /// A restored output with its blind signature (NUT-09).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct RestoreOutput {
-    /// `Y = hash_to_curve(secret)` for this output.
+    /// The blinded message `B'` this signature belongs to (the spec names
+    /// this field `y`, but it carries `B'`, not `hash_to_curve(secret)`).
     #[n(0)]
     pub y: PublicKey,
     /// The blind signature for this output.

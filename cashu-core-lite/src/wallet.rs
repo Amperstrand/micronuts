@@ -21,13 +21,13 @@ use crate::transport::MintClient;
 
 /// Internal record kept while minting/swapping.
 /// Holds the blinder (r) needed to unblind the mint's response.
-struct PendingOutput {
+pub(crate) struct PendingOutput {
     /// The secret `x` for this output (raw bytes, not hex).
-    secret: Vec<u8>,
+    pub(crate) secret: Vec<u8>,
     /// The blinding factor `r`.
-    blinder: SecretKey,
+    pub(crate) blinder: SecretKey,
     /// The denomination amount.
-    amount: u64,
+    pub(crate) amount: u64,
 }
 
 /// A transport-neutral Cashu wallet.
@@ -38,7 +38,7 @@ pub struct Wallet<T: MintClient> {
     /// The mint URL (used as an identifier, not for actual HTTP).
     pub mint_url: String,
     /// The transport to communicate with the mint.
-    pub transport: T,
+    pub(crate) transport: T,
 }
 
 impl<T: MintClient> Wallet<T> {
@@ -198,7 +198,7 @@ impl<T: MintClient> Wallet<T> {
     ///
     /// Returns the protocol-level blinded messages (to send to the mint) and
     /// the internal pending records (to unblind later).
-    fn create_blinded_outputs(
+    pub(crate) fn create_blinded_outputs(
         &self,
         amounts: &[u64],
         keyset_id: &str,
@@ -240,7 +240,7 @@ impl<T: MintClient> Wallet<T> {
     ///
     /// For each signature `C_`, computes `C = C_ - r*K` where `K` is the
     /// mint's public key for that denomination.
-    fn unblind_to_proofs(
+    pub(crate) fn unblind_to_proofs(
         &self,
         pending: &[PendingOutput],
         signatures: &[nut00::BlindSignature],
