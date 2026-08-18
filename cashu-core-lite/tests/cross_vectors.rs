@@ -8,8 +8,7 @@
 //! patch), so they are load-bearing interop contracts, not coverage filler.
 
 use cashu_core_lite::crypto::{
-    blind_message, hash_to_curve, sign_message, unblind_signature,
-    verify_signature_with_privkey,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature_with_privkey,
 };
 use cashu_core_lite::keypair::{PublicKey, SecretKey};
 use cashu_core_lite::nuts::nut12::verify_dleq;
@@ -38,8 +37,14 @@ fn sk_from_hex(hex_str: &str) -> SecretKey {
 #[test]
 fn cross_hash_to_curve_vectors() {
     let vectors = [
-        ("test-secret-01", "0279110ffdbbaccf1f96e0641dd8794fb206e8f95eb52c0fa001487b070cb5f7b1"),
-        ("a", "029794c59a5d9b910a18e50e10623c864b77c7edf4552f8652b0c85d30ac0498f0"),
+        (
+            "test-secret-01",
+            "0279110ffdbbaccf1f96e0641dd8794fb206e8f95eb52c0fa001487b070cb5f7b1",
+        ),
+        (
+            "a",
+            "029794c59a5d9b910a18e50e10623c864b77c7edf4552f8652b0c85d30ac0498f0",
+        ),
         (
             "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
             "0244d4bdec44e84725e2b6d9d7a2896df8bc27b482e84e0cb2144272d318375bc3",

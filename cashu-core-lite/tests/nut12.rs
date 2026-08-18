@@ -50,14 +50,10 @@ fn sk_from_hex(hex: &str) -> SecretKey {
 fn verify_dleq_accepts_official_blind_signature_vector() {
     // From nuts/tests/12-tests.md "DLEQ verification on BlindSignature".
     let a = pk_from_hex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
-    let b_prime = pk_from_hex(
-        "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-    );
+    let b_prime = pk_from_hex("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2");
     // C_' in the spec vector equals B_' (because the mint key is `1`, so
     // C' = 1 * B' = B').
-    let c_prime = pk_from_hex(
-        "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-    );
+    let c_prime = pk_from_hex("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2");
     let e = sk_from_hex("9818e061ee51d5c8edc3342369a554998ff7b4381c8652d724cdf46429be73d9");
     let s = sk_from_hex("9818e061ee51d5c8edc3342369a554998ff7b4381c8652d724cdf46429be73da");
 
@@ -78,9 +74,8 @@ fn verify_dleq_accepts_official_proof_vector() {
     //     B' = Y + r*G
     // and then runs the standard Alice-side verification.
     let a = pk_from_hex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
-    let c_unblinded = pk_from_hex(
-        "024369d2d22a80ecf78f3937da9d5f30c1b9f74f0c32684d583cca0fa6a61cdcfc",
-    );
+    let c_unblinded =
+        pk_from_hex("024369d2d22a80ecf78f3937da9d5f30c1b9f74f0c32684d583cca0fa6a61cdcfc");
     let e = sk_from_hex("b31e58ac6527f34975ffab13e70a48b6d2b0d35abc4b03f0151f09ee1a9763d4");
     let s = sk_from_hex("8fbae004c59e754d71df67e392b6ae4e29293113ddc2ec86592a0431d16306d8");
     let r = sk_from_hex("a6d13fcd7a18442e6076f5e1e7c887ad5de40a019824bdfa9fe740d302e8d861");
@@ -99,17 +94,18 @@ fn verify_dleq_accepts_official_proof_vector() {
     // B' = Y + r*G
     let r_g = ProjectivePoint::GENERATOR * r_scalar;
     let b_prime_proj = y_proj + r_g;
-    let b_prime =
-        PublicKey::from_affine(b_prime_proj.into()).expect("B' must not be the identity");
+    let b_prime = PublicKey::from_affine(b_prime_proj.into()).expect("B' must not be the identity");
 
     // C' = C + r*A
     let r_a = a_proj * r_scalar;
     let c_prime_proj = c_proj + r_a;
-    let c_prime =
-        PublicKey::from_affine(c_prime_proj.into()).expect("C' must not be the identity");
+    let c_prime = PublicKey::from_affine(c_prime_proj.into()).expect("C' must not be the identity");
 
     let valid = verify_dleq(&b_prime, &c_prime, &e, &s, &a).expect("verify should not error");
-    assert!(valid, "official Proof DLEQ vector must verify after reconstruction");
+    assert!(
+        valid,
+        "official Proof DLEQ vector must verify after reconstruction"
+    );
 }
 
 // ---------- 4. Official deterministic-nonce vector ----------
@@ -119,12 +115,8 @@ fn verify_dleq_accepts_deterministic_nonce_vector() {
     // From nuts/tests/12-tests.md "Deterministic nonce derivation".
     // Mint secret a = 2 (not 1), so A != G.
     let a = pk_from_hex("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5");
-    let b_prime = pk_from_hex(
-        "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-    );
-    let c_prime = pk_from_hex(
-        "0244eccfc7a348274458bb38044c7f3c389b3c2086c7ec18b5812d2877ab937787",
-    );
+    let b_prime = pk_from_hex("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2");
+    let c_prime = pk_from_hex("0244eccfc7a348274458bb38044c7f3c389b3c2086c7ec18b5812d2877ab937787");
     let e = sk_from_hex("2a16ffee280aff3c429045607f9b8e0bf8b35910c44c1b20b9dfaf01b263d7b3");
     let s = sk_from_hex("9df27731238334718d120d4f74611a7c668233f988e687ac3fb188f0a34a2dab");
 
@@ -140,12 +132,8 @@ fn verify_dleq_accepts_deterministic_nonce_vector() {
 #[test]
 fn verify_dleq_rejects_tampered_e() {
     let a = pk_from_hex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
-    let b_prime = pk_from_hex(
-        "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-    );
-    let c_prime = pk_from_hex(
-        "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-    );
+    let b_prime = pk_from_hex("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2");
+    let c_prime = pk_from_hex("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2");
     let e_bytes = hex::decode("9818e061ee51d5c8edc3342369a554998ff7b4381c8652d724cdf46429be73d9")
         .expect("valid hex");
     let s = sk_from_hex("9818e061ee51d5c8edc3342369a554998ff7b4381c8652d724cdf46429be73da");
@@ -165,8 +153,8 @@ fn verify_dleq_rejects_tampered_e() {
     // Sanity: the original (untampered) e verifies, so the negative result
     // above is due to the bit flip, not the surrounding inputs.
     let e = SecretKey::from_slice(&e_bytes).expect("valid scalar");
-    let valid_original = verify_dleq(&b_prime, &c_prime, &e, &s, &a)
-        .expect("verify should not error");
+    let valid_original =
+        verify_dleq(&b_prime, &c_prime, &e, &s, &a).expect("verify should not error");
     assert!(valid_original, "untampered vector must still verify");
 }
 
@@ -187,13 +175,13 @@ fn verify_dleq_accepts_dleq_constructed_by_cdk() {
     let blinder_bytes = [0x55u8; 32];
     let secret_msg: &[u8] = b"micronuts-nut12-roundtrip-secret";
 
-    let cdk_mint_sk = cashu::SecretKey::from_slice(&mint_secret_bytes)
-        .expect("cdk mint secret key");
+    let cdk_mint_sk =
+        cashu::SecretKey::from_slice(&mint_secret_bytes).expect("cdk mint secret key");
     let cdk_blinder = cashu::SecretKey::from_slice(&blinder_bytes).expect("cdk blinder");
 
     // B_' and r, produced by CDK.
-    let (cdk_b_prime, _r) = cdk_blind(secret_msg, Some(cdk_blinder.clone()))
-        .expect("cdk blind_message");
+    let (cdk_b_prime, _r) =
+        cdk_blind(secret_msg, Some(cdk_blinder.clone())).expect("cdk blind_message");
     // C_' = a * B_', produced by CDK.
     let cdk_c_prime = cdk_sign(&cdk_mint_sk, &cdk_b_prime).expect("cdk sign_message");
 
@@ -210,10 +198,7 @@ fn verify_dleq_accepts_dleq_constructed_by_cdk() {
     )
     .expect("cdk BlindSignature::new with DLEQ");
 
-    let dleq = cdk_bs
-        .dleq
-        .as_ref()
-        .expect("cdk must attach a DLEQ proof");
+    let dleq = cdk_bs.dleq.as_ref().expect("cdk must attach a DLEQ proof");
 
     // Cross-verify with CDK itself, as a sanity check that our inputs are
     // the ones CDK would also accept.

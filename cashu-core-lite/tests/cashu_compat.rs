@@ -6,11 +6,11 @@ use cashu::dhke::{
 };
 use cashu::nuts::nut23::QuoteState;
 use cashu::Amount;
+use cashu_core_lite::nuts::nut00::decompose_amount;
 use cashu_core_lite::{
     blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
     verify_signature_with_privkey, PublicKey, SecretKey,
 };
-use cashu_core_lite::nuts::nut00::decompose_amount;
 
 fn upstream_fee_table() -> FeeAndAmounts {
     (0, vec![1, 2, 4, 8, 16, 32, 64, 128]).into()
@@ -75,7 +75,10 @@ fn blind_sign_unblind_matches_upstream_cashu() {
         cashu_blind_message(&secret, Some(cashu_blinder)).expect("cashu blind_message succeeds");
 
     assert_eq!(our_blinded.blinded.to_bytes(), cashu_blinded.to_bytes());
-    assert_eq!(our_blinded.blinder.to_secret_bytes(), returned_blinder.to_secret_bytes());
+    assert_eq!(
+        our_blinded.blinder.to_secret_bytes(),
+        returned_blinder.to_secret_bytes()
+    );
 
     let our_signed = sign_message(&our_mint_key, &our_blinded.blinded);
     let cashu_blinded_point =
@@ -99,7 +102,8 @@ fn blind_sign_unblind_matches_upstream_cashu() {
     assert_eq!(our_unblinded.to_bytes(), cashu_unblinded.to_bytes());
 
     assert!(
-        verify_signature_with_privkey(&secret, &our_unblinded, &our_mint_key).expect("our verify succeeds")
+        verify_signature_with_privkey(&secret, &our_unblinded, &our_mint_key)
+            .expect("our verify succeeds")
     );
     cashu_verify_message(&cashu_mint_key, cashu_unblinded, &secret)
         .expect("cashu verify should succeed");
@@ -173,8 +177,8 @@ fn blind_message_random_matches_upstream_cashu() {
     for i in 0..DIFF_ITERATIONS {
         let secret = random_bytes(32);
 
-        let ours = blind_message(&secret, Some(our_blinder.clone()))
-            .expect("our blind_message succeeds");
+        let ours =
+            blind_message(&secret, Some(our_blinder.clone())).expect("our blind_message succeeds");
         // Rebuild from bytes each iteration to avoid needing `cashu::SecretKey: Clone`.
         let cashu_blinder = cashu::SecretKey::from_slice(&blinder_bytes).expect("valid blinder");
         let (cashu_point, cashu_returned_blinder) =
@@ -250,8 +254,8 @@ fn unblind_signature_random_matches_upstream_cashu() {
         let cashu_blinder =
             cashu::SecretKey::from_slice(&our_blinder.to_secret_bytes()).expect("valid blinder");
 
-        let our_blinded = blind_message(&secret, Some(our_blinder.clone()))
-            .expect("our blind_message succeeds");
+        let our_blinded =
+            blind_message(&secret, Some(our_blinder.clone())).expect("our blind_message succeeds");
         let our_signed = sign_message(&our_mint_key, &our_blinded.blinded);
         let cashu_signed =
             cashu::PublicKey::from_slice(&our_signed.to_bytes()).expect("valid signed point");

@@ -166,7 +166,8 @@ pub trait MintService {
     /// NUT-04: fetch mint quote state.
     fn get_mint_quote(&mut self, quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError>;
     /// NUT-04: mint blinded outputs.
-    fn post_mint(&mut self, request: nut04::MintRequest) -> Result<nut04::MintResponse, CashuError>;
+    fn post_mint(&mut self, request: nut04::MintRequest)
+        -> Result<nut04::MintResponse, CashuError>;
     /// NUT-05: create melt quote.
     fn post_melt_quote(
         &mut self,
@@ -175,9 +176,11 @@ pub trait MintService {
     /// NUT-05: fetch melt quote state.
     fn get_melt_quote(&mut self, quote_id: &str) -> Result<nut05::MeltQuoteResponse, CashuError>;
     /// NUT-05: melt proofs.
-    fn post_melt(&mut self, request: nut05::MeltRequest) -> Result<nut05::MeltResponse, CashuError>;
+    fn post_melt(&mut self, request: nut05::MeltRequest)
+        -> Result<nut05::MeltResponse, CashuError>;
     /// NUT-03: swap proofs.
-    fn post_swap(&mut self, request: nut03::SwapRequest) -> Result<nut03::SwapResponse, CashuError>;
+    fn post_swap(&mut self, request: nut03::SwapRequest)
+        -> Result<nut03::SwapResponse, CashuError>;
     /// NUT-07: check proof states.
     fn post_check_state(
         &mut self,
@@ -216,12 +219,8 @@ impl<S: MintService> MintRpcHandler<S> {
     /// Handle a decoded RPC request and return the matching response envelope.
     pub fn handle_request(&mut self, request: MintRpcRequest) -> MintRpcResponse {
         let payload = match request.method {
-            MintRpcMethod::GetInfo => {
-                rpc_success(self.service.get_info(), MintRpcResult::GetInfo)
-            }
-            MintRpcMethod::GetKeys => {
-                rpc_success(self.service.get_keys(), MintRpcResult::GetKeys)
-            }
+            MintRpcMethod::GetInfo => rpc_success(self.service.get_info(), MintRpcResult::GetInfo),
+            MintRpcMethod::GetKeys => rpc_success(self.service.get_keys(), MintRpcResult::GetKeys),
             MintRpcMethod::GetKeysets => {
                 rpc_success(self.service.get_keysets(), MintRpcResult::GetKeysets)
             }
@@ -235,10 +234,9 @@ impl<S: MintService> MintRpcHandler<S> {
             MintRpcMethod::Mint(body) => {
                 rpc_success(self.service.post_mint(body), MintRpcResult::Mint)
             }
-            MintRpcMethod::MeltQuote(body) => rpc_success(
-                self.service.post_melt_quote(body),
-                MintRpcResult::MeltQuote,
-            ),
+            MintRpcMethod::MeltQuote(body) => {
+                rpc_success(self.service.post_melt_quote(body), MintRpcResult::MeltQuote)
+            }
             MintRpcMethod::GetMeltQuote(body) => rpc_success(
                 self.service.get_melt_quote(&body.quote),
                 MintRpcResult::GetMeltQuote,
@@ -374,7 +372,10 @@ impl<T: RpcByteTransport> MintClient for RpcMintClient<T> {
         }
     }
 
-    fn post_mint(&mut self, request: nut04::MintRequest) -> Result<nut04::MintResponse, CashuError> {
+    fn post_mint(
+        &mut self,
+        request: nut04::MintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
         match self.call(MintRpcMethod::Mint(request))? {
             MintRpcResult::Mint(resp) => Ok(resp),
             other => Err(unexpected_result("post_mint", other)),
@@ -400,14 +401,20 @@ impl<T: RpcByteTransport> MintClient for RpcMintClient<T> {
         }
     }
 
-    fn post_melt(&mut self, request: nut05::MeltRequest) -> Result<nut05::MeltResponse, CashuError> {
+    fn post_melt(
+        &mut self,
+        request: nut05::MeltRequest,
+    ) -> Result<nut05::MeltResponse, CashuError> {
         match self.call(MintRpcMethod::Melt(request))? {
             MintRpcResult::Melt(resp) => Ok(resp),
             other => Err(unexpected_result("post_melt", other)),
         }
     }
 
-    fn post_swap(&mut self, request: nut03::SwapRequest) -> Result<nut03::SwapResponse, CashuError> {
+    fn post_swap(
+        &mut self,
+        request: nut03::SwapRequest,
+    ) -> Result<nut03::SwapResponse, CashuError> {
         match self.call(MintRpcMethod::Swap(request))? {
             MintRpcResult::Swap(resp) => Ok(resp),
             other => Err(unexpected_result("post_swap", other)),
@@ -470,8 +477,5 @@ fn rpc_success<T>(
 }
 
 fn unexpected_result(method: &str, result: MintRpcResult) -> CashuError {
-    CashuError::Protocol(format!(
-        "unexpected rpc result for {method}: {:?}",
-        result
-    ))
+    CashuError::Protocol(format!("unexpected rpc result for {method}: {:?}", result))
 }

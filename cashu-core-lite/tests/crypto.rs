@@ -105,12 +105,8 @@ fn test_verify_signature_valid_blind_sig() {
     let unblinded =
         unblind_signature(&blinded_sig, &blinder, &mint_pubkey).expect("should unblind");
 
-    let valid = verify_signature_with_privkey(
-        b"verify secret",
-        &unblinded,
-        &mint_key,
-    )
-    .expect("should verify");
+    let valid = verify_signature_with_privkey(b"verify secret", &unblinded, &mint_key)
+        .expect("should verify");
     assert!(valid);
 }
 
@@ -119,12 +115,8 @@ fn test_verify_signature_rejects_wrong_point() {
     let random_key = make_secret_key(&[99u8; 32]);
     let random_pubkey = random_key.public_key();
 
-    let valid = verify_signature_with_privkey(
-        b"some secret",
-        &random_pubkey,
-        &random_key,
-    )
-    .expect("should verify");
+    let valid = verify_signature_with_privkey(b"some secret", &random_pubkey, &random_key)
+        .expect("should verify");
     assert!(!valid);
 }
 
@@ -132,12 +124,8 @@ fn test_verify_signature_rejects_wrong_point() {
 fn test_verify_signature_rejects_wrong_secret() {
     let mint_key = make_secret_key(&[42u8; 32]);
     let y = hash_to_curve(b"actual secret").expect("should hash");
-    let valid = verify_signature_with_privkey(
-        b"wrong secret",
-        &y,
-        &mint_key,
-    )
-    .expect("should verify");
+    let valid =
+        verify_signature_with_privkey(b"wrong secret", &y, &mint_key).expect("should verify");
     assert!(!valid);
 }
 
@@ -154,12 +142,8 @@ fn test_verify_signature_rejects_wrong_mint_key() {
     let unblinded =
         unblind_signature(&blinded_sig, &blinder, &mint_pubkey).expect("should unblind");
 
-    let valid = verify_signature_with_privkey(
-        b"secret",
-        &unblinded,
-        &wrong_mint_key,
-    )
-    .expect("should verify");
+    let valid = verify_signature_with_privkey(b"secret", &unblinded, &wrong_mint_key)
+        .expect("should verify");
     assert!(!valid);
 }
 
@@ -207,16 +191,11 @@ fn test_full_swap_flow_multiple_proofs() {
         let sig = sign_message(&mint_key, blinded);
         let unblinded =
             unblind_signature(&sig, &blinder_keys[i], &mint_pubkey).expect("should unblind");
-        let valid = verify_signature_with_privkey(
-            secrets[i],
-            &unblinded,
-            &mint_key,
-        )
-        .expect("should verify");
+        let valid = verify_signature_with_privkey(secrets[i], &unblinded, &mint_key)
+            .expect("should verify");
         assert!(valid, "proof {} failed verification", i);
         new_proofs.push(unblinded);
     }
 
     assert_eq!(new_proofs.len(), 3);
 }
-

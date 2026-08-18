@@ -35,10 +35,8 @@ pub trait MintClient {
     fn get_mint_quote(&mut self, quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError>;
 
     /// NUT-04: Mint ecash by providing blinded outputs against a paid quote.
-    fn post_mint(
-        &mut self,
-        request: nut04::MintRequest,
-    ) -> Result<nut04::MintResponse, CashuError>;
+    fn post_mint(&mut self, request: nut04::MintRequest)
+        -> Result<nut04::MintResponse, CashuError>;
 
     /// NUT-05: Request a melt quote for paying a Lightning invoice.
     fn post_melt_quote(
@@ -50,16 +48,12 @@ pub trait MintClient {
     fn get_melt_quote(&mut self, quote_id: &str) -> Result<nut05::MeltQuoteResponse, CashuError>;
 
     /// NUT-05: Execute a melt (spend proofs to pay a Lightning invoice).
-    fn post_melt(
-        &mut self,
-        request: nut05::MeltRequest,
-    ) -> Result<nut05::MeltResponse, CashuError>;
+    fn post_melt(&mut self, request: nut05::MeltRequest)
+        -> Result<nut05::MeltResponse, CashuError>;
 
     /// NUT-03: Swap existing proofs for new blinded outputs.
-    fn post_swap(
-        &mut self,
-        request: nut03::SwapRequest,
-    ) -> Result<nut03::SwapResponse, CashuError>;
+    fn post_swap(&mut self, request: nut03::SwapRequest)
+        -> Result<nut03::SwapResponse, CashuError>;
 
     /// NUT-07: Check the spent state of proofs (by their Y values).
     fn post_check_state(

@@ -180,8 +180,7 @@ impl<C> Encode<C> for SecretKey {
 impl<'b, C> Decode<'b, C> for SecretKey {
     fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, DecodeError> {
         let bytes = d.bytes()?;
-        SecretKey::from_slice(bytes)
-            .map_err(|_| DecodeError::message("invalid secret key"))
+        SecretKey::from_slice(bytes).map_err(|_| DecodeError::message("invalid secret key"))
     }
 }
 
