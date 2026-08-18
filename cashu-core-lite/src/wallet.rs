@@ -16,6 +16,7 @@ use rand_core::RngCore;
 use crate::crypto::{blind_message, hash_to_curve, unblind_signature};
 use crate::error::CashuError;
 use crate::keypair::SecretKey;
+use crate::nuts::nut12::ProofDleq;
 use crate::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07};
 use crate::transport::MintClient;
 
@@ -247,9 +248,7 @@ impl<T: MintClient> Wallet<T> {
         mint_keys: &nut01::KeySet,
     ) -> Result<Vec<nut00::Proof>, CashuError> {
         if pending.len() != signatures.len() {
-            return Err(CashuError::Protocol(
-                "signature count mismatch".to_string(),
-            ));
+            return Err(CashuError::Protocol("signature count mismatch".to_string()));
         }
 
         let mut proofs = Vec::with_capacity(pending.len());
@@ -270,11 +269,18 @@ impl<T: MintClient> Wallet<T> {
             let secret = String::from_utf8(p.secret.clone())
                 .map_err(|_| CashuError::Crypto("invalid secret string".into()))?;
 
+            // Proof-level NUT-12: same (e, s) as the blind-signature DLEQ
+            // plus Alice's blinder r, so third parties can reconstruct
+            // B' and C' offline (see nut12::verify_proof_dleq).
             proofs.push(nut00::Proof {
                 amount: p.amount,
                 id: sig.id.clone(),
                 secret,
                 c,
+                dleq: sig
+                    .dleq
+                    .as_ref()
+                    .map(|d| ProofDleq::new(d.e.clone(), d.s.clone(), p.blinder.clone())),
             });
         }
 

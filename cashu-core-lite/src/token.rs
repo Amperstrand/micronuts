@@ -49,11 +49,14 @@ fn decode_base64url(input: &[u8]) -> Option<Vec<u8>> {
     let full_groups = input.len() / 4;
     let remainder = input.len() % 4;
 
-    let mut output = Vec::with_capacity(full_groups * 3 + match remainder {
-        2 => 1,
-        3 => 2,
-        _ => 0,
-    });
+    let mut output = Vec::with_capacity(
+        full_groups * 3
+            + match remainder {
+                2 => 1,
+                3 => 2,
+                _ => 0,
+            },
+    );
 
     for i in 0..full_groups {
         let off = i * 4;
@@ -105,8 +108,14 @@ pub struct Proof {
     #[n(2)]
     pub secret: String,
 
+    /// `C`: the unblinded signature, compressed-point bytes.
     #[n(3)]
     pub c: Vec<u8>,
+
+    /// NUT-12 proof-level DLEQ (e, s, r) — enables public-key-only
+    /// offline verification of this proof.
+    #[n(4)]
+    pub dleq: Option<crate::nuts::nut12::ProofDleq>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]

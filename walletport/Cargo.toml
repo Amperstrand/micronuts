@@ -1,0 +1,19 @@
+[package]
+name = "walletport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WalletPort facade over cashu-core-lite: trust model, refusal policies, offline DLEQ gate validation"
+
+[features]
+default = []
+std = ["cashu-core-lite/std"]
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite" }
+minicbor = { version = "0.25", default-features = false, features = ["alloc", "derive"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+k256 = "0.13"
+sha2 = "0.10"

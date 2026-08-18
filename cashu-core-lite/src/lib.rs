@@ -18,16 +18,16 @@ pub use crypto::{
     blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
     verify_signature_with_privkey, BlindedMessage, HashToCurveError,
 };
-pub use nuts::nut12::DleqError;
 pub use error::CashuError;
 pub use keypair::{PublicKey, SecretKey};
-pub use rpc::{
-    decode_rpc_request, decode_rpc_response, encode_rpc_request, encode_rpc_response, MeltQuoteLookupRequest,
-    MintQuoteLookupRequest, MintRpcHandler, MintRpcMethod, MintRpcPayload, MintRpcRequest,
-    MintRpcResponse, MintRpcResult, MintService, RpcByteTransport, RpcMintClient,
-};
-pub use token::{decode_token, encode_token, Proof, TokenV4, TokenV4Token};
+pub use nuts::nut12::DleqError;
 pub use persistent::{PersistentWallet, RESTORE_HEADROOM};
+pub use rpc::{
+    decode_rpc_request, decode_rpc_response, encode_rpc_request, encode_rpc_response,
+    MeltQuoteLookupRequest, MintQuoteLookupRequest, MintRpcHandler, MintRpcMethod, MintRpcPayload,
+    MintRpcRequest, MintRpcResponse, MintRpcResult, MintService, RpcByteTransport, RpcMintClient,
+};
 pub use store::{MemoryStore, ProofStore, StoreError};
+pub use token::{decode_token, encode_token, Proof, TokenV4, TokenV4Token};
 pub use transport::MintClient;
 pub use wallet::Wallet;

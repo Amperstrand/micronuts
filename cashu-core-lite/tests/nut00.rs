@@ -89,6 +89,7 @@ fn test_proof_cbor_roundtrip() {
         id: "009a1f293253e41e".to_string(),
         secret: "test_secret_hex".to_string(),
         c: sample_public_key(),
+        dleq: None,
     };
 
     let mut buf = vec![];
@@ -97,6 +98,10 @@ fn test_proof_cbor_roundtrip() {
 
     assert_eq!(decoded.amount, proof.amount);
     assert_eq!(decoded.id, proof.id);
+    assert!(
+        decoded.dleq.is_none(),
+        "absent dleq stays absent across CBOR"
+    );
     assert_eq!(decoded.secret, proof.secret);
 }
 
@@ -122,7 +127,7 @@ fn test_blind_signature_cbor_roundtrip() {
         amount: 16,
         id: "009a1f293253e41e".to_string(),
         c: sample_public_key(),
-                dleq: None,
+        dleq: None,
     };
 
     let mut buf = vec![];
@@ -155,12 +160,14 @@ fn test_proof_different_amounts_different_cbor() {
         id: "00".to_string(),
         secret: "s".to_string(),
         c: sample_public_key(),
+        dleq: None,
     };
     let p2 = Proof {
         amount: 2,
         id: "00".to_string(),
         secret: "s".to_string(),
         c: sample_public_key(),
+        dleq: None,
     };
 
     let mut buf1 = vec![];
@@ -178,13 +185,13 @@ fn test_blind_signature_equality() {
         amount: 8,
         id: "00".to_string(),
         c: pk.clone(),
-                dleq: None,
+        dleq: None,
     };
     let s2 = BlindSignature {
         amount: 8,
         id: "00".to_string(),
         c: pk,
-                dleq: None,
+        dleq: None,
     };
     assert_eq!(s1, s2);
 }

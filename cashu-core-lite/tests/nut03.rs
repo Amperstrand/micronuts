@@ -23,6 +23,8 @@ fn test_swap_request_cbor_roundtrip() {
             id: "009a1f293253e41e".to_string(),
             secret: "deadbeef".to_string(),
             c: sample_public_key(),
+
+            dleq: None,
         }],
         outputs: vec![BlindedMessage {
             amount: 4,
@@ -46,7 +48,7 @@ fn test_swap_response_cbor_roundtrip() {
             amount: 4,
             id: "009a1f293253e41e".to_string(),
             c: sample_public_key(),
-                dleq: None,
+            dleq: None,
         }],
     };
 
@@ -66,12 +68,16 @@ fn test_swap_request_multiple_inputs_outputs() {
                 id: "00".to_string(),
                 secret: "s1".to_string(),
                 c: sample_public_key(),
+
+                dleq: None,
             },
             Proof {
                 amount: 4,
                 id: "00".to_string(),
                 secret: "s2".to_string(),
                 c: sample_public_key(),
+
+                dleq: None,
             },
         ],
         outputs: vec![BlindedMessage {
@@ -129,6 +135,8 @@ fn test_swap_preserves_keyset_id() {
             id: keyset_id.clone(),
             secret: "s".to_string(),
             c: sample_public_key(),
+
+            dleq: None,
         }],
         outputs: vec![BlindedMessage {
             amount: 1,

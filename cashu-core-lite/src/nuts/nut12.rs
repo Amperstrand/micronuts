@@ -15,6 +15,7 @@ use k256::ProjectivePoint;
 use sha2::{Digest, Sha256};
 
 use crate::keypair::{PublicKey, SecretKey};
+use minicbor::{Decode, Encode};
 
 /// Error returned by [`verify_dleq`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +74,9 @@ impl<'b, C> minicbor::Decode<'b, C> for BlindSignatureDleq {
     ) -> Result<Self, minicbor::decode::Error> {
         let len = d.map()?;
         if len != Some(2) {
-            return Err(minicbor::decode::Error::message("expected map of 2 entries"));
+            return Err(minicbor::decode::Error::message(
+                "expected map of 2 entries",
+            ));
         }
         d.u64()?;
         let e = SecretKey::from_slice(d.bytes()?)
@@ -92,13 +95,16 @@ impl<'b, C> minicbor::Decode<'b, C> for BlindSignatureDleq {
 /// verification herself.
 ///
 /// Defined in [NUT-12](https://github.com/cashubtc/nuts/blob/main/12.md).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDleq {
     /// Challenge `e = hash(R1, R2, A, C')`.
+    #[n(0)]
     pub e: SecretKey,
     /// Response `s = (r + e*a) mod n`.
+    #[n(1)]
     pub s: SecretKey,
     /// Blinding factor `r` Alice used when producing `B' = Y + r*G`.
+    #[n(2)]
     pub r: SecretKey,
 }
 
@@ -117,7 +123,7 @@ impl ProofDleq {
 /// concatenated; SHA-256 is then taken over the UTF-8 bytes of that
 /// concatenation. This matches CDK's `dhke::hash_e` and the reference
 /// Python implementation in the spec.
-fn hash_e(r1: &PublicKey, r2: &PublicKey, a: &PublicKey, c_prime: &PublicKey) -> [u8; 32] {
+pub fn hash_e(r1: &PublicKey, r2: &PublicKey, a: &PublicKey, c_prime: &PublicKey) -> [u8; 32] {
     // 4 points * 65 bytes * 2 hex chars = 520 ASCII chars.
     let mut e_string = String::with_capacity(4 * 130);
     for pk in [r1, r2, a, c_prime] {
@@ -156,7 +162,7 @@ pub fn verify_dleq(
     blinded_signature: &PublicKey, // C'
     e: &SecretKey,
     s: &SecretKey,
-    mint_pubkey: &PublicKey,       // A
+    mint_pubkey: &PublicKey, // A
 ) -> Result<bool, DleqError> {
     let e_scalar = e.to_scalar();
     let s_scalar = s.to_scalar();
@@ -200,13 +206,13 @@ mod tests {
     // test harness. Mirrors CDK's `dhke::tests::test_hash_e`.
     #[test]
     fn hash_e_matches_nut12_spec_vector() {
-        let c = PublicKey::from_bytes(
-            &hex_decode_33("02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2"),
-        )
+        let c = PublicKey::from_bytes(&hex_decode_33(
+            "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
+        ))
         .unwrap();
-        let g = PublicKey::from_bytes(
-            &hex_decode_33("020000000000000000000000000000000000000000000000000000000000000001"),
-        )
+        let g = PublicKey::from_bytes(&hex_decode_33(
+            "020000000000000000000000000000000000000000000000000000000000000001",
+        ))
         .unwrap();
 
         let e = hash_e(&g, &g, &g, &c);
@@ -222,4 +228,38 @@ mod tests {
         out.copy_from_slice(&bytes);
         out
     }
+}
+
+/// Offline verification of a token proof's NUT-12 DLEQ (wallet side).
+///
+/// Reconstructs the blinded pair from the proof itself — `B' = Y + r*G`
+/// from (secret, r), `C' = C + r*K` from (C, r, K) — and checks the
+/// Schnorr-style proof against the mint's *public* key `K` for the
+/// proof's denomination. This is the trustless path: no mint contact and
+/// no mint private key required, exactly what an offline gate validator
+/// needs. A proof without `dleq` is rejected (returns `false`).
+pub fn verify_proof_dleq(
+    secret: &[u8],
+    c: &PublicKey,
+    dleq: &ProofDleq,
+    mint_amount_pubkey: &PublicKey,
+) -> bool {
+    // B' = Y + r*G (same construction as blind_message with known r)
+    let blinded = match crate::crypto::blind_message(secret, Some(dleq.r.clone())) {
+        Ok(bm) => bm.blinded,
+        Err(_) => return false,
+    };
+
+    // C' = C + r*K (inverse of unblind_signature's C = C' - r*K)
+    use k256::ProjectivePoint;
+    let c_proj: ProjectivePoint = c.into();
+    let k_proj: ProjectivePoint = mint_amount_pubkey.into();
+    let r_k = k_proj * dleq.r.to_scalar();
+    let c_prime_proj = c_proj + r_k;
+    let c_prime = match PublicKey::from_affine(c_prime_proj.into()) {
+        Some(cp) => cp,
+        None => return false,
+    };
+
+    verify_dleq(&blinded, &c_prime, &dleq.e, &dleq.s, mint_amount_pubkey).unwrap_or(false)
 }

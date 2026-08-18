@@ -148,13 +148,10 @@ fn hex_decode_keyset_id(keyset_id: &str) -> Result<Vec<u8>, CashuError> {
     let trimmed = keyset_id.trim();
 
     if trimmed.is_empty() {
-        return Err(CashuError::Protocol(format!(
-            "keyset ID cannot be empty"
-        )));
+        return Err(CashuError::Protocol(format!("keyset ID cannot be empty")));
     }
 
-    hex::decode(trimmed)
-        .map_err(|e| CashuError::Protocol(format!("invalid keyset ID hex: {}", e)))
+    hex::decode(trimmed).map_err(|e| CashuError::Protocol(format!("invalid keyset ID hex: {}", e)))
 }
 
 /// Convert a hex keyset ID string to a u32 for legacy BIP32 derivation.

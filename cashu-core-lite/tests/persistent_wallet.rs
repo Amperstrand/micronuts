@@ -80,14 +80,14 @@ impl MintClient for MockMint {
         Err(unused(()))
     }
 
-    fn get_mint_quote(
-        &mut self,
-        _quote_id: &str,
-    ) -> Result<nut04::MintQuoteResponse, CashuError> {
+    fn get_mint_quote(&mut self, _quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError> {
         Err(unused(()))
     }
 
-    fn post_mint(&mut self, request: nut04::MintRequest) -> Result<nut04::MintResponse, CashuError> {
+    fn post_mint(
+        &mut self,
+        request: nut04::MintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
         let mut signatures = Vec::with_capacity(request.outputs.len());
         for output in &request.outputs {
             let privkey = self
@@ -116,18 +116,21 @@ impl MintClient for MockMint {
         Err(unused(()))
     }
 
-    fn get_melt_quote(
+    fn get_melt_quote(&mut self, _quote_id: &str) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        Err(unused(()))
+    }
+
+    fn post_melt(
         &mut self,
-        _quote_id: &str,
-    ) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        _request: nut05::MeltRequest,
+    ) -> Result<nut05::MeltResponse, CashuError> {
         Err(unused(()))
     }
 
-    fn post_melt(&mut self, _request: nut05::MeltRequest) -> Result<nut05::MeltResponse, CashuError> {
-        Err(unused(()))
-    }
-
-    fn post_swap(&mut self, _request: nut03::SwapRequest) -> Result<nut03::SwapResponse, CashuError> {
+    fn post_swap(
+        &mut self,
+        _request: nut03::SwapRequest,
+    ) -> Result<nut03::SwapResponse, CashuError> {
         Err(unused(()))
     }
 
@@ -138,15 +141,19 @@ impl MintClient for MockMint {
         Err(unused(()))
     }
 
-    fn post_restore(&mut self, request: nut09::RestoreRequest) -> Result<nut09::RestoreResponse, CashuError> {
+    fn post_restore(
+        &mut self,
+        request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError> {
         let signed = self.signed.borrow();
         let outputs = request
             .outputs
             .iter()
             .filter_map(|b| {
-                signed
-                    .get(&b.to_bytes())
-                    .map(|sig| nut09::RestoreOutput { y: *b, signature: sig.clone() })
+                signed.get(&b.to_bytes()).map(|sig| nut09::RestoreOutput {
+                    y: *b,
+                    signature: sig.clone(),
+                })
             })
             .collect();
         Ok(nut09::RestoreResponse { outputs })
@@ -196,7 +203,9 @@ fn mint_deterministic_persists_across_restart() {
     let medium = SharedStore::new();
 
     let mut w = wallet_with(&mock, medium.clone());
-    let minted = w.mint_deterministic("quote-1", 63, KEYSET_ID, &keyset).unwrap();
+    let minted = w
+        .mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
     assert_eq!(minted, 63);
     assert_eq!(w.balance(), 63);
     assert_eq!(w.proof_count(), 6, "63 splits into 6 power-of-two proofs");
@@ -217,11 +226,16 @@ fn different_seed_is_a_different_wallet() {
     let medium = SharedStore::new();
 
     let mut w = wallet_with(&mock, medium.clone());
-    w.mint_deterministic("quote-1", 10, KEYSET_ID, &keyset).unwrap();
+    w.mint_deterministic("quote-1", 10, KEYSET_ID, &keyset)
+        .unwrap();
 
-    let other =
-        PersistentWallet::new("https://mint.example", mock.clone(), medium.clone(), [0x99; 32])
-            .unwrap();
+    let other = PersistentWallet::new(
+        "https://mint.example",
+        mock.clone(),
+        medium.clone(),
+        [0x99; 32],
+    )
+    .unwrap();
     assert_eq!(
         other.balance(),
         0,
@@ -229,7 +243,11 @@ fn different_seed_is_a_different_wallet() {
     );
 
     let same_seed = wallet_with(&mock, medium);
-    assert_eq!(same_seed.balance(), 10, "the original seed still loads its proofs");
+    assert_eq!(
+        same_seed.balance(),
+        10,
+        "the original seed still loads its proofs"
+    );
 }
 
 #[test]
@@ -240,20 +258,29 @@ fn corrupt_blob_starts_fresh_not_panicking() {
 
     let medium = SharedStore::new();
     let mut w = wallet_with(&mock, medium.clone());
-    w.mint_deterministic("quote-1", 21, KEYSET_ID, &keyset).unwrap();
+    w.mint_deterministic("quote-1", 21, KEYSET_ID, &keyset)
+        .unwrap();
     let blob = medium.0.borrow_mut().load().unwrap().expect("blob stored");
     assert!(blob.len() > 16);
 
     let mut corrupted = blob.clone();
     corrupted[10] ^= 0xff;
-    let w2 = PersistentWallet::new("https://mint.example", mock, medium_with(&corrupted), SEED)
-        .unwrap();
+    let w2 =
+        PersistentWallet::new("https://mint.example", mock, medium_with(&corrupted), SEED).unwrap();
     assert_eq!(w2.balance(), 0, "CRC mismatch must read as a fresh wallet");
 
-    let w3 =
-        PersistentWallet::new("https://mint.example", MockMint::new(), medium_with(&blob[..4]), SEED)
-            .unwrap();
-    assert_eq!(w3.balance(), 0, "truncated blob must read as a fresh wallet");
+    let w3 = PersistentWallet::new(
+        "https://mint.example",
+        MockMint::new(),
+        medium_with(&blob[..4]),
+        SEED,
+    )
+    .unwrap();
+    assert_eq!(
+        w3.balance(),
+        0,
+        "truncated blob must read as a fresh wallet"
+    );
 }
 
 #[test]
@@ -264,7 +291,8 @@ fn spend_removes_and_persists_undo_restores() {
 
     let medium = SharedStore::new();
     let mut w = wallet_with(&mock, medium.clone());
-    w.mint_deterministic("quote-1", 63, KEYSET_ID, &keyset).unwrap();
+    w.mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
 
     let selected = w.spend(40).unwrap();
     let selected_sum: u64 = selected.iter().map(|p| p.amount).sum();
@@ -286,7 +314,8 @@ fn spend_insufficient_funds_errors_without_state_change() {
     let store = MemoryStore::new();
 
     let mut w = wallet_with(&mock, SharedStore::new());
-    w.mint_deterministic("quote-1", 10, KEYSET_ID, &keyset).unwrap();
+    w.mint_deterministic("quote-1", 10, KEYSET_ID, &keyset)
+        .unwrap();
     assert_eq!(w.spend(11), Err(CashuError::InsufficientInputs));
     assert_eq!(w.balance(), 10);
 }
@@ -298,7 +327,9 @@ fn restore_recovers_proofs_after_store_loss() {
 
     // The original wallet mints with this seed; the mint remembers every B'.
     let mut original = wallet_with(&mock, SharedStore::new());
-    original.mint_deterministic("quote-1", 63, KEYSET_ID, &keyset).unwrap();
+    original
+        .mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
 
     // Its store is then lost entirely (power cycle + wiped blob).
     let mut lost = wallet_with(&mock, SharedStore::new());
@@ -306,7 +337,10 @@ fn restore_recovers_proofs_after_store_loss() {
 
     // Same seed re-derives the outputs; restore re-fetches the signatures.
     let restored_count = lost.restore(KEYSET_ID, &keyset).unwrap();
-    assert_eq!(restored_count, 6, "the 63-sat mint used 6 deterministic outputs");
+    assert_eq!(
+        restored_count, 6,
+        "the 63-sat mint used 6 deterministic outputs"
+    );
     assert_eq!(lost.balance(), 63);
 }
 
@@ -316,7 +350,9 @@ fn restore_is_idempotent() {
     let keyset = mock.keys.clone();
 
     let mut original = wallet_with(&mock, SharedStore::new());
-    original.mint_deterministic("quote-1", 63, KEYSET_ID, &keyset).unwrap();
+    original
+        .mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
 
     let mut w = wallet_with(&mock, SharedStore::new());
     w.restore(KEYSET_ID, &keyset).unwrap();

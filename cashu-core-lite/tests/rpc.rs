@@ -1,8 +1,8 @@
 use cashu_core_lite::nuts::{nut00, nut03, nut04, nut05, nut06, nut07};
 use cashu_core_lite::rpc::{
     decode_rpc_request, decode_rpc_response, encode_rpc_request, encode_rpc_response,
-    MeltQuoteLookupRequest, MintQuoteLookupRequest, MintRpcMethod, MintRpcPayload,
-    MintRpcRequest, MintRpcResponse, MintRpcResult,
+    MeltQuoteLookupRequest, MintQuoteLookupRequest, MintRpcMethod, MintRpcPayload, MintRpcRequest,
+    MintRpcResponse, MintRpcResult,
 };
 use cashu_core_lite::{CashuError, PublicKey, SecretKey};
 
@@ -37,6 +37,7 @@ fn sample_proof(seed: u8) -> nut00::Proof {
         id: format!("keyset-{seed}"),
         secret: format!("{seed:02x}{seed:02x}"),
         c: sample_public_key(seed.saturating_add(20)),
+        dleq: None,
     }
 }
 
@@ -143,9 +144,7 @@ fn rpc_response_roundtrip_success() {
 fn rpc_response_roundtrip_error() {
     let response = MintRpcResponse {
         id: 99,
-        payload: MintRpcPayload::Error(CashuError::Protocol(
-            "bad rpc frame".to_string(),
-        )),
+        payload: MintRpcPayload::Error(CashuError::Protocol("bad rpc frame".to_string())),
     };
 
     let encoded = encode_rpc_response(&response).expect("encode response");

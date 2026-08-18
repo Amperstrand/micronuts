@@ -11,7 +11,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::keypair::PublicKey;
-use crate::nuts::nut12::BlindSignatureDleq;
+use crate::nuts::nut12::{BlindSignatureDleq, ProofDleq};
 use minicbor::{Decode, Encode};
 
 /// A blinded message sent from wallet to mint (NUT-00).
@@ -69,6 +69,10 @@ pub struct Proof {
     /// `C`: the unblinded signature (a curve point).
     #[n(3)]
     pub c: PublicKey,
+    /// NUT-12 proof-level DLEQ (e, s, r): enables public-key-only offline
+    /// verification via [`crate::nuts::nut12::verify_proof_dleq`].
+    #[n(4)]
+    pub dleq: Option<ProofDleq>,
 }
 
 /// Cashu error response (NUT-00).

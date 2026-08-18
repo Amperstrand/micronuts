@@ -30,12 +30,12 @@
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "std")]
-use std::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::crypto::{blind_message, unblind_signature};
 use crate::error::CashuError;
@@ -125,9 +125,7 @@ fn decode_envelope(bytes: &[u8], expected_seed_id: [u8; 8]) -> Option<(u32, Vec<
     if bytes.len() < ENVELOPE_MAGIC.len() + 4 || bytes[..4] != ENVELOPE_MAGIC {
         return None;
     }
-    let stored_crc = u32::from_le_bytes([
-        bytes[4], bytes[5], bytes[6], bytes[7],
-    ]);
+    let stored_crc = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     let cbor = &bytes[8..];
     if crc32(cbor) != stored_crc {
         return None;
@@ -169,7 +167,12 @@ where
     /// Load (or start) a wallet. A missing or corrupt stored blob starts
     /// fresh; with a deterministic seed, restore() re-fetches anything the
     /// mint still holds.
-    pub fn new(mint_url: &str, transport: T, mut store: S, seed: [u8; 32]) -> Result<Self, CashuError> {
+    pub fn new(
+        mint_url: &str,
+        transport: T,
+        mut store: S,
+        seed: [u8; 32],
+    ) -> Result<Self, CashuError> {
         let seed_id = seed_fingerprint(&seed);
         let (counter, proofs) = match store.load().map_err(store_error)? {
             None => (0, Vec::new()),
@@ -222,7 +225,9 @@ where
             outputs,
         })?;
 
-        let proofs = self.inner.unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
+        let proofs = self
+            .inner
+            .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
         let minted: u64 = proofs.iter().map(|p| p.amount).sum();
         self.proofs.extend(proofs);
         self.persist()?;
@@ -243,7 +248,7 @@ where
         }
 
         let mut sorted = self.proofs.clone();
-        sorted.sort_by(|a, b| b.amount.cmp(&a.amount));
+        sorted.sort_by_key(|p| core::cmp::Reverse(p.amount));
 
         let mut selected: Vec<nut00::Proof> = Vec::new();
         let mut acc: u64 = 0;
@@ -294,7 +299,8 @@ where
             outputs.push(blinded);
         }
 
-        let response = self.inner
+        let response = self
+            .inner
             .transport
             .post_restore(nut09::RestoreRequest { outputs })?;
 
@@ -326,6 +332,9 @@ where
                 id: out.signature.id.clone(),
                 secret: secret_hex.clone(),
                 c,
+                dleq: out.signature.dleq.as_ref().map(|d| {
+                    crate::nuts::nut12::ProofDleq::new(d.e.clone(), d.s.clone(), blinder.clone())
+                }),
             });
             known.insert(secret_hex.clone());
             added += 1;

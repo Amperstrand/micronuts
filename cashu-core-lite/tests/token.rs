@@ -13,12 +13,16 @@ fn sample_token() -> TokenV4 {
                     keyset_id: "00".to_string(),
                     secret: "secret1".to_string(),
                     c: vec![0x02, 0xAB, 0xCD],
+
+                    dleq: None,
                 },
                 Proof {
                     amount: 8,
                     keyset_id: "00".to_string(),
                     secret: "secret2".to_string(),
                     c: vec![0x02, 0xEF, 0x01],
+
+                    dleq: None,
                 },
             ],
         }],
@@ -86,12 +90,16 @@ fn test_proof_count_multi_token_set() {
                         keyset_id: "00".to_string(),
                         secret: "s1".to_string(),
                         c: vec![],
+
+                        dleq: None,
                     },
                     Proof {
                         amount: 2,
                         keyset_id: "00".to_string(),
                         secret: "s2".to_string(),
                         c: vec![],
+
+                        dleq: None,
                     },
                 ],
             },
@@ -102,6 +110,8 @@ fn test_proof_count_multi_token_set() {
                     keyset_id: "01".to_string(),
                     secret: "s3".to_string(),
                     c: vec![],
+
+                    dleq: None,
                 }],
             },
         ],
@@ -139,6 +149,8 @@ fn test_no_memo() {
                 keyset_id: "00".to_string(),
                 secret: "only proof".to_string(),
                 c: vec![0x02; 33],
+
+                dleq: None,
             }],
         }],
     };

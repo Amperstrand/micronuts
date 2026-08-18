@@ -61,6 +61,8 @@ fn test_melt_request_cbor_roundtrip() {
             id: "009a1f293253e41e".to_string(),
             secret: "deadbeef".to_string(),
             c: sample_public_key(),
+
+            dleq: None,
         }],
         outputs: None,
     };
@@ -109,6 +111,8 @@ fn test_melt_request_with_change() {
             id: "00".to_string(),
             secret: "s1".to_string(),
             c: sample_public_key(),
+
+            dleq: None,
         }],
         outputs: Some(vec![BlindedMessage {
             amount: 10,
@@ -135,7 +139,7 @@ fn test_melt_response_with_change() {
             amount: 10,
             id: "00".to_string(),
             c: sample_public_key(),
-                dleq: None,
+            dleq: None,
         }]),
     };
 
@@ -157,12 +161,16 @@ fn test_melt_multiple_inputs() {
                 id: "00".to_string(),
                 secret: "s1".to_string(),
                 c: sample_public_key(),
+
+                dleq: None,
             },
             Proof {
                 amount: 32,
                 id: "00".to_string(),
                 secret: "s2".to_string(),
                 c: sample_public_key(),
+
+                dleq: None,
             },
         ],
         outputs: None,
