@@ -18,7 +18,7 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 | NUT-09 | ❌ Missing | - | Restore (uses NUT-13) |
 | NUT-10 | ❌ Missing | - | Spending conditions |
 | NUT-11 | ❌ Missing | - | Pay-to-script |
-| NUT-12 | ❌ Missing | - | DLEQ proofs |
+| NUT-12 | ✅ Verify-only | Partial | DLEQ blind-signature verification (port of CDK verify_dleq, k256); proof *generation* not implemented |
 | NUT-13 | ✅ Complete | Full | Deterministic secrets/blinders |
 | NUT-14 | ❌ Missing | - | HTLCs |
 | NUT-15 | ❌ Missing | - | Multipart tokens |
