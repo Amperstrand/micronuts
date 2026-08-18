@@ -24,10 +24,14 @@
 //!
 //! The blinder is then reduced modulo the secp256k1 curve order N.
 
-#![cfg(not(feature = "std"))]
+#[cfg(not(feature = "std"))]
 extern crate alloc;
 
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+
+#[cfg(not(feature = "std"))]
+use alloc::format;
 
 use sha2::{Digest, Sha256};
 
@@ -97,7 +101,7 @@ pub fn derive_secret(seed: &[u8], keyset_id: &str, counter: u32) -> Result<[u8; 
     let mut message = Vec::new();
     message.extend_from_slice(b"Cashu_KDF_HMAC_SHA256");
     message.extend_from_slice(&keyset_id_bytes);
-    message.extend_from_slice(&counter.to_be_bytes());
+    message.extend_from_slice(&(u64::from(counter)).to_be_bytes());
     message.push(0x00); // derivation type: secret
 
     Ok(hmac_sha256(seed, &message))
@@ -126,13 +130,13 @@ pub fn derive_blinder(seed: &[u8], keyset_id: &str, counter: u32) -> Result<[u8;
     let mut message = Vec::new();
     message.extend_from_slice(b"Cashu_KDF_HMAC_SHA256");
     message.extend_from_slice(&keyset_id_bytes);
-    message.extend_from_slice(&counter.to_be_bytes());
+    message.extend_from_slice(&(u64::from(counter)).to_be_bytes());
     message.push(0x01); // derivation type: blinder
 
     let hmac_result = hmac_sha256(seed, &message);
 
-    // Note: CDK reduces modulo N here. For simplicity, we return raw bytes.
-    // The caller (blind_message) will handle scalar conversion.
+    // Note: like CDK's SecretKey::from_slice, scalar range (0 < r < N) is
+    // enforced at SecretKey conversion by the caller, not here.
     Ok(hmac_result)
 }
 
@@ -144,13 +148,13 @@ fn hex_decode_keyset_id(keyset_id: &str) -> Result<Vec<u8>, CashuError> {
     let trimmed = keyset_id.trim();
 
     if trimmed.is_empty() {
-        return Err(CashuError::Protocol(alloc::format!(
+        return Err(CashuError::Protocol(format!(
             "keyset ID cannot be empty"
         )));
     }
 
     hex::decode(trimmed)
-        .map_err(|e| CashuError::Protocol(alloc::format!("invalid keyset ID hex: {}", e)))
+        .map_err(|e| CashuError::Protocol(format!("invalid keyset ID hex: {}", e)))
 }
 
 /// Convert a hex keyset ID string to a u32 for legacy BIP32 derivation.
@@ -167,7 +171,7 @@ pub fn keyset_id_to_u32(keyset_id: &str) -> Result<u32, CashuError> {
     let bytes = hex_decode_keyset_id(keyset_id)?;
 
     if bytes.len() < 4 {
-        return Err(CashuError::Protocol(alloc::format!(
+        return Err(CashuError::Protocol(format!(
             "keyset ID too short for u32 conversion: {} bytes",
             bytes.len()
         )));
@@ -181,6 +185,7 @@ pub fn keyset_id_to_u32(keyset_id: &str) -> Result<u32, CashuError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
     use alloc::vec;
 
     /// Test vectors from https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
@@ -201,18 +206,29 @@ mod tests {
     const TEST_V2_KEYSET_ID: &str =
         "015ba18a8adcd02e715a58358eb618da4a4b3791151a4bee5e968bb88406ccf76a";
 
-    fn test_seed_bytes() -> [u8; 32] {
-        let seed_bytes = hex::decode(TEST_SEED_HEX).unwrap();
-        assert_eq!(seed_bytes.len(), 64);
+    /// Official NUT-13 spec vectors (13-tests.md). These were documented in
+    /// the header above but never asserted — the module was cfg-compiled-out
+    /// of std test builds, and the pre-fix construction (u32 counter,
+    /// 32-byte seed) produces entirely different values. A wallet deriving
+    /// with the old code silently held different funds than every CDK wallet
+    /// sharing the same mnemonic.
+    #[test]
+    fn test_nut13_official_spec_vectors() {
+        let seed = hex::decode(TEST_SEED_HEX).unwrap();
+        assert_eq!(seed.len(), 64, "BIP39 seed is 64 bytes");
 
-        let mut result = [0u8; 32];
-        result.copy_from_slice(&seed_bytes[..32]);
-        result
+        let secret_0 = derive_secret(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        assert_eq!(
+            hex::encode(secret_0),
+            "db5561a07a6e6490f8dadeef5be4e92f7cebaecf2f245356b5b2a4ec40687298"
+        );
+
+        let r_0 = derive_blinder(&seed, TEST_V2_KEYSET_ID, 0).unwrap();
+        assert_eq!(
+            hex::encode(r_0),
+            "6d26181a3695e32e9f88b80f039ba1ae2ab5a200ad4ce9dbc72c6d3769f2b035"
+        );
     }
-
-    // Note: The spec test vectors use a specific seed that we need to look up.
-    // For now, we test determinism and structure. Full test vectors should be
-    // verified against the official spec once seed values are confirmed.
 
     #[test]
     fn test_hmac_sha256_basic() {
