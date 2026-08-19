@@ -10,12 +10,12 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 | NUT-01 | ✅ Complete | Partial | Keyset types, no rotation |
 | NUT-02 | ✅ Complete | Full | Keyset ID derivation |
 | NUT-03 | ✅ Complete | Full | Swap request/response types |
-| NUT-04 | ✅ Complete | Partial | Mint types, demo shortcuts |
-| NUT-05 | ✅ Complete | Partial | Melt types, demo shortcuts |
+| NUT-04 | ✅ Complete | Partial | Mint types, demo shortcuts. Wallet-side mint flow verified end-to-end vs upstream-cashu mint (tests/cdk_mint_e2e.rs) |
+| NUT-05 | ✅ Complete | Partial | Melt types, demo shortcuts. melt_deterministic + NUT-08 change verified end-to-end vs upstream mint (tests/cdk_mint_e2e.rs) |
 | NUT-06 | ✅ Complete | Partial | Info types, minimal |
-| NUT-07 | ✅ Complete | Partial | State check, in-memory only |
+| NUT-07 | ✅ Complete | Partial | State check, in-memory only. ccl-derived Y agrees with upstream-recorded Y (SPENT/UNSPENT) in tests/cdk_mint_e2e.rs |
 | NUT-08 | ✅ Wallet-side | Partial | Fee return: `PersistentWallet::melt_deterministic` unblinds and stores mint change; mint-side fee ledgering not implemented |
-| NUT-09 | ✅ Wallet-side | Partial | Restore types + `PersistentWallet::restore()` (deterministic re-derivation via NUT-13); demo mint remains session-stateless |
+| NUT-09 | ✅ Wallet-side | Partial | Restore types + `PersistentWallet::restore()`; total-store-loss restore verified vs upstream-signing mint (tests/cdk_mint_e2e.rs) |
 | NUT-10 | ❌ Missing | - | Spending conditions |
 | NUT-11 | ❌ Missing | - | Pay-to-script |
 | NUT-12 | ✅ Verify-only+ | Partial | verify_dleq (CDK port) + proof-level dleq on Proof (CBOR n(4)) + verify_proof_dleq reconstructing B'/C' offline; upstream-CDK interop tests in walletport |
