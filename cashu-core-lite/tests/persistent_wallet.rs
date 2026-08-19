@@ -27,6 +27,8 @@ struct MockMint {
     keys: nut01::KeySet,
     privkeys: BTreeMap<u64, SecretKey>,
     signed: Rc<RefCell<BTreeMap<[u8; 33], nut00::BlindSignature>>>,
+    /// Test hook: when set, post_melt reports PENDING/unpaid.
+    melt_pending: Rc<std::cell::Cell<bool>>,
 }
 
 impl MockMint {
@@ -50,7 +52,44 @@ impl MockMint {
             },
             privkeys,
             signed: Rc::new(RefCell::new(BTreeMap::new())),
+            melt_pending: Rc::new(std::cell::Cell::new(false)),
         }
+    }
+
+    fn sign_blanks_returning_change(
+        &self,
+        outputs: &[nut00::BlindedMessage],
+        fee_used: u64,
+    ) -> Vec<nut00::BlindSignature> {
+        // Mint policy: return the unspent reserve as change, greedily in
+        // the requested blank denominations (amounts the wallet chose).
+        let mut remaining: u64 = outputs
+            .iter()
+            .map(|o| o.amount)
+            .sum::<u64>()
+            .saturating_sub(fee_used);
+        let mut change = Vec::new();
+        for out in outputs {
+            if remaining == 0 {
+                break;
+            }
+            let give = out.amount.min(remaining);
+            if give == 0 {
+                continue;
+            }
+            let privkey = match self.privkeys.get(&give) {
+                Some(k) => k,
+                None => continue,
+            };
+            change.push(nut00::BlindSignature {
+                amount: give,
+                id: out.id.clone(),
+                c: sign_message(privkey, &out.b),
+                dleq: None,
+            });
+            remaining -= give;
+        }
+        change
     }
 }
 
@@ -122,9 +161,28 @@ impl MintClient for MockMint {
 
     fn post_melt(
         &mut self,
-        _request: nut05::MeltRequest,
+        request: nut05::MeltRequest,
     ) -> Result<nut05::MeltResponse, CashuError> {
-        Err(unused(()))
+        if self.melt_pending.get() {
+            return Ok(nut05::MeltResponse {
+                paid: false,
+                state: String::from("PENDING"),
+                payment_preimage: None,
+                change: None,
+            });
+        }
+        let fee_used = 1u64;
+        let change = request
+            .outputs
+            .as_deref()
+            .map(|outs| self.sign_blanks_returning_change(outs, fee_used))
+            .filter(|c| !c.is_empty());
+        Ok(nut05::MeltResponse {
+            paid: true,
+            state: String::from("PAID"),
+            payment_preimage: Some(String::from("00preimage00")),
+            change,
+        })
     }
 
     fn post_swap(
@@ -359,4 +417,70 @@ fn restore_is_idempotent() {
     let again = w.restore(KEYSET_ID, &keyset).unwrap();
     assert_eq!(again, 0, "already-known secrets must not double-count");
     assert_eq!(w.balance(), 63);
+}
+
+#[test]
+fn melt_consumes_inputs_and_reclaims_nut08_change() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium.clone());
+    w.mint_deterministic("q1", 63, KEYSET_ID, &keyset).unwrap();
+
+    // Invoice 18 sats + 2 fee reserve: selection covers 20 with the 32.
+    let outcome = w
+        .melt_deterministic("melt-1", 18, 2, KEYSET_ID, &keyset)
+        .unwrap();
+    assert!(outcome.paid);
+    assert_eq!(
+        outcome.change_sats, 1,
+        "2 reserve - 1 fee_used = 1 sat back"
+    );
+    assert!(outcome.preimage.is_some());
+    // 63 - 32 (selected input) + 1 (change) = 32.
+    assert_eq!(w.balance(), 32);
+    assert!(w.proof_count() >= 1, "change proof is stored");
+
+    let restarted = wallet_with(&mock, medium);
+    assert_eq!(restarted.balance(), 32, "melt + change persist");
+}
+
+#[test]
+fn pending_melt_preserves_funds() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium.clone());
+    w.mint_deterministic("q1", 32, KEYSET_ID, &keyset).unwrap();
+
+    mock.melt_pending.set(true);
+    let outcome = w
+        .melt_deterministic("melt-1", 30, 2, KEYSET_ID, &keyset)
+        .unwrap();
+    assert!(!outcome.paid);
+    assert_eq!(outcome.change_sats, 0);
+    assert_eq!(w.balance(), 32, "pending melt must not consume inputs");
+    assert_eq!(
+        w.proof_count(),
+        1,
+        "32 is a single denomination — one proof, intact"
+    );
+
+    let restarted = wallet_with(&mock, medium);
+    assert_eq!(restarted.balance(), 32);
+}
+
+#[test]
+fn melt_insufficient_inputs_errors() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let mut w = wallet_with(&mock, SharedStore::new());
+    w.mint_deterministic("q1", 8, KEYSET_ID, &keyset).unwrap();
+    assert_eq!(
+        w.melt_deterministic("melt-1", 100, 2, KEYSET_ID, &keyset),
+        Err(CashuError::InsufficientInputs)
+    );
+    assert_eq!(w.balance(), 8);
 }

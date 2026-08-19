@@ -43,6 +43,7 @@ use crate::keypair::SecretKey;
 use crate::nuts::nut00;
 use crate::nuts::nut01;
 use crate::nuts::nut04;
+use crate::nuts::nut05;
 use crate::nuts::nut09;
 use crate::nuts::nut13;
 use crate::store::{MemoryStore, ProofStore, StoreError};
@@ -265,6 +266,120 @@ where
         Ok(selected)
     }
 
+    /// NUT-05 melt with NUT-08 fee-return, wallet-managed inputs.
+    ///
+    /// Selects proofs covering `amount_plus_fee_reserve` itself. Proofs
+    /// leave the wallet **only when the mint reports paid** — a pending
+    /// or failed melt returns them to the store untouched (the
+    /// funds-safety ordering reviewed in tmbg #299). Blank outputs for
+    /// the fee reserve derive from the NUT-13 counter (restore-covered),
+    /// and returned change signatures are unblinded into proofs using
+    /// the *mint-chosen* denomination keys.
+    pub fn melt_deterministic(
+        &mut self,
+        quote_id: &str,
+        invoice_amount: u64,
+        fee_reserve: u64,
+        keyset_id: &str,
+        mint_keys: &nut01::KeySet,
+    ) -> Result<MeltOutcome, CashuError> {
+        let total_needed = invoice_amount
+            .checked_add(fee_reserve)
+            .ok_or(CashuError::InvalidAmount)?;
+        if total_needed == 0 {
+            return Err(CashuError::InvalidAmount);
+        }
+
+        // Select now; persist the removal only after `paid`.
+        let selected = self.select_covering(total_needed)?;
+
+        // NUT-08 blanks: power-of-two outputs covering the fee reserve —
+        // the only part of the inputs the mint can hand back.
+        let blank_amounts = nut00::decompose_amount(fee_reserve);
+        let (blanks, pending_blanks) = self.deterministic_outputs(&blank_amounts, keyset_id)?;
+        self.counter = self.counter.saturating_add(pending_blanks.len() as u32);
+
+        let response = self.inner.transport.post_melt(nut05::MeltRequest {
+            quote: String::from(quote_id),
+            inputs: selected.clone(),
+            outputs: Some(blanks),
+        })?;
+
+        if !response.paid {
+            // Funds-safe: inputs return to the wallet; counter stays
+            // advanced (blanks were submitted; NUT-09 restore with
+            // headroom covers any signatures the mint later returns).
+            self.persist()?;
+            return Ok(MeltOutcome {
+                paid: false,
+                preimage: response.payment_preimage,
+                change_sats: 0,
+            });
+        }
+
+        self.proofs.retain(|p| !selected.contains(p));
+
+        // Unblind NUT-08 change: signatures zip to blanks by index
+        // (mint-chosen amounts; mint key looked up per signature amount).
+        let mut change_sats = 0u64;
+        if let Some(change) = response.change.as_ref() {
+            for (pending, sig) in pending_blanks.iter().zip(change.iter()) {
+                let mint_pubkey = mint_keys
+                    .keys
+                    .iter()
+                    .find(|kp| kp.amount == sig.amount)
+                    .map(|kp| &kp.pubkey)
+                    .ok_or(CashuError::KeysetNotFound)?;
+                let c = unblind_signature(&sig.c, &pending.blinder, mint_pubkey)
+                    .map_err(|_| CashuError::Crypto(String::from("change unblind failed")))?;
+                change_sats += sig.amount;
+                self.proofs.push(nut00::Proof {
+                    amount: sig.amount,
+                    id: sig.id.clone(),
+                    secret: String::from_utf8(pending.secret.clone())
+                        .map_err(|_| CashuError::Crypto(String::from("invalid secret string")))?,
+                    c,
+                    dleq: sig.dleq.as_ref().map(|d| {
+                        crate::nuts::nut12::ProofDleq::new(
+                            d.e.clone(),
+                            d.s.clone(),
+                            pending.blinder.clone(),
+                        )
+                    }),
+                });
+            }
+        }
+
+        self.persist()?;
+        Ok(MeltOutcome {
+            paid: true,
+            preimage: response.payment_preimage,
+            change_sats,
+        })
+    }
+
+    /// Largest-first selection without removing from the wallet.
+    fn select_covering(&self, amount: u64) -> Result<Vec<nut00::Proof>, CashuError> {
+        let total: u64 = self.proofs.iter().map(|p| p.amount).sum();
+        if total < amount {
+            return Err(CashuError::InsufficientInputs);
+        }
+        let mut sorted = self.proofs.clone();
+        sorted.sort_by_key(|p| core::cmp::Reverse(p.amount));
+        let mut acc = 0u64;
+        Ok(sorted
+            .into_iter()
+            .take_while(|p| {
+                if acc >= amount {
+                    false
+                } else {
+                    acc += p.amount;
+                    true
+                }
+            })
+            .collect())
+    }
+
     /// Roll back a [`Self::spend`] whose transfer never completed.
     pub fn undo_spend(&mut self, proofs: Vec<nut00::Proof>) -> Result<(), CashuError> {
         self.proofs.extend(proofs);
@@ -372,7 +487,7 @@ where
             messages.push(nut00::BlindedMessage {
                 amount,
                 id: String::from(keyset_id),
-                b: bm.blinded.clone(),
+                b: bm.blinded,
             });
             pending.push(PendingOutput {
                 secret: secret_hex.into_bytes(),
@@ -387,6 +502,17 @@ where
         let blob = encode_envelope(self.counter, &self.proofs, self.seed_id)?;
         self.store.save(&blob).map_err(store_error)
     }
+}
+
+/// Outcome of a NUT-05 melt with NUT-08 change handling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeltOutcome {
+    /// Whether the invoice was paid.
+    pub paid: bool,
+    /// Payment preimage when the mint disclosed it.
+    pub preimage: Option<String>,
+    /// Value of NUT-08 change reclaimed (overpaid fee reserve).
+    pub change_sats: u64,
 }
 
 /// Re-exported for doc links; `MemoryStore` is the reference `ProofStore`.
