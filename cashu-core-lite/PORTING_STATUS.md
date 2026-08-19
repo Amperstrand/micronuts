@@ -14,11 +14,11 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 | NUT-05 | ✅ Complete | Partial | Melt types, demo shortcuts |
 | NUT-06 | ✅ Complete | Partial | Info types, minimal |
 | NUT-07 | ✅ Complete | Partial | State check, in-memory only |
-| NUT-08 | ❌ Missing | - | Fee return |
+| NUT-08 | ✅ Wallet-side | Partial | Fee return: `PersistentWallet::melt_deterministic` unblinds and stores mint change; mint-side fee ledgering not implemented |
 | NUT-09 | ✅ Wallet-side | Partial | Restore types + `PersistentWallet::restore()` (deterministic re-derivation via NUT-13); demo mint remains session-stateless |
 | NUT-10 | ❌ Missing | - | Spending conditions |
 | NUT-11 | ❌ Missing | - | Pay-to-script |
-| NUT-12 | ✅ Verify-only | Partial | DLEQ blind-signature verification (port of CDK verify_dleq, k256); proof *generation* not implemented |
+| NUT-12 | ✅ Verify-only+ | Partial | verify_dleq (CDK port) + proof-level dleq on Proof (CBOR n(4)) + verify_proof_dleq reconstructing B'/C' offline; upstream-CDK interop tests in walletport |
 | NUT-13 | ✅ Complete | Full | Deterministic secrets/blinders — interop bug fixed 2026-08-18 (u64 counter, 64-byte seed per spec; official 13-tests.md vectors now asserted) |
 | NUT-14 | ❌ Missing | - | HTLCs |
 | NUT-15 | ❌ Missing | - | Multipart tokens |
