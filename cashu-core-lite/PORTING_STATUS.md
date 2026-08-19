@@ -8,7 +8,7 @@ This document tracks the implementation status of Cashu NUTs in `cashu-core-lite
 |-----|--------|-----------|-------|
 | NUT-00 | ✅ Complete | Partial | Core types only, no DHKE |
 | NUT-01 | ✅ Complete | Partial | Keyset types, no rotation |
-| NUT-02 | ✅ Complete | Full | Keyset ID derivation |
+| NUT-02 | ✅ Complete | Full | Keyset ID derivation — v1 AND v2, byte-matched to upstream cashu Id::v1_from_keys/v2_from_data (tests/nut02_cdk_interop.rs); rotation-safe binding check via verify_keyset_id |
 | NUT-03 | ✅ Complete | Full | Swap request/response types |
 | NUT-04 | ✅ Complete | Partial | Mint types, demo shortcuts. Wallet-side mint flow verified end-to-end vs upstream-cashu mint (tests/cdk_mint_e2e.rs) |
 | NUT-05 | ✅ Complete | Partial | Melt types, demo shortcuts. melt_deterministic + NUT-08 change verified end-to-end vs upstream mint (tests/cdk_mint_e2e.rs) |

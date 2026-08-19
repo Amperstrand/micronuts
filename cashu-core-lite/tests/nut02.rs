@@ -55,7 +55,7 @@ fn test_derive_keyset_id_order_matters() {
     let pk1 = sample_public_key(1);
     let pk2 = sample_public_key(2);
 
-    let id1 = derive_keyset_id(&[pk1.clone(), pk2.clone()]);
+    let id1 = derive_keyset_id(&[pk1, pk2]);
     let id2 = derive_keyset_id(&[pk2, pk1]);
 
     assert_ne!(id1, id2, "different key order should produce different IDs");
