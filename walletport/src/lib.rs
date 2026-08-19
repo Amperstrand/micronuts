@@ -28,8 +28,10 @@ use cashu_core_lite::nuts::nut00;
 use cashu_core_lite::nuts::nut01;
 use cashu_core_lite::token::TokenV4;
 
+pub mod gate;
 pub mod offline;
 
+pub use gate::{GateAction, GateController, GateIo, RejectionReason};
 pub use offline::{GateDecision, OfflineGateValidator};
 
 /// Facade-level errors (mirror of tmbg's port-level error surface).
