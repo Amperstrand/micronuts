@@ -11,7 +11,7 @@
 | `cashu-core-lite` | NUT-13 deterministic secrets (spec-fixed), NUT-02 v1+v2 IDs byte-matched to CDK, persistent wallet, NUT-08 melt change — 165/0 suite |
 | Runnable demo | `cargo run -p walletport --example gate_demo` — full decision matrix on the host |
 
-Suite: **185 passed / 0 failed** (ccl 165 + walletport 20). Both crates
+Suite: **171 passed / 0 failed** (ccl 151 + walletport 20). Both crates
 build for `thumbv7em-none-eabihf`.
 
 ## Board session checklist (when the board is reachable)
