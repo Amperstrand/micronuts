@@ -8,12 +8,9 @@
 //! validator and is covered by the walletport test suite on the host.
 //! The board session is then flash, scan, observe.
 
+use crate::{GateDecision, OfflineGateValidator, WalletPortError};
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
-use crate::{GateDecision, OfflineGateValidator, WalletPortError};
 use cashu_core_lite::store::ProofStore;
 
 /// What the firmware wants done in response to a scan.

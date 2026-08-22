@@ -96,6 +96,7 @@ pub fn blind_message(
 /// NUT-00: `C = C' - rK`
 ///
 /// Unblinds a mint signature by subtracting the blinding factor times the mint public key.
+#[allow(clippy::result_unit_err)] // failure carries no diagnostic; callers map to their own error type
 pub fn unblind_signature(
     blinded_sig: &PublicKey,
     blinder: &SecretKey,

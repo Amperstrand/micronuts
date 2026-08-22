@@ -8,7 +8,9 @@ use cashu_core_lite::nuts::nut12::{hash_e, ProofDleq};
 use cashu_core_lite::store::MemoryStore;
 use cashu_core_lite::token::{TokenV4, TokenV4Token};
 use k256::ProjectivePoint;
-use walletport::{encode_token_wire, GateAction, GateController, GateIo, OfflineGateValidator, RejectionReason};
+use walletport::{
+    encode_token_wire, GateAction, GateController, GateIo, OfflineGateValidator, RejectionReason,
+};
 
 const KEYSET_ID: &str = "015ba18a8adcd02e715a58358eb618da4a4b3791151a4bee5e968bb88406ccf76a";
 const MINT: &str = "https://gate-mint.example";
@@ -77,7 +79,8 @@ fn mint_proof(amount: u64, secret_hex: &str) -> cashu_core_lite::token::Proof {
     let bp: ProjectivePoint = (&bm.blinded).into();
     let r2 = PublicKey::from_affine((bp * k.to_scalar()).into()).unwrap();
     let e = SecretKey::from_slice(&hash_e(&r1, &r2, &a.public_key(), &c_prime)).unwrap();
-    let s = SecretKey::from_slice(&(k.to_scalar() + e.to_scalar() * a.to_scalar()).to_bytes()).unwrap();
+    let s =
+        SecretKey::from_slice(&(k.to_scalar() + e.to_scalar() * a.to_scalar()).to_bytes()).unwrap();
     let c = unblind_signature(&c_prime, &bm.blinder, &a.public_key()).unwrap();
     cashu_core_lite::token::Proof {
         amount,
@@ -102,14 +105,18 @@ fn token_wire(proofs: Vec<cashu_core_lite::token::Proof>) -> String {
 }
 
 fn controller() -> (GateController<MemoryStore>, MockIo) {
-    let v = OfflineGateValidator::new(vec![MINT.to_string()], pinned(), MemoryStore::new()).unwrap();
+    let v =
+        OfflineGateValidator::new(vec![MINT.to_string()], pinned(), MemoryStore::new()).unwrap();
     (GateController::new(v, PRICE), MockIo::default())
 }
 
 #[test]
 fn exact_payment_opens_and_signals() {
     let (mut c, mut io) = controller();
-    let wire = token_wire(vec![mint_proof(8, "1111222233334444"), mint_proof(4, "5555666677778888")]);
+    let wire = token_wire(vec![
+        mint_proof(8, "1111222233334444"),
+        mint_proof(4, "5555666677778888"),
+    ]);
     assert_eq!(
         c.handle_scan(&mut io, &wire),
         GateAction::Open { total_sats: 12 }
@@ -121,7 +128,10 @@ fn exact_payment_opens_and_signals() {
 fn embedded_token_is_extracted() {
     // QR payloads sometimes carry labels around the token.
     let (mut c, mut io) = controller();
-    let wire = token_wire(vec![mint_proof(8, "aaaabbbbccccdddd"), mint_proof(4, "eeeeffff00001111")]);
+    let wire = token_wire(vec![
+        mint_proof(8, "aaaabbbbccccdddd"),
+        mint_proof(4, "eeeeffff00001111"),
+    ]);
     let labeled = format!("TollGate topup: {wire} thanks!");
     assert_eq!(
         c.handle_scan(&mut io, &labeled),
@@ -132,11 +142,19 @@ fn embedded_token_is_extracted() {
 #[test]
 fn replay_is_rejected_with_signal() {
     let (mut c, mut io) = controller();
-    let wire = token_wire(vec![mint_proof(8, "9999aaaa8888bbbb"), mint_proof(4, "1212343456567878")]);
-    assert_eq!(c.handle_scan(&mut io, &wire), GateAction::Open { total_sats: 12 });
+    let wire = token_wire(vec![
+        mint_proof(8, "9999aaaa8888bbbb"),
+        mint_proof(4, "1212343456567878"),
+    ]);
     assert_eq!(
         c.handle_scan(&mut io, &wire),
-        GateAction::Rejected { reason: RejectionReason::Replay }
+        GateAction::Open { total_sats: 12 }
+    );
+    assert_eq!(
+        c.handle_scan(&mut io, &wire),
+        GateAction::Rejected {
+            reason: RejectionReason::Replay
+        }
     );
     assert_eq!(io.log.last(), Some(&"ERR:Replay"));
 }
@@ -147,7 +165,10 @@ fn underpaid_reports_shortfall_without_opening() {
     let wire = token_wire(vec![mint_proof(4, "777788889999aaaa")]);
     assert_eq!(
         c.handle_scan(&mut io, &wire),
-        GateAction::Underpaid { total_sats: 4, needed: 12 }
+        GateAction::Underpaid {
+            total_sats: 4,
+            needed: 12
+        }
     );
     assert!(!io.log.contains(&"OPEN"), "underpaid must not open");
     assert_eq!(io.log.last(), Some(&"STATUS:underpaid"));
@@ -158,12 +179,16 @@ fn garbage_payload_is_not_a_token() {
     let (mut c, mut io) = controller();
     assert_eq!(
         c.handle_scan(&mut io, "https://random-site.example/qr"),
-        GateAction::Rejected { reason: RejectionReason::NotAToken }
+        GateAction::Rejected {
+            reason: RejectionReason::NotAToken
+        }
     );
     // cashuA (V3) is out of scope for the V4 core by design.
     assert_eq!(
         c.handle_scan(&mut io, "cashuAeyJ0b2tlbiI6W119"),
-        GateAction::Rejected { reason: RejectionReason::NotAToken }
+        GateAction::Rejected {
+            reason: RejectionReason::NotAToken
+        }
     );
 }
 
@@ -174,7 +199,9 @@ fn tampered_proof_rejected_not_opened() {
     p.c[9] ^= 0x40;
     assert_eq!(
         c.handle_scan(&mut io, &token_wire(vec![p])),
-        GateAction::Rejected { reason: RejectionReason::InvalidProof }
+        GateAction::Rejected {
+            reason: RejectionReason::InvalidProof
+        }
     );
     assert!(!io.log.contains(&"OPEN"));
 }

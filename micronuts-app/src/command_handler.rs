@@ -255,6 +255,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
             keyset_id: keyset_id.clone(),
             secret: encode_hex(secret),
             c: c_vec,
+            dleq: None,
         });
     }
 
@@ -417,9 +418,7 @@ mod tests {
             rng.fill_bytes(dest);
         }
 
-        fn transport_recv_frame(
-            &mut self,
-        ) -> impl core::future::Future<Output = Option<Frame>> {
+        fn transport_recv_frame(&mut self) -> impl core::future::Future<Output = Option<Frame>> {
             async move { None }
         }
 
@@ -452,12 +451,14 @@ mod tests {
                         keyset_id: String::from("00"),
                         secret: String::from("aabbccdd"),
                         c: vec![0x02, 0xAB, 0xCD],
+                        dleq: None,
                     },
                     cashu_core_lite::Proof {
                         amount: 8,
                         keyset_id: String::from("00"),
                         secret: String::from("11223344"),
                         c: vec![0x02, 0xEF, 0x01],
+                        dleq: None,
                     },
                 ],
             }],
@@ -473,7 +474,14 @@ mod tests {
         let token = sample_token();
         let encoded = cashu_core_lite::encode_token(&token).unwrap();
 
-        let response = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ImportToken,
+            &encoded,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert_eq!(state.swap_state, SwapState::TokenImported);
@@ -486,7 +494,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ImportToken, b"garbage data", &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ImportToken,
+            b"garbage data",
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::InvalidPayload);
         assert!(state.imported_token.is_none());
@@ -499,7 +514,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ImportToken, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ImportToken,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::InvalidPayload);
     }
@@ -510,7 +532,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::GetTokenInfo,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Error);
     }
@@ -523,9 +552,23 @@ mod tests {
 
         let token = sample_token();
         let encoded = cashu_core_lite::encode_token(&token).unwrap();
-        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        let _ = handle_command(
+            Command::ImportToken,
+            &encoded,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
-        let response = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::GetTokenInfo,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert!(response.length > 0);
@@ -559,7 +602,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::GetBlinded,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Error);
     }
@@ -572,9 +622,23 @@ mod tests {
 
         let token = sample_token();
         let encoded = cashu_core_lite::encode_token(&token).unwrap();
-        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        let _ = handle_command(
+            Command::ImportToken,
+            &encoded,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
-        let response = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::GetBlinded,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert_eq!(state.swap_state, SwapState::BlindedGenerated);
@@ -594,7 +658,14 @@ mod tests {
         let mut last_scan = None;
 
         let fake_sig = [0u8; 66];
-        let response = handle_command(Command::SendSignatures, &fake_sig, &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::SendSignatures,
+            &fake_sig,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Error);
     }
@@ -606,7 +677,14 @@ mod tests {
         let mut last_scan = None;
 
         let bad_payload = [0u8; 34];
-        let response = handle_command(Command::SendSignatures, &bad_payload, &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::SendSignatures,
+            &bad_payload,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Error);
     }
@@ -619,11 +697,32 @@ mod tests {
 
         let token = sample_token();
         let encoded = cashu_core_lite::encode_token(&token).unwrap();
-        let _ = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
-        let _ = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+        let _ = handle_command(
+            Command::ImportToken,
+            &encoded,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
+        let _ = handle_command(
+            Command::GetBlinded,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         let wrong_sig = [0u8; 33];
-        let response = handle_command(Command::SendSignatures, &wrong_sig, &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::SendSignatures,
+            &wrong_sig,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::InvalidPayload);
     }
@@ -634,7 +733,8 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::GetProofs, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response =
+            handle_command(Command::GetProofs, &[], &mut state, &mut hw, &mut last_scan).await;
 
         assert_eq!(response.status, Status::Error);
     }
@@ -645,7 +745,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ScannerStatus, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerStatus,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert_eq!(response.length, 3);
@@ -658,7 +765,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ScannerStatus, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerStatus,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert_eq!(response.payload()[0], 1);
@@ -670,7 +784,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ScannerTrigger, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerTrigger,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::ScannerNotConnected);
     }
@@ -681,7 +802,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ScannerTrigger, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerTrigger,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
     }
@@ -692,7 +820,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = None;
 
-        let response = handle_command(Command::ScannerData, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerData,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::NoScanData);
     }
@@ -703,7 +838,14 @@ mod tests {
         let mut state = FirmwareState::new();
         let mut last_scan = Some(vec![0x01, 0x02, 0x03]);
 
-        let response = handle_command(Command::ScannerData, &[], &mut state, &mut hw, &mut last_scan).await;
+        let response = handle_command(
+            Command::ScannerData,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
 
         assert_eq!(response.status, Status::Ok);
         assert!(response.length > 0);
@@ -721,14 +863,35 @@ mod tests {
         let token = sample_token();
         let encoded = cashu_core_lite::encode_token(&token).unwrap();
 
-        let r = handle_command(Command::ImportToken, &encoded, &mut state, &mut hw, &mut last_scan).await;
+        let r = handle_command(
+            Command::ImportToken,
+            &encoded,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
         assert_eq!(r.status, Status::Ok);
         assert_eq!(state.swap_state, SwapState::TokenImported);
 
-        let r = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut last_scan).await;
+        let r = handle_command(
+            Command::GetTokenInfo,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
         assert_eq!(r.status, Status::Ok);
 
-        let r = handle_command(Command::GetBlinded, &[], &mut state, &mut hw, &mut last_scan).await;
+        let r = handle_command(
+            Command::GetBlinded,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
         assert_eq!(r.status, Status::Ok);
         assert_eq!(state.swap_state, SwapState::BlindedGenerated);
         assert_eq!(state.blinded_messages.as_ref().unwrap().len(), 2);
@@ -736,7 +899,14 @@ mod tests {
         let blinded_count = state.blinded_messages.as_ref().unwrap().len();
         let fake_sigs = vec![0u8; blinded_count * 33];
 
-        let r = handle_command(Command::SendSignatures, &fake_sigs, &mut state, &mut hw, &mut last_scan).await;
+        let r = handle_command(
+            Command::SendSignatures,
+            &fake_sigs,
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
         assert_eq!(r.status, Status::CryptoError);
         assert!(state.new_proofs.is_none());
     }

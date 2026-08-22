@@ -55,7 +55,7 @@ impl DemoKeyset {
         }
 
         // NUT-02: derive keyset ID from sorted public keys
-        let sorted_pubkeys: Vec<PublicKey> = keys.iter().map(|(_, _, pk)| pk.clone()).collect();
+        let sorted_pubkeys: Vec<PublicKey> = keys.iter().map(|(_, _, pk)| *pk).collect();
         let id = derive_keyset_id(&sorted_pubkeys);
 
         Self {
@@ -92,7 +92,7 @@ impl DemoKeyset {
                 .iter()
                 .map(|(amount, _, pk)| KeyPair {
                     amount: *amount,
-                    pubkey: pk.clone(),
+                    pubkey: *pk,
                 })
                 .collect(),
         }
@@ -135,7 +135,10 @@ mod tests {
         let ks2 = DemoKeyset::demo_default();
         assert_eq!(ks1.id, ks2.id, "keyset IDs should be deterministic");
         assert_eq!(ks1.id.len(), 16, "keyset ID should be 16 hex chars");
-        assert!(ks1.id.starts_with("00"), "keyset ID should start with version 00");
+        assert!(
+            ks1.id.starts_with("00"),
+            "keyset ID should start with version 00"
+        );
     }
 
     #[test]
@@ -143,8 +146,16 @@ mod tests {
         let ks = DemoKeyset::demo_default();
         assert_eq!(ks.keys.len(), DENOMINATIONS.len());
         for &d in DENOMINATIONS {
-            assert!(ks.get_secret_key(d).is_some(), "missing key for denomination {}", d);
-            assert!(ks.get_public_key(d).is_some(), "missing pubkey for denomination {}", d);
+            assert!(
+                ks.get_secret_key(d).is_some(),
+                "missing key for denomination {}",
+                d
+            );
+            assert!(
+                ks.get_public_key(d).is_some(),
+                "missing pubkey for denomination {}",
+                d
+            );
         }
     }
 

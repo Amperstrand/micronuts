@@ -4,7 +4,9 @@ use cashu_core_lite::rpc::{
     MintRpcResult,
 };
 use cashu_core_lite::CashuError;
-use micronuts_mint::{demo_mint_handler, handle_demo_mint_hex_request_line, handle_demo_mint_request_bytes};
+use micronuts_mint::{
+    demo_mint_handler, handle_demo_mint_hex_request_line, handle_demo_mint_request_bytes,
+};
 
 #[test]
 fn mint_role_bytes_handler_returns_info_response() {

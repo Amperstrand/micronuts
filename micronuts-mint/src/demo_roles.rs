@@ -147,7 +147,8 @@ pub fn run_wallet_demo() -> Result<(), CashuError> {
     }
 
     println!("\n6. Melting {} sats to pay invoice...", melt_sum);
-    let melt_quote = wallet.request_melt_quote(&format!("lnbcdemo{}sat1micronuts", melt_sum), "sat")?;
+    let melt_quote =
+        wallet.request_melt_quote(&format!("lnbcdemo{}sat1micronuts", melt_sum), "sat")?;
     println!(
         "   Melt quote: {} (amount={}, fee={})",
         melt_quote.quote, melt_quote.amount, melt_quote.fee_reserve

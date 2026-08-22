@@ -1,0 +1,28 @@
+# cargo-deny v2 configuration.
+# Real vulnerabilities deny the build; list documented exceptions with
+# reasons here — never silence an advisory without one.
+
+[advisories]
+ignore = [
+  # bare-metal v0.2.5: unmaintained (archived upstream). Pulled by
+  # cortex-m 0.7.x, which the embassy-stm32 ecosystem pins — no safe
+  # upgrade in-tree. Replacement (critical-section) already used
+  # elsewhere in the tree; drops out with the next embassy bump.
+  "RUSTSEC-2026-0110",
+  # embassy-usb-driver 0.2.x: unmaintained. Pulled by the vendored
+  # embassy fork; folds into the newer embassy-usb line the fork does
+  # not track yet.
+  "RUSTSEC-2026-0173",
+]
+
+[bans]
+# Embedded trees routinely carry several major versions of transitive
+# crates; warn so drift is visible in logs without blocking.
+multiple-versions = "warn"
+wildcards = "allow"
+
+[licenses]
+# License checking disabled for now: the workspace is a mix of
+# MIT/Apache-2.0/0BSD with vendored embassy forks; a full license audit
+# is its own task before enabling.
+confidence-threshold = 0.0

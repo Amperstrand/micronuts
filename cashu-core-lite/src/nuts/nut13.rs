@@ -32,6 +32,8 @@ use alloc::vec::Vec;
 
 #[cfg(not(feature = "std"))]
 use alloc::format;
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
 
 use sha2::{Digest, Sha256};
 
@@ -64,14 +66,14 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 
     // Inner hash: H((K ^ ipad) || message)
     let inner = Sha256::new()
-        .chain_update(&ipad)
+        .chain_update(ipad)
         .chain_update(message)
         .finalize();
 
     // Outer hash: H((K ^ opad) || inner)
     let outer = Sha256::new()
-        .chain_update(&opad)
-        .chain_update(&inner)
+        .chain_update(opad)
+        .chain_update(inner)
         .finalize();
 
     let mut result = [0u8; 32];
@@ -148,7 +150,9 @@ fn hex_decode_keyset_id(keyset_id: &str) -> Result<Vec<u8>, CashuError> {
     let trimmed = keyset_id.trim();
 
     if trimmed.is_empty() {
-        return Err(CashuError::Protocol(format!("keyset ID cannot be empty")));
+        return Err(CashuError::Protocol(String::from(
+            "keyset ID cannot be empty",
+        )));
     }
 
     hex::decode(trimmed).map_err(|e| CashuError::Protocol(format!("invalid keyset ID hex: {}", e)))
@@ -185,16 +189,16 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
-    /// Test vectors from https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
-    ///
-    /// Version 2 (HMAC-SHA256) derivation:
-    /// - Mnemonic: "half depart obvious quality work element tank gorilla view sugar picture humble"
-    /// - BIP39 seed (no passphrase): dd44ee516b0647e80b488e8dcc56d736a148f15276bef588b37057476d4b2b25780d3688a32b37353d6995997842c0fd8b412475c891c16310471fbc86dcbda8
-    /// - Keyset ID: 015ba18a8adcd02e715a58358eb618da4a4b3791151a4bee5e968bb88406ccf76a
-    ///
-    /// Expected outputs:
-    /// - secret_0: db5561a07a6e6490f8dadeef5be4e92f7cebaecf2f245356b5b2a4ec40687298
-    /// - r_0: 6d26181a3695e32e9f88b80f039ba1ae2ab5a200ad4ce9dbc72c6d3769f2b035
+    // Test vectors from https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
+    //
+    // Version 2 (HMAC-SHA256) derivation:
+    // - Mnemonic: "half depart obvious quality work element tank gorilla view sugar picture humble"
+    // - BIP39 seed (no passphrase): dd44ee516b0647e80b488e8dcc56d736a148f15276bef588b37057476d4b2b25780d3688a32b37353d6995997842c0fd8b412475c891c16310471fbc86dcbda8
+    // - Keyset ID: 015ba18a8adcd02e715a58358eb618da4a4b3791151a4bee5e968bb88406ccf76a
+    //
+    // Expected outputs:
+    // - secret_0: db5561a07a6e6490f8dadeef5be4e92f7cebaecf2f245356b5b2a4ec40687298
+    // - r_0: 6d26181a3695e32e9f88b80f039ba1ae2ab5a200ad4ce9dbc72c6d3769f2b035
 
     /// BIP39 seed derived from mnemonic (no passphrase)
     const TEST_SEED_HEX: &str = "dd44ee516b0647e80b488e8dcc56d736a148f15276bef588b37057476d4b2b25780d3688a32b37353d6995997842c0fd8b412475c891c16310471fbc86dcbda8";

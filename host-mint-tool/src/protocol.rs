@@ -1,4 +1,7 @@
 pub const CMD_IMPORT_TOKEN: u8 = 0x01;
+/// Opcode 0x02 — defined by the device wire protocol; this tool does
+/// not exercise it yet.
+#[allow(dead_code)]
 pub const CMD_GET_TOKEN_INFO: u8 = 0x02;
 pub const CMD_GET_BLINDED: u8 = 0x03;
 pub const CMD_SEND_SIGNATURES: u8 = 0x04;
@@ -8,7 +11,10 @@ pub const CMD_SCANNER_TRIGGER: u8 = 0x11;
 pub const CMD_SCANNER_DATA: u8 = 0x12;
 
 pub const STATUS_OK: u8 = 0x00;
+/// Protocol-defined status codes not yet produced by this tool.
+#[allow(dead_code)]
 pub const STATUS_ERROR: u8 = 0xFF;
+#[allow(dead_code)]
 pub const STATUS_NO_SCAN_DATA: u8 = 0x12;
 
 pub const PAYLOAD_TYPE_TEXT: u8 = 0x00;
@@ -35,6 +41,9 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Inverse of [`Frame::encode`] — protocol completeness; the tool
+    /// currently only frames requests.
+    #[allow(dead_code)]
     pub fn new(command: u8, payload: Vec<u8>) -> Self {
         Self { command, payload }
     }
@@ -48,6 +57,7 @@ impl Frame {
         buf
     }
 
+    #[allow(dead_code)]
     pub fn decode(data: &[u8]) -> Option<Self> {
         if data.len() < 3 {
             return None;

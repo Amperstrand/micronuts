@@ -21,15 +21,24 @@ pub struct TestResult {
 
 impl TestResult {
     pub fn pass(name: &'static str) -> Self {
-        Self { name, status: TestStatus::Pass }
+        Self {
+            name,
+            status: TestStatus::Pass,
+        }
     }
 
     pub fn fail(name: &'static str) -> Self {
-        Self { name, status: TestStatus::Fail }
+        Self {
+            name,
+            status: TestStatus::Fail,
+        }
     }
 
     pub fn skip(name: &'static str) -> Self {
-        Self { name, status: TestStatus::Skip }
+        Self {
+            name,
+            status: TestStatus::Skip,
+        }
     }
 }
 
@@ -85,13 +94,27 @@ pub async fn run_all(hw: &mut FirmwareHardware) -> Vec<TestResult> {
         results.push(test_scanner(hw).await);
     }
 
-    let passed = results.iter().filter(|r| r.status == TestStatus::Pass).count();
-    let failed = results.iter().filter(|r| r.status == TestStatus::Fail).count();
-    let skipped = results.iter().filter(|r| r.status == TestStatus::Skip).count();
+    let passed = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Pass)
+        .count();
+    let failed = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Fail)
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|r| r.status == TestStatus::Skip)
+        .count();
     let total = results.len();
 
-    crate::log_info!("=== RESULTS: {}/{} PASS, {} FAIL, {} SKIP ===",
-        passed, total, failed, skipped);
+    crate::log_info!(
+        "=== RESULTS: {}/{} PASS, {} FAIL, {} SKIP ===",
+        passed,
+        total,
+        failed,
+        skipped
+    );
 
     for r in &results {
         match r.status {
@@ -164,8 +187,12 @@ fn test_rng(hw: &mut FirmwareHardware) -> TestResult {
     let mut seen = [false; 256];
 
     for &b in &buf {
-        if b == 0 { zero_count += 1; }
-        if b == 0xFF { ff_count += 1; }
+        if b == 0 {
+            zero_count += 1;
+        }
+        if b == 0xFF {
+            ff_count += 1;
+        }
         seen[b as usize] = true;
     }
 
@@ -175,7 +202,12 @@ fn test_rng(hw: &mut FirmwareHardware) -> TestResult {
         crate::log_info!("[PASS] RNG (256 bytes, {} unique values)", unique);
         TestResult::pass("RNG")
     } else {
-        crate::log_error!("[FAIL] RNG (unique={}, zeros={}, 0xff={})", unique, zero_count, ff_count);
+        crate::log_error!(
+            "[FAIL] RNG (unique={}, zeros={}, 0xff={})",
+            unique,
+            zero_count,
+            ff_count
+        );
         TestResult::fail("RNG")
     }
 }
@@ -210,7 +242,9 @@ fn test_heap_stress() -> TestResult {
     for (pattern_idx, &pattern) in PATTERNS.iter().enumerate() {
         // Step 1: Allocate 4KB
         let mut v: Vec<u8> = Vec::with_capacity(ALLOC_SIZE);
-        unsafe { v.set_len(ALLOC_SIZE); }
+        unsafe {
+            v.set_len(ALLOC_SIZE);
+        }
 
         // Step 2: Write walking pattern
         for byte in v.iter_mut() {
@@ -220,11 +254,19 @@ fn test_heap_stress() -> TestResult {
         // Step 3: Verify readback
         let ok = v.iter().all(|&b| b == pattern);
         if !ok {
-            crate::log_error!("[FAIL] Heap stress (pattern 0x{:02X} readback mismatch)", pattern);
+            crate::log_error!(
+                "[FAIL] Heap stress (pattern 0x{:02X} readback mismatch)",
+                pattern
+            );
             return TestResult::fail("Heap stress");
         }
 
-        crate::log_info!("[TEST] Heap stress: pattern 0x{:02X} verified ({}/{})", pattern, pattern_idx + 1, PATTERNS.len());
+        crate::log_info!(
+            "[TEST] Heap stress: pattern 0x{:02X} verified ({}/{})",
+            pattern,
+            pattern_idx + 1,
+            PATTERNS.len()
+        );
 
         // Step 4: Drop allocation
         drop(v);
@@ -293,7 +335,9 @@ fn test_crypto_blinding(hw: &mut FirmwareHardware) -> TestResult {
 
     // Step 6: unblind_signature(blinded_sig, blinder, mint_pubkey) - returns unblinded signature
     let unblinded = match cashu_core_lite::crypto::unblind_signature(
-        &blinded_sig, &blinded.blinder, &mint_pubkey
+        &blinded_sig,
+        &blinded.blinder,
+        &mint_pubkey,
     ) {
         Ok(c) => c,
         Err(_) => {
@@ -323,41 +367,47 @@ fn test_crypto_blinding(hw: &mut FirmwareHardware) -> TestResult {
 
 fn test_usb_cdc_protocol() -> TestResult {
     crate::log_info!("[TEST] USB CDC protocol...");
-    
+
     use micronuts_app::protocol::{Command, Frame, FrameDecoder};
-    
+
     // Step 1: Create a test frame with ScannerStatus command (0x10)
     let test_command = Command::ScannerStatus;
     let frame = Frame::new(test_command);
-    crate::log_info!("[TEST] USB CDC: created frame with command 0x{:02X}", test_command as u8);
-    
+    crate::log_info!(
+        "[TEST] USB CDC: created frame with command 0x{:02X}",
+        test_command as u8
+    );
+
     // Step 2: Encode the frame to bytes
     let mut encode_buf = [0u8; 1027]; // MAX_PAYLOAD_SIZE + 3
     let encoded_len = frame.encode(&mut encode_buf);
-    
+
     if encoded_len == 0 {
         crate::log_error!("[FAIL] USB CDC protocol (encoding failed)");
         return TestResult::fail("USB CDC protocol");
     }
-    
+
     crate::log_info!("[TEST] USB CDC: encoded {} bytes", encoded_len);
-    
+
     // Verify encoded bytes structure: [Command:1][LenHigh:1][LenLow:1][Payload:N]
     if encode_buf[0] != test_command as u8 {
         crate::log_error!("[FAIL] USB CDC protocol (command byte mismatch)");
         return TestResult::fail("USB CDC protocol");
     }
-    
+
     // ScannerStatus has no payload, so length should be 0
     let payload_len = ((encode_buf[1] as u16) << 8) | (encode_buf[2] as u16);
     if payload_len != 0 {
         crate::log_error!("[FAIL] USB CDC protocol (payload length mismatch)");
         return TestResult::fail("USB CDC protocol");
     }
-    
-    crate::log_info!("[TEST] USB CDC: frame structure verified (cmd=0x{:02X}, len={})", 
-                 encode_buf[0], payload_len);
-    
+
+    crate::log_info!(
+        "[TEST] USB CDC: frame structure verified (cmd=0x{:02X}, len={})",
+        encode_buf[0],
+        payload_len
+    );
+
     // Step 3: Decode the bytes back to a frame
     let mut decoder = FrameDecoder::new();
     let decoded_frame = match decoder.decode(&encode_buf[..encoded_len]) {
@@ -367,21 +417,21 @@ fn test_usb_cdc_protocol() -> TestResult {
             return TestResult::fail("USB CDC protocol");
         }
     };
-    
+
     crate::log_info!("[TEST] USB CDC: decoded frame successfully");
-    
+
     // Step 4: Verify command matches
     if decoded_frame.command != test_command {
         crate::log_error!("[FAIL] USB CDC protocol (command mismatch after decode)");
         return TestResult::fail("USB CDC protocol");
     }
-    
+
     // Step 5: Verify payload matches (should be empty for ScannerStatus)
     if decoded_frame.length != 0 {
         crate::log_error!("[FAIL] USB CDC protocol (payload length mismatch after decode)");
         return TestResult::fail("USB CDC protocol");
     }
-    
+
     crate::log_info!("[PASS] USB CDC protocol (encode/decode round-trip verified)");
     TestResult::pass("USB CDC protocol")
 }
@@ -389,7 +439,12 @@ fn test_usb_cdc_protocol() -> TestResult {
 async fn test_display(hw: &mut FirmwareHardware) -> TestResult {
     crate::log_info!("[TEST] Display...");
     let fb_size = (FB_WIDTH as usize) * (FB_HEIGHT as usize);
-    crate::log_info!("[TEST] Display: framebuffer {} pixels ({}x{})", fb_size, FB_WIDTH, FB_HEIGHT);
+    crate::log_info!(
+        "[TEST] Display: framebuffer {} pixels ({}x{})",
+        fb_size,
+        FB_WIDTH,
+        FB_HEIGHT
+    );
 
     let raw_green: u32 = 0xFF00CC00;
 

@@ -16,6 +16,11 @@
 //!   MICRONUTS_ADAPTER_PORT=4000     Listen port (default 3030)
 //!   MICRONUTS_MINT_BIN=/path/mint   Override subprocess binary path
 
+// Handlers and parse helpers return axum `Response` in Err so `?` works
+// directly; the large-err footprint is an accepted simplicity trade for
+// this standalone adapter.
+#![allow(clippy::result_large_err)]
+
 use std::env;
 use std::net::SocketAddr;
 use std::process::Stdio;
@@ -102,10 +107,7 @@ impl MintProcess {
     /// Returns the raw RPC response envelope so the caller can apply
     /// domain-specific error→HTTP mapping. Transport/framing failures are
     /// returned as a string for a generic 503 body.
-    async fn call_raw(
-        &mut self,
-        method: MintRpcMethod,
-    ) -> Result<MintRpcResponse, String> {
+    async fn call_raw(&mut self, method: MintRpcMethod) -> Result<MintRpcResponse, String> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
@@ -142,8 +144,8 @@ impl MintProcess {
             return Err("mint_server returned an empty response line".to_string());
         }
 
-        let response_bytes = hex::decode(trimmed)
-            .map_err(|e| format!("failed to decode hex rpc response: {e}"))?;
+        let response_bytes =
+            hex::decode(trimmed).map_err(|e| format!("failed to decode hex rpc response: {e}"))?;
         let response = decode_rpc_response(&response_bytes)
             .map_err(|e| format!("failed to decode rpc response: {e}"))?;
 
@@ -227,9 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    eprintln!(
-        "micronuts-audit-adapter: listening on http://{addr} (mint_server: {mint_bin})"
-    );
+    eprintln!("micronuts-audit-adapter: listening on http://{addr} (mint_server: {mint_bin})");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -272,11 +272,8 @@ async fn get_keys_inner(state: AdapterState, keyset_id: Option<String>) -> Respo
         Ok(MintRpcResult::GetKeys(keys)) => {
             let filtered = match keyset_id.as_deref() {
                 Some(id) if !id.is_empty() => {
-                    let matching: Vec<_> = keys
-                        .keysets
-                        .into_iter()
-                        .filter(|k| k.id == id)
-                        .collect();
+                    let matching: Vec<_> =
+                        keys.keysets.into_iter().filter(|k| k.id == id).collect();
                     if matching.is_empty() {
                         return cashu_error_to_response(&CashuError::KeysetNotFound);
                     }
@@ -284,7 +281,8 @@ async fn get_keys_inner(state: AdapterState, keyset_id: Option<String>) -> Respo
                 }
                 _ => keys.keysets,
             };
-            let body = json!({ "keysets": filtered.iter().map(keyset_to_json).collect::<Vec<_>>() });
+            let body =
+                json!({ "keysets": filtered.iter().map(keyset_to_json).collect::<Vec<_>>() });
             (StatusCode::OK, Json(body)).into_response()
         }
         Ok(other) => unexpected_result_response("GetKeys", &other),
@@ -307,10 +305,7 @@ async fn get_keysets(State(state): State<AdapterState>) -> Response {
 }
 
 /// POST /v1/mint/quote/bolt11 — NUT-04 quote creation.
-async fn post_mint_quote(
-    State(state): State<AdapterState>,
-    Json(body): Json<Value>,
-) -> Response {
+async fn post_mint_quote(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
     let request = match parse_mint_quote_request(&body) {
         Ok(r) => r,
         Err(resp) => return resp,
@@ -325,10 +320,7 @@ async fn post_mint_quote(
 }
 
 /// GET /v1/mint/quote/bolt11/{quote} — NUT-04 quote lookup.
-async fn get_mint_quote(
-    State(state): State<AdapterState>,
-    Path(quote): Path<String>,
-) -> Response {
+async fn get_mint_quote(State(state): State<AdapterState>, Path(quote): Path<String>) -> Response {
     let lookup = MintQuoteLookupRequest { quote };
     match state.call_mint(MintRpcMethod::GetMintQuote(lookup)).await {
         Ok(MintRpcResult::GetMintQuote(resp)) => {
@@ -370,10 +362,7 @@ async fn post_swap(State(state): State<AdapterState>, Json(body): Json<Value>) -
 }
 
 /// POST /v1/melt/quote/bolt11 — NUT-05 melt quote creation.
-async fn post_melt_quote(
-    State(state): State<AdapterState>,
-    Json(body): Json<Value>,
-) -> Response {
+async fn post_melt_quote(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
     let request = match parse_melt_quote_request(&body) {
         Ok(r) => r,
         Err(resp) => return resp,
@@ -388,10 +377,7 @@ async fn post_melt_quote(
 }
 
 /// GET /v1/melt/quote/bolt11/{quote} — NUT-05 melt quote lookup.
-async fn get_melt_quote(
-    State(state): State<AdapterState>,
-    Path(quote): Path<String>,
-) -> Response {
+async fn get_melt_quote(State(state): State<AdapterState>, Path(quote): Path<String>) -> Response {
     let lookup = MeltQuoteLookupRequest { quote };
     match state.call_mint(MintRpcMethod::GetMeltQuote(lookup)).await {
         Ok(MintRpcResult::GetMeltQuote(resp)) => {
@@ -482,6 +468,7 @@ fn cashu_error_to_response(err: &CashuError) -> Response {
         CashuError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR"),
         CashuError::Transport(_) => (StatusCode::INTERNAL_SERVER_ERROR, "TRANSPORT_ERROR"),
         CashuError::Unknown(_) => (StatusCode::INTERNAL_SERVER_ERROR, "UNKNOWN"),
+        CashuError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "STORAGE_ERROR"),
     };
 
     let body = Json(json!({
@@ -678,6 +665,7 @@ fn parse_proof(value: &Value) -> Result<nut00::Proof, Response> {
         id: id.to_string(),
         secret: secret.to_string(),
         c,
+        dleq: None,
     })
 }
 
@@ -712,8 +700,7 @@ fn parse_public_key_value(value: &Value) -> Result<PublicKey, Response> {
 }
 
 fn parse_public_key_from_hex(s: &str) -> Result<PublicKey, Response> {
-    let bytes = hex::decode(s)
-        .map_err(|_| bad_request("public key", "not valid hex"))?;
+    let bytes = hex::decode(s).map_err(|_| bad_request("public key", "not valid hex"))?;
     let arr: [u8; 33] = bytes
         .as_slice()
         .try_into()
@@ -806,11 +793,10 @@ fn melt_quote_response_to_json(resp: &nut05::MeltQuoteResponse) -> Value {
 }
 
 fn melt_response_to_json(resp: &nut05::MeltResponse) -> Value {
-    let change = resp.change.as_ref().map(|sigs| {
-        sigs.iter()
-            .map(blind_signature_to_json)
-            .collect::<Vec<_>>()
-    });
+    let change = resp
+        .change
+        .as_ref()
+        .map(|sigs| sigs.iter().map(blind_signature_to_json).collect::<Vec<_>>());
     json!({
         "paid": resp.paid,
         "state": resp.state,

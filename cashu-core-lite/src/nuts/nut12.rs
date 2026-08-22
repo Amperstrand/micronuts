@@ -197,39 +197,6 @@ pub fn verify_dleq(
     Ok(e.to_secret_bytes() == e_prime)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Inline the official NUT-12 `hash_e` test vector so a `cargo test -p
-    // cashu-core-lite --lib` run exercises it without pulling the integration
-    // test harness. Mirrors CDK's `dhke::tests::test_hash_e`.
-    #[test]
-    fn hash_e_matches_nut12_spec_vector() {
-        let c = PublicKey::from_bytes(&hex_decode_33(
-            "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
-        ))
-        .unwrap();
-        let g = PublicKey::from_bytes(&hex_decode_33(
-            "020000000000000000000000000000000000000000000000000000000000000001",
-        ))
-        .unwrap();
-
-        let e = hash_e(&g, &g, &g, &c);
-        assert_eq!(
-            hex::encode(e),
-            "a4dc034b74338c28c6bc3ea49731f2a24440fc7c4affc08b31a93fc9fbe6401e"
-        );
-    }
-
-    fn hex_decode_33(s: &str) -> [u8; 33] {
-        let mut out = [0u8; 33];
-        let bytes = hex::decode(s).unwrap();
-        out.copy_from_slice(&bytes);
-        out
-    }
-}
-
 /// Offline verification of a token proof's NUT-12 DLEQ (wallet side).
 ///
 /// Reconstructs the blinded pair from the proof itself — `B' = Y + r*G`
@@ -262,4 +229,37 @@ pub fn verify_proof_dleq(
     };
 
     verify_dleq(&blinded, &c_prime, &dleq.e, &dleq.s, mint_amount_pubkey).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Inline the official NUT-12 `hash_e` test vector so a `cargo test -p
+    // cashu-core-lite --lib` run exercises it without pulling the integration
+    // test harness. Mirrors CDK's `dhke::tests::test_hash_e`.
+    #[test]
+    fn hash_e_matches_nut12_spec_vector() {
+        let c = PublicKey::from_bytes(&hex_decode_33(
+            "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2",
+        ))
+        .unwrap();
+        let g = PublicKey::from_bytes(&hex_decode_33(
+            "020000000000000000000000000000000000000000000000000000000000000001",
+        ))
+        .unwrap();
+
+        let e = hash_e(&g, &g, &g, &c);
+        assert_eq!(
+            hex::encode(e),
+            "a4dc034b74338c28c6bc3ea49731f2a24440fc7c4affc08b31a93fc9fbe6401e"
+        );
+    }
+
+    fn hex_decode_33(s: &str) -> [u8; 33] {
+        let mut out = [0u8; 33];
+        let bytes = hex::decode(s).unwrap();
+        out.copy_from_slice(&bytes);
+        out
+    }
 }

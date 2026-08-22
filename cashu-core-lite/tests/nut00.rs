@@ -6,8 +6,6 @@ use cashu_core_lite::keypair::PublicKey;
 use cashu_core_lite::nuts::nut00::{
     decompose_amount, BlindSignature, BlindedMessage, ErrorResponse, Proof,
 };
-use minicbor::{Decode, Encode};
-
 fn sample_public_key_bytes() -> [u8; 33] {
     [
         0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
@@ -184,7 +182,7 @@ fn test_blind_signature_equality() {
     let s1 = BlindSignature {
         amount: 8,
         id: "00".to_string(),
-        c: pk.clone(),
+        c: pk,
         dleq: None,
     };
     let s2 = BlindSignature {

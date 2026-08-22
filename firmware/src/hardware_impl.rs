@@ -2,17 +2,17 @@ use alloc::vec::Vec;
 
 use embassy_stm32::peripherals;
 use embassy_stm32::rng::Rng;
-use embassy_stm32f469i_disco::{FB_HEIGHT, FB_WIDTH};
 use embassy_stm32f469i_disco::touch::{TouchCtrl, TouchPoint as BspTouchPoint};
+use embassy_stm32f469i_disco::{FB_HEIGHT, FB_WIDTH};
 use embassy_time::Duration;
 use embassy_usb::class::cdc_acm::{Receiver, Sender};
+use embedded_graphics::pixelcolor::RgbColor;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Size},
     pixelcolor::Rgb888,
     Pixel,
 };
-use embedded_graphics::pixelcolor::RgbColor;
 use embedded_hal_02::blocking::serial::Write as _;
 use sha2::Digest;
 
@@ -152,7 +152,11 @@ impl DrawTarget for RawFramebuffer {
         Ok(())
     }
 
-    fn fill_contiguous<I>(&mut self, area: &embedded_graphics::primitives::Rectangle, color: I) -> Result<(), Self::Error>
+    fn fill_contiguous<I>(
+        &mut self,
+        area: &embedded_graphics::primitives::Rectangle,
+        color: I,
+    ) -> Result<(), Self::Error>
     where
         I: IntoIterator<Item = Self::Color>,
     {
@@ -234,7 +238,10 @@ impl FirmwareHardware {
 
 impl Scanner for FirmwareHardware {
     async fn trigger(&mut self) -> Result<(), ScanError> {
-        self.scanner.trigger_scan().await.map_err(|_| ScanError::IoError)
+        self.scanner
+            .trigger_scan()
+            .await
+            .map_err(|_| ScanError::IoError)
     }
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
@@ -321,7 +328,9 @@ impl MicronutsHardware for FirmwareHardware {
         if len == 0 {
             return;
         }
-        let _ = embassy_stm32f469i_disco::send_with_zlp(&mut self.usb_sender, &self.encoder_buf[..len]).await;
+        let _ =
+            embassy_stm32f469i_disco::send_with_zlp(&mut self.usb_sender, &self.encoder_buf[..len])
+                .await;
     }
 
     fn touch_get(&mut self) -> Option<TouchPoint> {

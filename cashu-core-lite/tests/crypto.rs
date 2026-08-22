@@ -1,6 +1,6 @@
 use cashu_core_lite::{
-    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
-    verify_signature_with_privkey, PublicKey, SecretKey,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature_with_privkey,
+    PublicKey, SecretKey,
 };
 use k256::ProjectivePoint;
 

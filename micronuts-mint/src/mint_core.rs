@@ -12,12 +12,13 @@ use cashu::dhke::{
     verify_message as cashu_verify_message,
 };
 use cashu_core_lite::error::CashuError;
-use cashu_core_lite::keypair::PublicKey;
 use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
 use std::str::FromStr;
 
 use crate::keyset::DemoKeyset;
-use crate::type_conversion::{cashu_pk_to_lite, cashu_sk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu};
+use crate::type_conversion::{
+    cashu_pk_to_lite, cashu_sk_to_lite, lite_pk_to_cashu, lite_sk_to_cashu,
+};
 
 /// In-memory mint quote state.
 #[allow(dead_code)] // Fields kept for future use (e.g., quote lookup by unit)
@@ -381,7 +382,7 @@ impl DemoMint {
                     nut07::state::UNSPENT
                 };
                 nut07::ProofState {
-                    y: y.clone(),
+                    y: *y,
                     state: state.to_string(),
                     witness: None,
                 }
@@ -569,7 +570,10 @@ mod tests {
 
     #[test]
     fn test_parse_demo_invoice() {
-        assert_eq!(parse_demo_invoice_amount("lnbcdemo100sat1micronuts"), Some(100));
+        assert_eq!(
+            parse_demo_invoice_amount("lnbcdemo100sat1micronuts"),
+            Some(100)
+        );
         assert_eq!(parse_demo_invoice_amount("lnbcdemo1sat1micronuts"), Some(1));
         assert_eq!(parse_demo_invoice_amount("garbage"), None);
     }
@@ -587,9 +591,7 @@ mod tests {
     #[test]
     fn test_restore_stateless() {
         let mint = DemoMint::new();
-        let request = nut09::RestoreRequest {
-            outputs: vec![],
-        };
+        let request = nut09::RestoreRequest { outputs: vec![] };
         let response = mint.post_restore(request).unwrap();
         assert_eq!(response.outputs.len(), 0);
     }

@@ -137,7 +137,7 @@ impl MintClient for MockMint {
             let sig = nut00::BlindSignature {
                 amount: output.amount,
                 id: output.id.clone(),
-                c: c.clone(),
+                c,
                 dleq: None,
             };
             self.signed
@@ -312,7 +312,6 @@ fn different_seed_is_a_different_wallet() {
 fn corrupt_blob_starts_fresh_not_panicking() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();
-    let store = MemoryStore::new();
 
     let medium = SharedStore::new();
     let mut w = wallet_with(&mock, medium.clone());
@@ -345,7 +344,6 @@ fn corrupt_blob_starts_fresh_not_panicking() {
 fn spend_removes_and_persists_undo_restores() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();
-    let store = MemoryStore::new();
 
     let medium = SharedStore::new();
     let mut w = wallet_with(&mock, medium.clone());
@@ -369,7 +367,6 @@ fn spend_removes_and_persists_undo_restores() {
 fn spend_insufficient_funds_errors_without_state_change() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();
-    let store = MemoryStore::new();
 
     let mut w = wallet_with(&mock, SharedStore::new());
     w.mint_deterministic("quote-1", 10, KEYSET_ID, &keyset)

@@ -47,7 +47,7 @@ fn test_mint_quote_response_cbor_roundtrip() {
     let decoded: MintQuoteResponse = minicbor::decode(&buf).expect("decode");
 
     assert_eq!(decoded.quote, "quote_abc123");
-    assert_eq!(decoded.paid, false);
+    assert!(!decoded.paid);
     assert_eq!(decoded.state, "UNPAID");
 }
 

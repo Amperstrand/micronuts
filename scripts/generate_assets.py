@@ -146,6 +146,7 @@ def write_rust_source(tiles: list):
 
         lines.append(f"/// Tile: {tile['name']} — {w}x{h} pixels ({pixel_count} u16 values)")
         lines.append(f"#[allow(clippy::unreadable_literal)]")
+        lines.append("#[rustfmt::skip]")
         lines.append(f"const TILE_{name_upper}_DATA: [u16; {pixel_count}] = [")
 
         # Write in rows of 16 for readability

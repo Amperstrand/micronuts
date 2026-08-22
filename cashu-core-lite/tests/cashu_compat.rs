@@ -8,8 +8,8 @@ use cashu::nuts::nut23::QuoteState;
 use cashu::Amount;
 use cashu_core_lite::nuts::nut00::decompose_amount;
 use cashu_core_lite::{
-    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature,
-    verify_signature_with_privkey, PublicKey, SecretKey,
+    blind_message, hash_to_curve, sign_message, unblind_signature, verify_signature_with_privkey,
+    PublicKey, SecretKey,
 };
 
 fn upstream_fee_table() -> FeeAndAmounts {

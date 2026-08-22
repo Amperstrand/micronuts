@@ -263,6 +263,7 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
             keyset_id: keyset_id.clone(),
             secret: hex::encode(secret),
             c,
+            dleq: None,
         });
     }
 
@@ -278,7 +279,7 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
 }
 
 fn sign_blinded_outputs(mint: &DemoMint, payload: &[u8]) -> Result<Vec<u8>> {
-    if payload.len() % 33 != 0 {
+    if !payload.len().is_multiple_of(33) {
         anyhow::bail!("Invalid blinded outputs payload: length not multiple of 33");
     }
 

@@ -301,7 +301,13 @@ fn test_full_e2e_flow() {
 
     // 5. Swap: split 100 into specific denominations
     let new_proofs = wallet
-        .swap(proofs, &[32, 32, 16, 8, 4, 4, 2, 1, 1], &keyset_id, &keyset, &mut rng)
+        .swap(
+            proofs,
+            &[32, 32, 16, 8, 4, 4, 2, 1, 1],
+            &keyset_id,
+            &keyset,
+            &mut rng,
+        )
         .unwrap();
     let swapped_total: u64 = new_proofs.iter().map(|p| p.amount).sum();
     assert_eq!(swapped_total, 100);

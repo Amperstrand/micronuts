@@ -15,7 +15,9 @@ fn loopback_transport_handles_rpc_bytes_for_get_info() {
     };
 
     let request_bytes = encode_rpc_request(&request).expect("encode request");
-    let response_bytes = transport.exchange(&request_bytes).expect("exchange succeeds");
+    let response_bytes = transport
+        .exchange(&request_bytes)
+        .expect("exchange succeeds");
     let response = decode_rpc_response(&response_bytes).expect("decode response");
 
     assert_eq!(response.id, 1);
@@ -39,7 +41,9 @@ fn loopback_transport_returns_serialized_errors() {
     };
 
     let request_bytes = encode_rpc_request(&request).expect("encode request");
-    let response_bytes = transport.exchange(&request_bytes).expect("exchange succeeds");
+    let response_bytes = transport
+        .exchange(&request_bytes)
+        .expect("exchange succeeds");
     let response = decode_rpc_response(&response_bytes).expect("decode response");
 
     assert_eq!(response.id, 2);

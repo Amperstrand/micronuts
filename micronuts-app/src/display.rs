@@ -191,14 +191,9 @@ pub fn draw_scanning_progress<D: DrawTarget<Color = Rgb888>>(
 
     let dim_style = MonoTextStyle::new(&FONT_10X20, MID_GRAY);
     let center = TextStyleBuilder::new().alignment(Alignment::Center).build();
-    Text::with_text_style(
-        &label,
-        Point::new(WIDTH as i32 / 2, 380),
-        dim_style,
-        center,
-    )
-    .draw(fb)
-    .ok();
+    Text::with_text_style(&label, Point::new(WIDTH as i32 / 2, 380), dim_style, center)
+        .draw(fb)
+        .ok();
 }
 
 pub fn draw_scanning_retry<D: DrawTarget<Color = Rgb888>>(fb: &mut D) {

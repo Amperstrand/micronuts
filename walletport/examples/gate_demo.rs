@@ -84,14 +84,21 @@ fn token_wire(proofs: Vec<cashu_core_lite::token::Proof>) -> String {
 
 fn main() {
     let keyset = pinned_keyset();
-    let mut gate = OfflineGateValidator::new(vec![MINT.to_string()], vec![keyset], MemoryStore::new())
-        .expect("validator boots");
+    let mut gate =
+        OfflineGateValidator::new(vec![MINT.to_string()], vec![keyset], MemoryStore::new())
+            .expect("validator boots");
 
     println!("== TollGate offline validator demo (price: {PRICE} sats) ==\n");
 
     // 1. Exact payment: 8 + 4 = 12 sats.
-    let exact = token_wire(vec![mint_proof(8, "a1b2c3d4e5f60718"), mint_proof(4, "deadbeefcafe0011")]);
-    println!("token 1 (12 sats, exact): {}", &exact[..40.min(exact.len())]);
+    let exact = token_wire(vec![
+        mint_proof(8, "a1b2c3d4e5f60718"),
+        mint_proof(4, "deadbeefcafe0011"),
+    ]);
+    println!(
+        "token 1 (12 sats, exact): {}",
+        &exact[..40.min(exact.len())]
+    );
     match gate.verify_token(&exact, PRICE).unwrap() {
         GateDecision::Open { total_sats } => println!("  -> OPEN (paid {total_sats} sats)\n"),
         d => println!("  -> unexpected: {d:?}"),

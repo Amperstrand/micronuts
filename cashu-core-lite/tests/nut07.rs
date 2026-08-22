@@ -105,7 +105,7 @@ fn test_check_state_response_mixed_states() {
     let response = CheckStateResponse {
         states: vec![
             ProofState {
-                y: pk.clone(),
+                y: pk,
                 state: "UNSPENT".to_string(),
                 witness: None,
             },

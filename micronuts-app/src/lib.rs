@@ -134,11 +134,8 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                         }
                     }
                     AppScreen::Scanning => {
-                        match embassy_time::with_timeout(
-                            Duration::from_millis(100),
-                            hw.read_scan(),
-                        )
-                        .await
+                        match embassy_time::with_timeout(Duration::from_millis(100), hw.read_scan())
+                            .await
                         {
                             Ok(Some(data)) => {
                                 let payload = qr::decode_qr(&data);

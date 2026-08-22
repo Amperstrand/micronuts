@@ -34,8 +34,7 @@ pub fn lite_pk_to_cashu(pk: &LitePublicKey) -> cashu::nuts::nut01::PublicKey {
 /// Uses the canonical 32-byte secret scalar encoding as the wire format.
 pub fn cashu_sk_to_lite(sk: &cashu::nuts::nut01::SecretKey) -> LiteSecretKey {
     let bytes = sk.to_secret_bytes();
-    LiteSecretKey::from_slice(&bytes)
-        .expect("cashu::SecretKey always yields a valid k256 scalar")
+    LiteSecretKey::from_slice(&bytes).expect("cashu::SecretKey always yields a valid k256 scalar")
 }
 
 /// Convert a `cashu_core_lite::SecretKey` to an upstream `cashu::SecretKey`.

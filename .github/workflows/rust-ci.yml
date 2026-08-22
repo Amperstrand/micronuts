@@ -6,7 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Workspace format check
+        run: cargo fmt --all --check
+
   host-tests:
     runs-on: ubuntu-latest
     steps:
@@ -17,6 +30,9 @@ jobs:
 
       - name: Test cashu-core-lite
         run: cargo test -p cashu-core-lite --features std
+
+      - name: Test walletport (gate validator + upstream-CDK interop)
+        run: cargo test -p walletport
 
       - name: Test micronuts-mint
         run: cargo test -p micronuts-mint
@@ -36,24 +52,11 @@ jobs:
           cargo build -p cashu-core-lite --no-default-features --features transport-usb-cdc
           cargo build -p cashu-core-lite --no-default-features --features transport-microfips
 
-  firmware-build:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add thumbv7em-none-eabihf target
-        run: rustup target add thumbv7em-none-eabihf
-
-      - name: Build firmware for release
-        run: cargo build -p firmware --release
-
   clippy:
+    # Host-buildable crates only. micronuts-app/firmware pull the embassy
+    # BSP whose executor needs an explicit platform feature on host —
+    # their lint coverage is the firmware job's thumb-target clippy.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -63,15 +66,38 @@ jobs:
           toolchain: nightly-2025-12-08
           components: clippy
 
-      - name: Run clippy on workspace
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (host crates, deny warnings)
+        run: >
+          cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool
+          -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter
+          --all-targets -- -D warnings
 
-      - name: Run clippy on firmware
-        run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -D warnings
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add thumbv7em-none-eabihf target
+        run: rustup target add thumbv7em-none-eabihf
+
+      - name: no_std library builds for Cortex-M
+        run: cargo build -p cashu-core-lite -p walletport --target thumbv7em-none-eabihf
+
+      - name: Build firmware for release
+        run: cargo build -p firmware --release
+
+      - name: Clippy on firmware (thumb target, baseline)
+        # Baseline run: this job failed at build for 8 straight runs (a
+        # Proof.dleq field fallout, hidden by continue-on-error), so its
+        # warning state is unknown. Informational until shown clean —
+        # then flip to -D warnings.
+        run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -W clippy::all
 
   adapter-test:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -117,3 +143,11 @@ jobs:
           kill ${ADAPTER_PID} 2>/dev/null || true
           # Also kill any mint_server subprocess
           pkill -f mint_server 2>/dev/null || true
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: --workspace --all-features check advisories bans

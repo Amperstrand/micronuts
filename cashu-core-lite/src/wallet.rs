@@ -211,7 +211,7 @@ impl<T: MintClient> Wallet<T> {
         for &amount in amounts {
             let mut secret_bytes = [0u8; 32];
             rng.fill_bytes(&mut secret_bytes);
-            let secret_hex = hex::encode(&secret_bytes);
+            let secret_hex = hex::encode(secret_bytes);
 
             let mut blinder_bytes = [0u8; 32];
             rng.fill_bytes(&mut blinder_bytes);
@@ -224,7 +224,7 @@ impl<T: MintClient> Wallet<T> {
             messages.push(nut00::BlindedMessage {
                 amount,
                 id: String::from(keyset_id),
-                b: bm.blinded.clone(),
+                b: bm.blinded,
             });
 
             pending.push(PendingOutput {

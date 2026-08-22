@@ -39,7 +39,10 @@ impl MintService for DemoMint {
     }
 
     /// NUT-04: forward blind-sign mint requests to the demo mint core.
-    fn post_mint(&mut self, request: nut04::MintRequest) -> Result<nut04::MintResponse, CashuError> {
+    fn post_mint(
+        &mut self,
+        request: nut04::MintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
         DemoMint::post_mint(self, request)
     }
 
@@ -57,12 +60,18 @@ impl MintService for DemoMint {
     }
 
     /// NUT-05: forward melt spend requests to the demo mint core.
-    fn post_melt(&mut self, request: nut05::MeltRequest) -> Result<nut05::MeltResponse, CashuError> {
+    fn post_melt(
+        &mut self,
+        request: nut05::MeltRequest,
+    ) -> Result<nut05::MeltResponse, CashuError> {
         DemoMint::post_melt(self, request)
     }
 
     /// NUT-03: forward swap requests to the demo mint core.
-    fn post_swap(&mut self, request: nut03::SwapRequest) -> Result<nut03::SwapResponse, CashuError> {
+    fn post_swap(
+        &mut self,
+        request: nut03::SwapRequest,
+    ) -> Result<nut03::SwapResponse, CashuError> {
         DemoMint::post_swap(self, request)
     }
 
