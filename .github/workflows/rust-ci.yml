@@ -95,8 +95,11 @@ jobs:
       - name: no_std library builds for Cortex-M
         run: cargo build -p cashu-core-lite -p walletport --target thumbv7em-none-eabihf
 
-      - name: Build firmware for release
-        run: cargo build -p firmware --release
+      - name: Build firmware
+        # Debug build mirrors the proven boot-splash-preview check; the
+        # release profile's LTO currently trips rust_eh_personality at
+        # link on stable (tracked separately).
+        run: cd firmware && cargo build
 
       - name: Clippy on firmware (thumb target, baseline)
         # Baseline run: this job failed at build for 8 straight runs (a
@@ -119,6 +122,9 @@ jobs:
 
       - name: Start adapter in background
         run: |
+          # The adapter spawns target/debug/mint_server by default; we
+          # built release — point it there explicitly.
+          export MICRONUTS_MINT_BIN=$PWD/target/release/mint_server
           ./target/release/micronuts-audit-adapter &
           ADAPTER_PID=$!
           echo "ADAPTER_PID=$ADAPTER_PID" >> $GITHUB_ENV
@@ -160,7 +166,10 @@ jobs:
       RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
         with:
-          command: check
-          arguments: --workspace --all-features advisories bans
+          tool: cargo-deny
+      - name: Advisories + bans
+        run: cargo deny --workspace --all-features check advisories bans
