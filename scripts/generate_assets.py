@@ -141,7 +141,7 @@ def write_rust_source(tiles: list):
     lines.append("pub struct TileAsset {")
     lines.append("    pub width: u16,")
     lines.append("    pub height: u16,")
-    lines.append("    pub data: &'static [u16],")
+    lines.append("    pub data: &'static [u32],")
     lines.append("}")
     lines.append("")
 

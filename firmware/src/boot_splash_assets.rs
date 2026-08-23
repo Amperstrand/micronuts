@@ -11,7 +11,7 @@
 pub struct TileAsset {
     pub width: u16,
     pub height: u16,
-    pub data: &'static [u16],
+    pub data: &'static [u32],
 }
 
 /// Tile: tiny — 21x24 pixels (504 u32 ARGB values)
