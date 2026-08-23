@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use embassy_stm32f469i_disco::{FB_HEIGHT, FB_WIDTH};
@@ -240,16 +241,9 @@ fn test_heap_stress() -> TestResult {
 
     // Test each walking pattern
     for (pattern_idx, &pattern) in PATTERNS.iter().enumerate() {
-        // Step 1: Allocate 4KB
-        let mut v: Vec<u8> = Vec::with_capacity(ALLOC_SIZE);
-        unsafe {
-            v.set_len(ALLOC_SIZE);
-        }
-
-        // Step 2: Write walking pattern
-        for byte in v.iter_mut() {
-            *byte = pattern;
-        }
+        // Steps 1+2: allocate 4KB and fill with the walking pattern
+        // (alloc + initialized fill — never expose uninitialized memory)
+        let v: Vec<u8> = alloc::vec![pattern; ALLOC_SIZE];
 
         // Step 3: Verify readback
         let ok = v.iter().all(|&b| b == pattern);

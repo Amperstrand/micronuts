@@ -83,23 +83,32 @@ jobs:
 
   firmware-build:
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2025-12-08
     steps:
       - uses: actions/checkout@v4
 
+      # The repo-pinned nightly is required: the release profile (LTO +
+      # panic=abort) links the embassy tree cleanly on
+      # nightly-2025-12-08 but trips undefined rust_eh_personality on
+      # stable. Verified locally and in CI.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add thumbv7em-none-eabihf target
-        run: rustup target add thumbv7em-none-eabihf
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-12-08
+          targets: thumbv7em-none-eabihf
+          components: clippy
 
       - name: no_std library builds for Cortex-M
         run: cargo build -p cashu-core-lite -p walletport --target thumbv7em-none-eabihf
 
-      - name: Build firmware
-        # Debug build mirrors the proven boot-splash-preview check; the
-        # release profile's LTO currently trips rust_eh_personality at
-        # link on stable (tracked separately).
-        run: cd firmware && cargo build
+      - name: Build firmware (release)
+        run: cd firmware && cargo build --release
+
+      - name: Clippy on firmware (thumb target, informational)
+        # 29 pre-existing warnings — visible in logs, non-blocking until
+        # cleaned; flip to -D warnings then.
+        run: cd firmware && cargo clippy --target thumbv7em-none-eabihf
 
   adapter-test:
     runs-on: ubuntu-latest
