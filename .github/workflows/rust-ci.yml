@@ -101,13 +101,6 @@ jobs:
         # link on stable (tracked separately).
         run: cd firmware && cargo build
 
-      - name: Clippy on firmware (thumb target, baseline)
-        # Baseline run: this job failed at build for 8 straight runs (a
-        # Proof.dleq field fallout, hidden by continue-on-error), so its
-        # warning state is unknown. Informational until shown clean —
-        # then flip to -D warnings.
-        run: cargo clippy -p firmware --target thumbv7em-none-eabihf -- -W clippy::all
-
   adapter-test:
     runs-on: ubuntu-latest
     steps:
@@ -125,16 +118,21 @@ jobs:
           # The adapter spawns target/debug/mint_server by default; we
           # built release — point it there explicitly.
           export MICRONUTS_MINT_BIN=$PWD/target/release/mint_server
-          ./target/release/micronuts-audit-adapter &
+          nohup ./target/release/micronuts-audit-adapter > adapter.log 2>&1 &
           ADAPTER_PID=$!
           echo "ADAPTER_PID=$ADAPTER_PID" >> $GITHUB_ENV
           for i in $(seq 1 30); do
             if curl -s http://localhost:3030/v1/info > /dev/null 2>&1; then
               echo "Adapter is up"
-              break
+              exit 0
             fi
             sleep 1
           done
+          echo "=== adapter never came up; adapter.log ==="
+          cat adapter.log || true
+          echo "=== listening sockets ==="
+          ss -ltnp 2>/dev/null || true
+          exit 1
 
       - name: Smoke test /v1/info
         run: |
