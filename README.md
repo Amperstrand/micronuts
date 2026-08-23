@@ -4,6 +4,30 @@
 
 Micronuts is an experimental hardware wallet for [Cashu](https://github.com/cashubtc/nuts) ecash tokens running on bare metal. It scans Cashu QR codes, performs blind signature operations, and communicates with a host mint via USB CDC.
 
+## Workspace Map
+
+The repo grew beyond the firmware — the host-side stack is now the most
+tested surface:
+
+| Crate | What it is |
+|---|---|
+| `cashu-core-lite/` | no_std Cashu core (V4 CBOR, k256): NUT-00/01/02/03/04/05/07/09/12/13, spec-quote-pinned, upstream-CDK interop tests |
+| `walletport/` | Offline gate validator + WalletPort facade: decode → trust → DLEQ-verify vs pinned keysets → value check → persist-before-open spent ring. Runnable demo: `cargo run -p walletport --example gate_demo` |
+| `walletport/fuzz/` | libFuzzer harness (4 targets, committed minimized corpora incl. DLEQ-valid seeds; 60M+ execs, zero panics) |
+| `micronuts-app/` | Shared application core (UI state, commands, QR) used by firmware + simulator |
+| `micronuts-mint/` | In-memory demo mint (host dev + CI) |
+| `firmware/` | The STM32F469I board binary |
+| `host-mint-tool/` | USB-CDC mint signing tool for the hardware wallet flow |
+
+**CI (all blocking):** fmt, host tests (ccl 151 + walletport 20),
+clippy `-D warnings` (host + thumb targets), no_std thumb builds,
+firmware release build, adapter smoke, cargo-deny advisories, and
+spec-quote drift vs cashubtc/nuts HEAD. See
+[docs/GATE-FIRMWARE-BRINGUP.md](docs/GATE-FIRMWARE-BRINGUP.md) for the
+board bring-up plan and
+[docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md](docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md)
+for the gate design.
+
 ## Status: Working Prototype
 
 The firmware builds, flashes, and runs on real hardware. All core Cashu operations (blind, sign, unblind) have been verified on the STM32F469I-Discovery board. A **native SDL2 simulator** lets you develop and test the UI on your PC without flashing.
