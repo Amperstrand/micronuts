@@ -37,3 +37,17 @@ panics; artifacts, if any ever appear, land in fuzz/artifacts/
 (gitignored). The fuzz crate is excluded from the workspace and CI
 (build cost > value for now); run locally or on a beefy box before
 releases.
+
+## Real-mint end-to-end
+
+`tests/real_mint_gate_e2e.rs` (ignored by default — network + real mint):
+
+    cargo test -p walletport --features std --test real_mint_gate_e2e -- --ignored --nocapture
+
+Mints valueless tokens from the testnut dummy mint through the full
+stack with zero mocks: real `/v1/keys` pinned keyset -> NUT-04 quote
+(dummy-auto-paid ~5s) -> PersistentWallet blinding/minting over the
+mint's REST API -> proof-level NUT-12 DLEQ from the production mint ->
+`cashuB` wire -> OfflineGateValidator DLEQ verification against the
+pinned keys -> `Open`, replay rejected. Verified from two network
+positions (lab LAN + SHC VPS).
