@@ -1,4 +1,3 @@
-use alloc::vec;
 use alloc::vec::Vec;
 
 use embassy_stm32f469i_disco::{FB_HEIGHT, FB_WIDTH};
@@ -134,11 +133,7 @@ async fn test_sdram(hw: &mut FirmwareHardware) -> TestResult {
     let test_size = 4096usize;
 
     let total_pixels = (FB_WIDTH as usize) * (FB_HEIGHT as usize);
-    let test_offset = if total_pixels > test_size * 2 {
-        total_pixels - test_size * 2
-    } else {
-        0
-    };
+    let test_offset = total_pixels.saturating_sub(test_size * 2);
 
     let buf = hw.fb.as_raw();
     if buf.len() < test_offset + test_size {

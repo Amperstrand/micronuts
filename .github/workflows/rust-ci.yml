@@ -105,10 +105,8 @@ jobs:
       - name: Build firmware (release)
         run: cd firmware && cargo build --release
 
-      - name: Clippy on firmware (thumb target, informational)
-        # 29 pre-existing warnings — visible in logs, non-blocking until
-        # cleaned; flip to -D warnings then.
-        run: cd firmware && cargo clippy --target thumbv7em-none-eabihf
+      - name: Clippy on firmware (thumb target)
+        run: cd firmware && cargo clippy --target thumbv7em-none-eabihf -- -D warnings
 
   adapter-test:
     runs-on: ubuntu-latest

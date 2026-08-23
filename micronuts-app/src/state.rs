@@ -2,14 +2,16 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwapState {
+    #[default]
     Idle,
     TokenImported,
     BlindedGenerated,
     ProofsReady,
 }
 
+#[derive(Default)]
 pub struct FirmwareState {
     pub imported_token: Option<cashu_core_lite::TokenV4>,
     pub blinded_messages: Option<Vec<cashu_core_lite::BlindedMessage>>,

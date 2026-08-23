@@ -7,7 +7,7 @@ use cashu_core_lite::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256};
 
 pub fn decode_hex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut result = Vec::with_capacity(s.len() / 2);
@@ -28,6 +28,8 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     result
 }
 
+// Failure carries no diagnostic; callers treat any miss as the demo-key fallback.
+#[allow(clippy::result_unit_err)]
 pub fn derive_demo_mint_key(token: &Option<cashu_core_lite::TokenV4>) -> Result<PublicKey, ()> {
     let mint_url = token
         .as_ref()

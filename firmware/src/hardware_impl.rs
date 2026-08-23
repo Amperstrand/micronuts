@@ -211,6 +211,10 @@ pub struct FirmwareHardware {
 }
 
 impl FirmwareHardware {
+    // Hardware wiring signature: every pin/peripheral is an explicit
+    // argument by design; grouping into a config struct would obscure
+    // the board pinout this mirrors.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fb: RawFramebuffer,
         scanner: Gm65ScannerAsync<AsyncUart<'static>>,
@@ -307,7 +311,7 @@ impl MicronutsHardware for FirmwareHardware {
         while offset < dest.len() {
             let mut raw = [0u8; 32];
             self.rng.fill_bytes(&mut raw);
-            hasher.update(&raw);
+            hasher.update(raw);
             let hash = hasher.finalize_reset();
             let to_copy = core::cmp::min(32, dest.len() - offset);
             dest[offset..offset + to_copy].copy_from_slice(&hash[..to_copy]);

@@ -150,7 +150,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                             }
                             _ => {
                                 scan_ticks += 1;
-                                if scan_ticks % 200 == 0 {
+                                if scan_ticks.is_multiple_of(200) {
                                     display::draw_scanning(hw.display(), aim_on);
                                     display::draw_scanning_progress(
                                         hw.display(),

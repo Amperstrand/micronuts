@@ -15,7 +15,7 @@ pub struct TileAsset {
 }
 
 /// Tile: tiny — 21x24 pixels (504 u32 ARGB values)
-#[allow(clippy::unreadable_literal)]
+#[allow(clippy::unreadable_literal, clippy::large_const_arrays)]
 #[rustfmt::skip]
 const TILE_TINY_DATA: [u32; 504] = [
     0xFF000000, 0xFF000000, 0xFF000000, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B, 0xFFE7D7BD, 0xFFE7D7BD, 0xFFE7D7BD, 0xFFE7D7BD, 0xFFE7D7BD, 0xFFE7D7BD,
@@ -69,7 +69,7 @@ pub const TILE_TINY: TileAsset = TileAsset {
 };
 
 /// Tile: small — 35x40 pixels (1400 u32 ARGB values)
-#[allow(clippy::unreadable_literal)]
+#[allow(clippy::unreadable_literal, clippy::large_const_arrays)]
 #[rustfmt::skip]
 const TILE_SMALL_DATA: [u32; 1400] = [
     0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B, 0xFFE7D7BD, 0xFFE7D7BD,
@@ -198,7 +198,7 @@ pub const TILE_SMALL: TileAsset = TileAsset {
 };
 
 /// Tile: medium — 56x64 pixels (3584 u32 ARGB values)
-#[allow(clippy::unreadable_literal)]
+#[allow(clippy::unreadable_literal, clippy::large_const_arrays)]
 #[rustfmt::skip]
 const TILE_MEDIUM_DATA: [u32; 3584] = [
     0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B, 0xFFB5966B,
@@ -509,7 +509,7 @@ pub const TILE_MEDIUM: TileAsset = TileAsset {
 };
 
 /// Tile: large — 84x96 pixels (8064 u32 ARGB values)
-#[allow(clippy::unreadable_literal)]
+#[allow(clippy::unreadable_literal, clippy::large_const_arrays)]
 #[rustfmt::skip]
 const TILE_LARGE_DATA: [u32; 8064] = [
     0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000,

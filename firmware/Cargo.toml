@@ -47,7 +47,7 @@ embassy-stm32f469i-disco = { workspace = true, features = ["display", "touch"] }
 
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rust_analyzer)", 'cfg(feature, values("uart-log"))'] }
 
 [features]
 default = ["defmt-log"]

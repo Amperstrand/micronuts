@@ -196,7 +196,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
         None => return Response::new(Status::Error),
     };
 
-    if payload.len() % 33 != 0 {
+    if !payload.len().is_multiple_of(33) {
         return Response::new(Status::InvalidPayload);
     }
 

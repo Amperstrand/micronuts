@@ -56,7 +56,7 @@ const TILE_GAP: u16 = 2;
 // ---------------------------------------------------------------------------
 
 /// Parameters that define one visual variant.
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 struct VariantConfig {
     /// Index into TILE_CATALOG for the tile to use.
     tile_index: usize,
@@ -112,6 +112,7 @@ const VARIANTS: [VariantConfig; NUM_VARIANTS] = [
 // ---------------------------------------------------------------------------
 
 /// Mutable state for the running splash animation.
+#[derive(Default)]
 pub struct SplashState {
     /// Current variant index (0..NUM_VARIANTS).
     variant: usize,
@@ -176,7 +177,7 @@ pub fn render_frame(fb: &mut [u32], width: u32, height: u32, state: &mut SplashS
         return false;
     }
 
-    let num_rows = ((height + row_pitch - 1) / row_pitch) as usize;
+    let num_rows = height.div_ceil(row_pitch) as usize;
 
     // --- Update row offsets ---
     for row in 0..num_rows.min(state.row_offsets.len()) {

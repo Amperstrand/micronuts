@@ -79,7 +79,7 @@ pub fn back_button() -> Button {
 
 pub fn aim_button() -> Button {
     Button {
-        x: WIDTH as u32 - 170,
+        x: WIDTH - 170,
         y: 8,
         w: 160,
         h: 36,
@@ -486,7 +486,7 @@ pub fn render_decoded_scan<D: DrawTarget<Color = Rgb888>>(fb: &mut D, payload: &
             match cashu_core_lite::decode_token(encoded) {
                 Ok(token) => {
                     render_token_fields_pretty(fb, &token, y);
-                    y = y + 120;
+                    y += 120;
                 }
                 Err(_) => {
                     Text::new("Token: decode error", Point::new(20, y as i32), dim_style)
