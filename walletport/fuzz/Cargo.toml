@@ -1,0 +1,49 @@
+[package]
+name = "walletport-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.walletport]
+path = ".."
+features = ["std"]
+
+[dependencies.cashu-core-lite]
+path = "../../cashu-core-lite"
+features = ["std"]
+
+[[bin]]
+name = "decode_token"
+path = "fuzz_targets/decode_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gate_verify"
+path = "fuzz_targets/gate_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cbor_token"
+path = "fuzz_targets/cbor_token.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

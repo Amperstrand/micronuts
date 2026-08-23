@@ -18,3 +18,22 @@ rejected by both verifiers on identical artifacts.
 Try it: `cargo run -p walletport --example gate_demo`
 
 Design: [`docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md`](../docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md)
+
+## Fuzzing
+
+Four libFuzzer targets cover every parser surface and the full gate
+decision path:
+
+    cargo install cargo-fuzz   # once
+    cd walletport
+    cargo fuzz run decode_token   # cashuB wire -> CBOR -> roundtrip property
+    cargo fuzz run gate_verify    # full offline-gate decision path
+    cargo fuzz run envelope       # persistence envelope (corrupt-blob tolerance)
+    cargo fuzz run cbor_token     # raw CBOR token decode
+
+Committed minimized corpora live in fuzz/corpus/<target>/ - runs start
+deep. Two 150s-per-target campaigns (35M+ execs total) found zero
+panics; artifacts, if any ever appear, land in fuzz/artifacts/
+(gitignored). The fuzz crate is excluded from the workspace and CI
+(build cost > value for now); run locally or on a beefy box before
+releases.
