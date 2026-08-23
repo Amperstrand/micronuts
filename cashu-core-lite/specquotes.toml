@@ -1,0 +1,20 @@
+# greatspectations spec-quote drift config for cashu-core-lite
+#
+# Tool: https://github.com/rustyrussell/greatspectations
+# Spec: https://github.com/cashubtc/nuts
+#
+# Comment marker syntax in Rust source:
+#   // NUT #00: <verbatim spec quote>
+#
+# Setup (one-time, local):
+#   git clone --depth=1 https://github.com/cashubtc/nuts.git nuts
+#   pip install git+https://github.com/rustyrussell/greatspectations.git
+#
+# Run (from cashu-core-lite/):
+#   spectate check --config specquotes.toml --comment-start "//" --comment-continue "//" "src/**/*.rs"
+#   spectate coverage --config specquotes.toml
+
+[sources.NUT]
+format = "markdown"
+dir = "nuts"
+pattern = "{id:02d}.md"

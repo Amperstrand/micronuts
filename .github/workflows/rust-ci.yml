@@ -167,6 +167,26 @@ jobs:
           # Also kill any mint_server subprocess
           pkill -f mint_server 2>/dev/null || true
 
+  speccheck:
+    # Spec-quote drift: verbatim NUT quotes in cashu-core-lite source
+    # verified against cashubtc/nuts HEAD. Drift fails the build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install greatspectations
+        run: pip install git+https://github.com/rustyrussell/greatspectations.git
+      - name: Clone NUT specs
+        run: git clone --depth=1 https://github.com/cashubtc/nuts.git cashu-core-lite/nuts
+      - name: Spec-quote drift check
+        run: >
+          cd cashu-core-lite &&
+          FILES=$(find src -name "*.rs" -not -name "*_test.rs") &&
+          greatspectate check --config specquotes.toml
+          --comment-start "// " --comment-continue "//" $FILES
+
   deny:
     runs-on: ubuntu-latest
     env:

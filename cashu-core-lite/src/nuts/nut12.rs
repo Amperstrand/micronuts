@@ -123,6 +123,7 @@ impl ProofDleq {
 /// concatenated; SHA-256 is then taken over the UTF-8 bytes of that
 /// concatenation. This matches CDK's `dhke::hash_e` and the reference
 /// Python implementation in the spec.
+// NUT #12: The uncompressed (32+32+1)-byte hexadecimal representations (130 characters) of each `PublicKey` is concatenated before taking the SHA256 hash.
 pub fn hash_e(r1: &PublicKey, r2: &PublicKey, a: &PublicKey, c_prime: &PublicKey) -> [u8; 32] {
     // 4 points * 65 bytes * 2 hex chars = 520 ASCII chars.
     let mut e_string = String::with_capacity(4 * 130);

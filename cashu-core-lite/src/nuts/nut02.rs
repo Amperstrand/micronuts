@@ -128,6 +128,9 @@ pub fn derive_keyset_id_v1(keys: &[AmountKey<'_>]) -> String {
 /// `|final_expiry:{n}` (only when Some and > 0).
 ///
 /// Matches CDK `Id::v2_from_data` byte-for-byte (verified by test).
+// NUT #02: 2 - concatenate each amount and its corresponding lowercase public key hex string (as "amount:publickey_hex") to a single byte array, separating each pair with a comma (",")
+// NUT #02: 3 - add the lowercase UTF8-encoded unit string prefixed with "|unit:" to the byte array (e.g. "|unit:sat")
+// NUT #02: 4 - If input_fee_ppk is specified and non-zero, add the UTF8-encoded string prefixed with "|input_fee_ppk:" (e.g. "|input_fee_ppk:100"). If input_fee_ppk is omitted, null, or 0, it MUST be omitted from the preimage.
 pub fn derive_keyset_id_v2(
     keys: &[AmountKey<'_>],
     unit: &str,

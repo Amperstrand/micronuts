@@ -26,6 +26,7 @@ pub mod state {
 
 /// Request body for `POST /v1/checkstate` (NUT-07).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #07: Where the elements of the array in `Ys` are the hexadecimal representation of the compressed point `Y = hash_to_curve(secret)` of the `Proof` to check (see [NUT-00][00]).
 pub struct CheckStateRequest {
     /// `Y` values: `hash_to_curve(secret)` for each proof to check.
     #[n(0)]

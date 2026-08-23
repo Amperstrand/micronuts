@@ -96,6 +96,13 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 /// let seed = [0u8; 32];
 /// let secret = derive_secret(&seed, "009adf1c47ca01", 0)?;
 /// ```
+// NUT #13: 1. `message = b"Cashu_KDF_HMAC_SHA256" || keyset_id_bytes || counter_k_bytes || derivation_type_byte`, where:
+// NUT #13: - `"Cashu_KDF_HMAC_SHA256"` is the domain separation or purpose string, encoded to bytes as UTF-8.
+// NUT #13: - `keyset_id_bytes` are the raw bytes of `keyset_id` (hex decoded).
+// NUT #13: - `counter_k_bytes` is the counter encoded as an unsigned 64-bit integer in big-endian format.
+// NUT #13: - `derivation_type_byte` is exactly 1 byte specifying the type of derivation required:
+// NUT #13:     - `0x00` for secrets
+// NUT #13:     - `0x01` for blinded messages
 pub fn derive_secret(seed: &[u8], keyset_id: &str, counter: u32) -> Result<[u8; 32], CashuError> {
     let keyset_id_bytes = hex_decode_keyset_id(keyset_id)?;
 

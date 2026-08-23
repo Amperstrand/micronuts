@@ -293,7 +293,7 @@ where
         // Select now; persist the removal only after `paid`.
         let selected = self.select_covering(total_needed)?;
 
-        // NUT-08 blanks: power-of-two outputs covering the fee reserve —
+        // Blanks per NUT 08: power-of-two outputs covering the fee reserve.—
         // the only part of the inputs the mint can hand back.
         let blank_amounts = nut00::decompose_amount(fee_reserve);
         let (blanks, pending_blanks) = self.deterministic_outputs(&blank_amounts, keyset_id)?;

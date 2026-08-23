@@ -30,6 +30,7 @@ impl std::error::Error for HashToCurveError {}
 /// counter is a 4-byte little-endian `u32` in the range `0..2^16`
 /// (i.e. `0..=u16::MAX`, 65536 values), matching the upstream Cashu/CDK
 /// reference implementation.
+// NUT #00: `Y = PublicKey('02' || SHA256(msg_hash || counter))` where `msg_hash` is `SHA256(DOMAIN_SEPARATOR || x)`
 pub fn hash_to_curve(message: &[u8]) -> Result<PublicKey, HashToCurveError> {
     let msg_hash = Sha256::new()
         .chain_update(DOMAIN_SEPARATOR)
