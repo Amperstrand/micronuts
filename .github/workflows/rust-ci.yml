@@ -111,7 +111,7 @@ jobs:
 
       - name: Build audit adapter + mint_server (release)
         # The adapter spawns ./target/release/mint_server as a subprocess.
-        run: cargo build -p micronuts-audit-adapter --release -p micronuts-mint --bin mint_server
+        run: cargo build --release -p micronuts-audit-adapter -p micronuts-mint --bin micronuts-audit-adapter --bin mint_server
 
       - name: Start adapter in background
         run: |
