@@ -50,7 +50,7 @@ embassy-usb-synopsys-otg = { version = "0.3.3" }
 embassy-sync = { version = "0.8.0" }
 embassy-futures = { version = "0.1.2" }
 
-embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "365bdff" }
+embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", rev = "1c0dd34" }
 
 linked_list_allocator = "0.10.6"
 static_cell = "2.1.1"
@@ -65,6 +65,4 @@ strip = "none"
 split-debuginfo = "off"
 panic = "abort"
 
-[patch.crates-io]
-embassy-executor = { git = "https://github.com/Amperstrand/embassy-executor-linux-fix", branch = "main" }
 
