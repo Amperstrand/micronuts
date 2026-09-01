@@ -135,7 +135,7 @@ def build_firmware(extra_env=None, extra_features=None, example=None, no_defmt=F
 
     target = "thumbv7em-none-eabihf"
     if no_defmt:
-        pkg = "--bin usb-test-no-defmt"
+        pkg = "-p usb-test-no-defmt --bin usb-test-no-defmt"
     elif example:
         pkg = f"--bin {example}"
     else:

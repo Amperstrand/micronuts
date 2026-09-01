@@ -7,6 +7,17 @@ members = [
     "micronuts-app",
     "usb-test-no-defmt",
 ]
+# usb-test-no-defmt is excluded from default selection on purpose: it links
+# without defmt-rtt, so any build that also selects `firmware` unifies the
+# defmt feature into embassy deps and LTO pulls defmt calls into this bin,
+# leaving `_defmt_*` sink symbols undefined. Build it explicitly via
+# `--bin usb-test-no-defmt` (as tests/defmt_usb_experiment.py does).
+default-members = [
+    "firmware",
+    "cashu-core-lite",
+    "host-mint-tool",
+    "micronuts-app",
+]
 
 [workspace.package]
 version = "0.1.0"
