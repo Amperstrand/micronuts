@@ -12,10 +12,6 @@ env:
 jobs:
   fmt:
     runs-on: ubuntu-latest
-    env:
-      # The repo's rust-toolchain.toml pins a nightly without rustfmt
-      # installed; this job always runs stable rustfmt.
-      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -64,15 +60,12 @@ jobs:
     # BSP whose executor needs an explicit platform feature on host —
     # their lint coverage is the firmware job's thumb-target clippy.
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: nightly-2025-12-08
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly-2025-12-08
           components: clippy
 
       - name: Install USB system deps (host-mint-tool -> rusb -> libudev)
@@ -89,19 +82,15 @@ jobs:
 
   firmware-build:
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: nightly-2025-12-08
     steps:
       - uses: actions/checkout@v4
 
-      # The repo-pinned nightly is required: the release profile (LTO +
-      # panic=abort) links the embassy tree cleanly on
-      # nightly-2025-12-08 but trips undefined rust_eh_personality on
-      # stable. Verified locally and in CI.
+      # Stable since 2026-09-02 (#48): the old "stable trips
+      # rust_eh_personality with LTO + panic=abort" failure no longer
+      # reproduces — release, debug, and thumb clippy all link cleanly.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly-2025-12-08
           targets: thumbv7em-none-eabihf
           components: clippy
 

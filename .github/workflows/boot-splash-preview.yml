@@ -51,17 +51,14 @@ jobs:
   build-firmware:
     name: Check firmware builds
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: nightly-2025-12-08
     steps:
       - uses: actions/checkout@v4
 
-      # Repo-pinned nightly (stable trips the release profile's LTO; keep
-      # every firmware build on the toolchain the project targets).
+      # Stable since 2026-09-02 (#48) — the LTO-on-stable failure the
+      # nightly pin worked around no longer reproduces.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly-2025-12-08
           targets: thumbv7em-none-eabihf
 
       - name: Build firmware
