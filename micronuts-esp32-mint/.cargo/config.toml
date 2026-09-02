@@ -1,7 +1,11 @@
 # House configuration (bolty-rs apps/bolty-esp32/.cargo/config.toml).
-# Build from THIS directory (`cargo +esp build`): a workspace-root build
-# resolves the wrong target and silently produces a host binary —
-# verify artifacts with `file target/xtensa-esp32-espidf/*/micronuts-esp32-mint`.
+# [build] target is REQUIRED: without it cargo targets the host and
+# esp-idf-sys aborts with "Unsupported target" (first CI run, 2026-09-02).
+# Build from THIS directory — a workspace-root invocation never reads
+# this file.
+[build]
+target = "xtensa-esp32-espidf"
+
 [target.xtensa-esp32-espidf]
 linker = "ldproxy"
 runner = "espflash flash --monitor"
