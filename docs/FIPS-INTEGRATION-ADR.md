@@ -50,13 +50,23 @@ goes away.
    (0.4.0-dev) breaks the wire (Noise XX, FMP v1). Land #179 — FMP v1
    negotiation and `noise-xx` forwarded to the firmware crates — before
    micronuts consumes the stack, or the migration cost lands twice.
-2. **Security review of micronuts + the new path.** A wallet gains a network
-   adjacency. The `walletport` offline gate validator (trust model, pinned
-   keysets, refuse-by-default, persist-before-open) is the evaluation
-   framework. New trust boundaries to review explicitly: the plaintext UART
-   hop (physical link — same class as today's USB), and the FIPS responder
-   that terminates the envelope and proxies to the mint (it sees mint RPC in
-   the clear — mint-facing proxy trust level).
+2. **Security review of micronuts + the new path.** ✅ **done 2026-09-02 —
+   PASS WITH FINDINGS** (structured review: 3 hunters + 2 PoC engineers;
+   report on #46, findings #54–#58). Wiring precondition: #57 — the
+   responder's peer-authorization contract (daemon-side allowlist mandate or
+   peer-context API change) must be decided here before any wiring lands.
+   Real-money graduation blockers: #54 (wallet swap flow performs no
+   signature verification — needs NUT-12 DLEQ + pinned keysets) and #56
+   (demo-mint keys publicly derivable, PoC'd; this mint never custodies real
+   value). The walletport offline gate validator (trust model, pinned
+   keysets, refuse-by-default, persist-before-open) was the evaluation
+   framework — note its pinning discipline is exactly the fix direction for
+   #54. New trust boundaries reviewed: the plaintext UART hop (physical link
+   — same class as today's USB; the sidecar additionally becomes a
+   persistent cleartext transit holder, and must never log payload bytes),
+   and the FIPS responder that terminates the envelope and proxies to the
+   mint (sees mint RPC in the clear — mint-facing proxy trust level).
+
 3. **Interface spike — ✅ verified 2026-09-02, no wire dependency on gate 1.**
    See `docs/FIPS-SERVICE-INTERFACE-SPIKE.md`: the envelopes are structurally
    identical (same `ServiceHandler` signature, same request/reply fields,
