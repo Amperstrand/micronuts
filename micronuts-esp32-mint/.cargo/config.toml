@@ -17,3 +17,11 @@ build-std = ["std", "panic_abort"]
 [env]
 ESP_IDF_VERSION = { value = "v5.2.4" } # ccid-firmware-rs pin
 MCU = "esp32"
+# cc-rs doesn't know the xtensa-esp32-espidf triple; without an explicit
+# cross prefix it picks a compiler that emits wrong-ELF-flag objects
+# ("compiled for a big endian system and target is little endian" from ld —
+# the classic secp256k1-sys/zstd-sys/lvgl failure on this target).
+CROSS_COMPILE = "xtensa-esp32-elf"
+# IDF compiler default; without it C calls overflow the call8 range
+# ("dangerous relocation: call8: call target out of range").
+CFLAGS_xtensa_esp32_espidf = "-mlongcalls"
