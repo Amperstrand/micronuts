@@ -202,8 +202,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install espup + espflash
-        run: cargo install --locked espup espflash
+      - name: Install espup + espflash + ldproxy
+        # ldproxy is NOT installed by espup — it's the linker our
+        # .cargo/config.toml selects for xtensa-esp32-espidf.
+        run: cargo install --locked espup espflash ldproxy
 
       - name: Install Xtensa ESP toolchain
         # espup queries the GitHub API for the latest Xtensa Rust version;

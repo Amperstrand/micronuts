@@ -12,8 +12,6 @@
 use anyhow::Result;
 
 #[cfg(target_os = "espidf")]
-use esp_idf_hal::modem;
-#[cfg(target_os = "espidf")]
 use esp_idf_svc::http::server::{
     Configuration as HttpConfig, EspHttpConnection, EspHttpServer, Request,
 };
