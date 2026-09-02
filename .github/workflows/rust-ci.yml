@@ -198,3 +198,41 @@ jobs:
           tool: cargo-deny
       - name: Advisories + bans
         run: cargo deny --workspace --all-features check advisories bans
+
+  esp32-build:
+    # Cross-build the ESP32 (esp-idf std) mint front-end. ccid-firmware-rs
+    # pattern: espup + cached Espressif tools + cargo +esp, built from the
+    # crate directory (NOT the workspace root — wrong target resolution).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install espup + espflash
+        run: cargo install --locked espup espflash
+
+      - name: Install Xtensa ESP toolchain
+        run: espup install
+
+      - name: Cache Espressif tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.espressif
+          key: espressif-${{ runner.os }}-v1
+
+      - name: Build micronuts-esp32-mint (Xtensa)
+        shell: bash
+        working-directory: micronuts-esp32-mint
+        run: |
+          . $HOME/.espressif/esp-idf-v5.2.4/export-esp.sh 2>/dev/null || . $HOME/export-esp.sh
+          cargo +esp build
+          file target/xtensa-esp32-espidf/debug/micronuts-esp32-mint | tee /dev/stderr | grep -q Xtensa
+
+      - name: Verify artifact architecture (anti-host-binary guard)
+        shell: bash
+        working-directory: micronuts-esp32-mint
+        run: |
+          ARCH=$(file target/xtensa-esp32-espidf/debug/micronuts-esp32-mint)
+          case "$ARCH" in
+            *Xtensa*) echo "OK: $ARCH" ;;
+            *) echo "FAIL: artifact is not Xtensa: $ARCH"; exit 1 ;;
+          esac

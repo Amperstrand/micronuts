@@ -1,0 +1,43 @@
+[package]
+name = "micronuts-esp32-mint"
+version = "0.1.0"
+edition = "2021"
+license = "0BSD"
+description = "ESP32 (esp-idf, std Rust) WiFi front-end for the micronuts Cashu mint"
+publish = false
+
+# ccid-firmware-rs lib/bin split: library holds the glue so a future
+# host-test tier can exercise it without ESP-IDF; the binary only assembles
+# hardware services.
+[lib]
+name = "micronuts_esp32_mint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "micronuts-esp32-mint"
+path = "src/main.rs"
+
+[dependencies]
+# House pins (bolty-rs apps/bolty-esp32, tollgate-s3-rs apps/bolty-esp32).
+esp-idf-sys = { version = "=0.37.2", features = ["binstart"] }
+esp-idf-hal = "=0.46.2"
+esp-idf-svc = "=0.52.1"
+log = "=0.4.29"
+anyhow = "1"
+
+# The mint itself. Upstream `cashu` (=0.17.3) inside micronuts-mint builds for
+# Xtensa ESP-IDF targets — proven by tollgate-s3-rs — so no de-std layer is
+# needed on the std (esp-idf) path.
+micronuts-mint = { path = "../micronuts-mint" }
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+hex = "0.4"
+
+[build-dependencies]
+embuild = "=0.32.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

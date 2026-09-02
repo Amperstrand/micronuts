@@ -15,7 +15,8 @@ tested surface:
 | `walletport/` | Offline gate validator + WalletPort facade: decode → trust → DLEQ-verify vs pinned keysets → value check → persist-before-open spent ring. Runnable demo: `cargo run -p walletport --example gate_demo` |
 | `walletport/fuzz/` | libFuzzer harness (4 targets, committed minimized corpora incl. DLEQ-valid seeds; 60M+ execs, zero panics) |
 | `micronuts-app/` | Shared application core (UI state, commands, QR) used by firmware + simulator |
-| `micronuts-mint/` | In-memory demo mint (host dev + CI) |
+| `micronuts-mint/` | Backend-driven prototype mint (LightningBackend seam, quote state machines, NUT-08 fees, NUT-09 restore) — e2e-verified with cashu-ts v4 |
+| `micronuts-esp32-mint/` | ESP32 esp-idf (std Rust) WiFi front-end for the mint — house-style scaffold (build from that dir with the `esp` toolchain) |
 | `firmware/` | The STM32F469I board binary |
 | `host-mint-tool/` | USB-CDC mint signing tool for the hardware wallet flow |
 

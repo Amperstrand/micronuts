@@ -1,0 +1,10 @@
+# 32 KiB main-task stack: HTTP handlers parse Cashu token bodies and run
+# secp256k1 (k256) — the 12 KiB default overflows with stack-canary corruption
+# (tollgate-s3-rs evidence for the same workload class).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# httpd: enough URI handlers for the NUT route table, generous per-handler
+# stack (32 KiB — token parse + crypto), longish keep-alive for wallet polls.
+CONFIG_HTTPD_MAX_URI_HANDLERS=16
+CONFIG_HTTPD_STACK_SIZE=32768
+# NVS: mint state (spent set, quotes) lands here in the persistence milestone.
+CONFIG_NVS_COMPACT_NAMES_THRESHOLD=0

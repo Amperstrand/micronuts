@@ -317,17 +317,22 @@ boundary is still the underlying CBOR RPC payload carried by `RpcByteTransport`.
 
 ## What Remains for Real Embedded Minting
 
-| Area | Current Demo | Production Target |
+| Area | Current (2026-09-02 rework) | Production Target |
 |------|-------------|-------------------|
 | Key derivation | SHA-256 from fixed seed | BIP-32 from mnemonic (NUT-13) |
-| Lightning | Dummy strings | Real LNbits/LND/CLN backend |
-| Persistence | None (RAM only) | Flash storage for quotes, spent proofs |
-| Double-spend prevention | In-memory set (session-only) | Durable spent-proof database |
-| Fees | Hardcoded 0 | Configurable per-keyset fees |
+| Lightning | `LightningBackend` trait; FakeWallet auto-settles on poll | Real upstream-mint / node adapter (see docs/UPSTREAM-BACKEND-DESIGN.md) |
+| Persistence | None (RAM only) | Flash storage for quotes, spent proofs (NVS/LittleFS on device) |
+| Double-spend prevention | Atomic in-session rejection (claim-then-sign) | Durable spent-proof database |
+| Fees | NUT-08 input fees live (`(sum_ppk+999)/1000`); fee_reserve=0 | Configurable per-keyset fees + backend fee_reserve |
 | Multiple keysets | Single hardcoded | Multiple keysets with rotation |
-| DLEQ proofs | Not implemented | NUT-12 for public-key verification |
-| Restore | Not implemented | NUT-09 for wallet recovery |
-| Transport | RPC loopback bytes | serial framing, USB CDC, microfips |
+| DLEQ proofs | Issued on every signature (upstream `cashu` path) | ✅ done |
+| Restore | Session-scoped B_→signature index | Durable across restarts |
+| Quote lifecycle | UNPAID→PAID→ISSUED (mint, partial-mint + accounting fields), UNPAID→PENDING→PAID/FAILED (melt, rollback on failure) | Async melt polling for slow backends |
+| Transport | RPC loopback bytes | serial framing, USB CDC, microfips, esp-idf httpd |
+
+Verified end-to-end with a real cashu-ts **v4.10.0** wallet against the HTTP
+adapter (mint → swap → melt with NUT-08 blank change → double-spend
+rejection): `node scripts/e2e_wallet.mjs` (E2E-WALLET PASS, 13 assertions).
 
 ## Next Steps
 
