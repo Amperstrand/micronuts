@@ -15,6 +15,9 @@ sha2 = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 rand = "0.8"
 hex = "0.4"
+# Quote ids are UUIDv7 (NUT-04/05 ecosystem convention; already in the
+# lockfile via the upstream oracle's tree).
+uuid = { version = "1", features = ["v7"] }
 # Host-only upstream-mint settlement backend (same pins walletport already
 # uses; serde_json arrives with ureq's `json` feature anyway).
 ureq = { version = "2", default-features = false, features = ["tls", "json"], optional = true }

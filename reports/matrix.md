@@ -1,6 +1,6 @@
-# Cashu Conformance Matrix — 2026-09-02 14:19 UTC
+# Cashu Conformance Matrix — 2026-09-02 18:05 UTC
 
-**Summary**: 68 passed, 38 failed, 3 skipped (109 total)
+**Summary**: 69 passed, 37 failed, 3 skipped (109 total)
 
 ## Invoice Description
 
@@ -24,12 +24,10 @@
 | Scenario | `http://localhost:3030` |
 |---|---|
 | `mint_quote_has_accounting_fields` | ✅ |
-| `mint_quote_uuid_v7` | ❌ |
+| `mint_quote_uuid_v7` | ✅ |
 | `mint_quote_accounting_after_payment` | ✅ |
 | `mint_quote_accounting_after_mint` | ✅ |
 | `mint_quote_updated_at_monotonic` | ✅ |
-
-> ❌ `mint_quote_uuid_v7` @ `http://localhost:3030`: quote='0000000000000003' does not match UUID v7 pattern
 
 ## NUT-08 Fees
 
@@ -210,11 +208,11 @@
 | `nut20_locked_quote_wrong_signature_fails` | ❌ |
 | `nut20_quote_echoes_pubkey` | ❌ |
 
-> ❌ `nut20_locked_quote_requires_signature` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '021ec45bcdd99ee388c7e9fb2ded4dab3e240865cb90eae304a77f56c7d3c64e96', 'amount': 8, 'dleq': {'e': '0ff3ec70303a4398eca0cc5536476ef916313be97664149298903f4ba023cf66', 's': 'b0e2b3
+> ❌ `nut20_locked_quote_requires_signature` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '033d34c8ab1d3ddfe2b9ad5c232826a925b9399e27b5b5c00feddfdefd3b2127ce', 'amount': 8, 'dleq': {'e': 'd9ea9a82629f378a9d91156013501babe7829f91ce1d44d74e6606f511c9d67c', 's': '0477c7
 
-> ❌ `nut20_locked_quote_wrong_signature_fails` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '039a50afcc3e32bc719410ab9b32993530c690cd5251b50c92546af056864f0fc9', 'amount': 8, 'dleq': {'e': 'a74de9ea798691329d16820733a59692ab4c6583fb246166af438996868c1000', 's': 'cb8cf8
+> ❌ `nut20_locked_quote_wrong_signature_fails` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '021f9b6f1b441aee9c93b0af4ad13cc741ced23068f7cad91f2368ce547f0d8b21', 'amount': 8, 'dleq': {'e': 'e0f0a4a0f869410d6966b2069f3f807422a1498a811cbca18d1c737fb061fd4b', 's': 'e8fa4c
 
-> ❌ `nut20_quote_echoes_pubkey` @ `http://localhost:3030`: expected pubkey=02e409156d4a79489672..., got ''
+> ❌ `nut20_quote_echoes_pubkey` @ `http://localhost:3030`: expected pubkey=030e32a60de91669b413..., got ''
 
 ## NUT-26 Bech32m
 

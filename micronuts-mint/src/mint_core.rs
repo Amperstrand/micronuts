@@ -82,8 +82,6 @@ pub struct DemoMint {
     /// NUT-09: B_ hex → blind signature for every output this mint signed
     /// (session-scoped restore index).
     issued_outputs: HashMap<String, nut00::BlindSignature>,
-    /// Monotonic counter for generating quote IDs.
-    quote_counter: u64,
     /// Lightning seam for invoices, settlement, and payments.
     backend: Box<dyn LightningBackend + Send>,
     /// Time source for quote expiry.
@@ -112,7 +110,6 @@ impl DemoMint {
             melt_quotes: HashMap::new(),
             spent_ys: HashSet::new(),
             issued_outputs: HashMap::new(),
-            quote_counter: 0,
             backend,
             clock,
         }
@@ -128,9 +125,11 @@ impl DemoMint {
         self.keyset.to_public_keyset()
     }
 
+    /// NUT-04/05 quote ids are UUIDv7 (48-bit unix ms + random), the
+    /// ecosystem convention (cashu-cf ISSUE-034) — time-ordered and
+    /// collision-free without shared state.
     fn next_quote_id(&mut self) -> String {
-        self.quote_counter += 1;
-        format!("{:016x}", self.quote_counter)
+        uuid::Uuid::now_v7().to_string()
     }
 
     fn quote_expiry(&self) -> Result<u64, CashuError> {
@@ -928,6 +927,15 @@ mod tests {
         assert_eq!(keysets.keysets.len(), 1);
         assert!(keysets.keysets[0].active);
         assert_eq!(keysets.keysets[0].input_fee_ppk, 0);
+    }
+
+    #[test]
+    fn test_quote_ids_are_uuid_v7() {
+        let mut mint = DemoMint::new();
+        let id = mint.next_quote_id();
+        let parsed = uuid::Uuid::parse_str(&id).expect("canonical hyphenated UUID");
+        assert_eq!(parsed.get_version_num(), 7);
+        assert_ne!(mint.next_quote_id(), id, "unique across calls");
     }
 
     #[test]
