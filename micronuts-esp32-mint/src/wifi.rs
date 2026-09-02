@@ -40,6 +40,8 @@ impl From<EspError> for WifiError {
     }
 }
 
+impl std::error::Error for WifiError {}
+
 pub struct WifiManager {
     wifi: BlockingWifi<EspWifi<'static>>,
 }

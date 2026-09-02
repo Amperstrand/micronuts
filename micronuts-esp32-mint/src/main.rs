@@ -14,7 +14,9 @@ use anyhow::Result;
 #[cfg(target_os = "espidf")]
 use esp_idf_hal::modem;
 #[cfg(target_os = "espidf")]
-use esp_idf_svc::http::server::{Configuration as HttpConfig, EspHttpServer};
+use esp_idf_svc::http::server::{
+    Configuration as HttpConfig, EspHttpConnection, EspHttpServer, Request,
+};
 #[cfg(target_os = "espidf")]
 use esp_idf_svc::http::Method;
 #[cfg(target_os = "espidf")]
@@ -26,7 +28,7 @@ use log::{error, info};
 use micronuts_mint::DemoMint;
 
 #[cfg(target_os = "espidf")]
-use crate::json;
+use micronuts_esp32_mint::json;
 
 // WiFi credentials: build-time env with fallback (NVS-stored provisioning is
 // the follow-up; hardcoding in source is accepted for the scaffold only).
@@ -97,8 +99,8 @@ fn main() -> Result<()> {
     ] {
         server.fn_handler(route, Method::Post, |mut request| {
             drain_body(&mut request);
-            let mut resp = request.into_response(501, "Not Implemented", &[])?;
-            resp.write(json::error_body(501, "route not yet wired on device").as_bytes())?;
+            let mut resp = request.into_response(501, Some("Not Implemented"), &[])?;
+            resp.write_all(json::error_body(501, "route not yet wired on device").as_bytes())?;
             Ok::<(), EspIOError>(())
         })?;
     }
@@ -131,14 +133,14 @@ where
             Err(_) => json::error_body(503, "mint lock poisoned"),
         };
         let mut resp = request.into_ok_response()?;
-        resp.write(body.as_bytes())?;
+        resp.write_all(body.as_bytes())?;
         Ok::<(), EspIOError>(())
     })?;
     Ok(())
 }
 
 #[cfg(target_os = "espidf")]
-fn drain_body(request: &mut esp_idf_svc::http::Request<&mut [u8]>) {
+fn drain_body(request: &mut Request<&mut EspHttpConnection<'_>>) {
     let mut chunk = [0u8; 512];
     let mut seen = 0usize;
     loop {
