@@ -33,7 +33,7 @@ cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
 hex = "0.4"
 
 [build-dependencies]
-embuild = "=0.32.0"
+embuild = { version = "=0.32.0", features = ["espidf"] }
 
 [profile.release]
 opt-level = "s"
