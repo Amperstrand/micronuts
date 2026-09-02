@@ -200,6 +200,12 @@ impl MintClient for CdkMint {
                 state: String::from("PENDING"),
                 payment_preimage: None,
                 change: None,
+                quote: request.quote.clone(),
+                amount: 0,
+                fee_reserve: 0,
+                unit: "sat".to_string(),
+                expiry: 0,
+                request: "lnbcdemo10sat1micronuts".to_string(),
             });
         }
         for proof in &request.inputs {
@@ -237,6 +243,12 @@ impl MintClient for CdkMint {
             state: String::from("PAID"),
             payment_preimage: Some(String::from("e2epreimage0001")),
             change,
+            quote: request.quote.clone(),
+            amount: 0,
+            fee_reserve: 0,
+            unit: "sat".to_string(),
+            expiry: 0,
+            request: "lnbcdemo10sat1micronuts".to_string(),
         })
     }
 

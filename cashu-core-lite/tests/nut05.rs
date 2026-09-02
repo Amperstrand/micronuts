@@ -41,6 +41,8 @@ fn test_melt_quote_response_cbor_roundtrip() {
         paid: false,
         state: "UNPAID".to_string(),
         expiry: 1893456000,
+        request: "lnbcdemo10sat1micronuts".to_string(),
+        unit: "sat".to_string(),
     };
 
     let mut buf = vec![];
@@ -83,6 +85,12 @@ fn test_melt_response_cbor_roundtrip() {
         state: "PAID".to_string(),
         payment_preimage: Some("preimage_hex".to_string()),
         change: None,
+        quote: "q1".to_string(),
+        amount: 100,
+        fee_reserve: 0,
+        unit: "sat".to_string(),
+        expiry: 0,
+        request: "lnbcdemo100sat1micronuts".to_string(),
     };
 
     let mut buf = vec![];
@@ -135,6 +143,12 @@ fn test_melt_response_with_change() {
         paid: true,
         state: "PAID".to_string(),
         payment_preimage: Some("preimage".to_string()),
+        quote: "q2".to_string(),
+        amount: 100,
+        fee_reserve: 1,
+        unit: "sat".to_string(),
+        expiry: 0,
+        request: "lnbcdemo100sat1micronuts".to_string(),
         change: Some(vec![BlindSignature {
             amount: 10,
             id: "00".to_string(),
@@ -195,6 +209,8 @@ fn test_melt_state_transitions() {
         paid: false,
         state: "UNPAID".to_string(),
         expiry: 0,
+        request: "lnbcdemo10sat1micronuts".to_string(),
+        unit: "sat".to_string(),
     };
 
     let pending = MeltQuoteResponse {
@@ -204,6 +220,8 @@ fn test_melt_state_transitions() {
         paid: false,
         state: "PENDING".to_string(),
         expiry: 0,
+        request: "lnbcdemo10sat1micronuts".to_string(),
+        unit: "sat".to_string(),
     };
 
     let paid = MeltQuoteResponse {
@@ -213,6 +231,8 @@ fn test_melt_state_transitions() {
         paid: true,
         state: "PAID".to_string(),
         expiry: 0,
+        request: "lnbcdemo10sat1micronuts".to_string(),
+        unit: "sat".to_string(),
     };
 
     assert_eq!(unpaid.state, "UNPAID");

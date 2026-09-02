@@ -49,6 +49,21 @@ pub struct MintQuoteResponse {
     /// Expiry timestamp (unix seconds). Demo shortcut: set far in the future.
     #[n(4)]
     pub expiry: u64,
+    /// Quoted amount in the quote's unit.
+    #[n(5)]
+    pub amount: u64,
+    /// Unit of the quote (e.g. "sat").
+    #[n(6)]
+    pub unit: String,
+    /// Total amount paid to the mint for this quote.
+    #[n(7)]
+    pub amount_paid: u64,
+    /// Total amount of ecash issued for this quote.
+    #[n(8)]
+    pub amount_issued: u64,
+    /// Unix seconds of the last accounting change (monotonic per quote).
+    #[n(9)]
+    pub updated_at: u64,
 }
 
 /// Request body for `POST /v1/mint/bolt11` (NUT-04).

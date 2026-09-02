@@ -54,6 +54,12 @@ pub struct MeltQuoteResponse {
     /// Expiry timestamp (unix seconds).
     #[n(5)]
     pub expiry: u64,
+    /// The payment request being paid (bolt11 string).
+    #[n(6)]
+    pub request: String,
+    /// Unit of the quote (e.g. "sat").
+    #[n(7)]
+    pub unit: String,
 }
 
 /// Request body for `POST /v1/melt/bolt11` (NUT-05).
@@ -86,4 +92,22 @@ pub struct MeltResponse {
     /// Blind signatures on any change outputs.
     #[n(3)]
     pub change: Option<Vec<BlindSignature>>,
+    /// Quote identifier (NUT-05: melt responses carry the quote fields).
+    #[n(4)]
+    pub quote: String,
+    /// Melted amount in the quote's unit.
+    #[n(5)]
+    pub amount: u64,
+    /// Fee reserve quoted for the payment.
+    #[n(6)]
+    pub fee_reserve: u64,
+    /// Unit of the quote (e.g. "sat").
+    #[n(7)]
+    pub unit: String,
+    /// Quote expiry (unix seconds).
+    #[n(8)]
+    pub expiry: u64,
+    /// The payment request that was paid (bolt11 string).
+    #[n(9)]
+    pub request: String,
 }

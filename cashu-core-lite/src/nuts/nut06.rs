@@ -29,9 +29,12 @@ pub struct MintInfo {
     /// Contact information.
     #[n(4)]
     pub contact: Vec<ContactInfo>,
-    /// List of supported NUTs with their settings.
+    /// Supported NUTs with their settings, keyed by NUT number string
+    /// (e.g. `("4", NutSettings { methods: [bolt11/sat] })`). Encoded as a
+    /// CBOR array of `(String, NutSettings)` pairs; JSON adapters render it
+    /// as the spec's nut-number → settings-object map.
     #[n(5)]
-    pub nuts: NutSupport,
+    pub nuts: Vec<(String, NutSettings)>,
 }
 
 /// Contact entry for mint info (NUT-06).
@@ -43,13 +46,23 @@ pub struct ContactInfo {
     pub info: String,
 }
 
-/// Which NUTs this mint supports and their configuration (NUT-06).
-///
-/// Demo shortcut: only the minimal set is advertised; real mints would
-/// include per-NUT settings objects.
+/// Per-NUT settings object (NUT-06 `nuts` map value). An empty `methods`
+/// list means the NUT is supported with no method-specific settings.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct NutSupport {
-    /// Supported NUT numbers (e.g. [0, 1, 2, 3, 4, 5, 6]).
+pub struct NutSettings {
+    /// Payment methods this NUT supports (empty for non-payment NUTs).
     #[n(0)]
-    pub supported: Vec<u32>,
+    pub methods: Vec<PaymentMethod>,
+}
+
+/// A payment method entry (e.g. `bolt11` in unit `sat`) inside a
+/// `NutSettings` object.
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct PaymentMethod {
+    /// Method name (e.g. "bolt11").
+    #[n(0)]
+    pub method: String,
+    /// Unit the method operates in (e.g. "sat").
+    #[n(1)]
+    pub unit: String,
 }

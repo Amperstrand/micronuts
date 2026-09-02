@@ -40,6 +40,11 @@ fn test_mint_quote_response_cbor_roundtrip() {
         paid: false,
         state: "UNPAID".to_string(),
         expiry: 1893456000,
+        amount: 1000,
+        unit: "sat".to_string(),
+        amount_paid: 0,
+        amount_issued: 0,
+        updated_at: 0,
     };
 
     let mut buf = vec![];
@@ -120,6 +125,11 @@ fn test_mint_quote_state_transitions() {
         paid: false,
         state: "UNPAID".to_string(),
         expiry: 0,
+        amount: 100,
+        unit: "sat".to_string(),
+        amount_paid: 0,
+        amount_issued: 0,
+        updated_at: 0,
     };
 
     let paid = MintQuoteResponse {
@@ -128,6 +138,11 @@ fn test_mint_quote_state_transitions() {
         paid: true,
         state: "PAID".to_string(),
         expiry: 0,
+        amount: 100,
+        unit: "sat".to_string(),
+        amount_paid: 100,
+        amount_issued: 0,
+        updated_at: 41,
     };
 
     let issued = MintQuoteResponse {
@@ -136,6 +151,11 @@ fn test_mint_quote_state_transitions() {
         paid: true,
         state: "ISSUED".to_string(),
         expiry: 0,
+        amount: 100,
+        unit: "sat".to_string(),
+        amount_paid: 100,
+        amount_issued: 100,
+        updated_at: 42,
     };
 
     assert!(!unpaid.paid);

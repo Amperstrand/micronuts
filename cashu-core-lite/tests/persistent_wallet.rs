@@ -169,6 +169,12 @@ impl MintClient for MockMint {
                 state: String::from("PENDING"),
                 payment_preimage: None,
                 change: None,
+                quote: request.quote.clone(),
+                amount: 0,
+                fee_reserve: 0,
+                unit: "sat".to_string(),
+                expiry: 0,
+                request: "lnbcdemo10sat1micronuts".to_string(),
             });
         }
         let fee_used = 1u64;
@@ -182,6 +188,12 @@ impl MintClient for MockMint {
             state: String::from("PAID"),
             payment_preimage: Some(String::from("00preimage00")),
             change,
+            quote: request.quote.clone(),
+            amount: 0,
+            fee_reserve: 0,
+            unit: "sat".to_string(),
+            expiry: 0,
+            request: "lnbcdemo10sat1micronuts".to_string(),
         })
     }
 

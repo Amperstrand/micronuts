@@ -80,7 +80,8 @@ these types** — the trait boundary stays pure `cashu-core-lite`.
 
 ## What `micronuts-mint` does NOT use from `cashu`
 
-Per the Wave 4 task scope, the following are deliberately out of scope:
+Per the original Wave 4 task scope, the following were deliberately out of
+scope (updated 2026-09-02 — several have since landed, see below):
 
 - **`cdk::Mint`** (full mint server runtime) — too heavy. We use only the
   `cashu` crate's crypto + types, not the Cashu Development Kit server.
@@ -89,7 +90,25 @@ Per the Wave 4 task scope, the following are deliberately out of scope:
 - **`cashu::nuts::nut02::Id`** struct — lite uses a 16-char hex `String`.
   Conversion is trivial (just `to_string()` on the cashu side).
 - **`cashu::Secret`** wrapper — lite stores secrets as plain hex `String`.
-- **DLEQ proofs (NUT-12)** — not yet implemented in the demo mint.
+
+Landed since (backend-driven rework 2026-09-02):
+
+- **Quote state machines** — NUT-04 UNPAID→PAID→ISSUED with lazy backend
+  settlement + NUT-04 accounting fields (`amount`, `amount_paid`,
+  `amount_issued`, `updated_at`, partial-mint support); NUT-05
+  UNPAID→PENDING→PAID/FAILED with proof rollback on payment failure.
+- **NUT-08** — input fees `(sum_ppk+999)/1000` enforced in swap and melt;
+  melt change supports explicit outputs AND blank-output imprinting
+  (power-of-two decomposition, the cashu-ts v4 path).
+- **NUT-09** — real session-scoped restore via the B_→signature index.
+- **DLEQ proofs (NUT-12)** — construction IS implemented via
+  `cashu::BlindSignature::new` (upstream crypto path).
+- **Payment safety** — atomic batch double-spend rejection, keyset binding,
+  spend-before-sign ordering.
+
+Still not implemented: durable persistence (spent set/quotes are RAM-only),
+multiple keysets/rotation, fee_reserve from a real backend, async melt
+polling (PENDING is resolved within the single post_melt call).
 
 ## Architecture invariant
 

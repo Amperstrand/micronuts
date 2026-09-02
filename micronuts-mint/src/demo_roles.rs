@@ -39,13 +39,37 @@ pub fn handle_demo_mint_hex_request_line(
     Ok(hex::encode(response_bytes))
 }
 
+/// Build the mint for the stdio server, selecting the Lightning backend
+/// from the environment: `MICRONUTS_UPSTREAM_MINT` set → upstream Cashu
+/// settlement backend; unset → auto-settling FakeWallet demo.
+#[cfg(feature = "backend-upstream")]
+fn mint_from_env() -> DemoMint {
+    match crate::upstream::upstream_backend_from_env() {
+        Some((backend, clock)) => DemoMint::with_backend(backend, clock, 0),
+        None => DemoMint::new(),
+    }
+}
+
+#[cfg(not(feature = "backend-upstream"))]
+fn mint_from_env() -> DemoMint {
+    if std::env::var_os("MICRONUTS_UPSTREAM_MINT").is_some_and(|v| !v.is_empty()) {
+        eprintln!(
+            "MICRONUTS_UPSTREAM_MINT is set but this mint_server was built without the \
+             `backend-upstream` feature; rebuild with \
+             `cargo build -p micronuts-mint --features backend-upstream --bin mint_server`"
+        );
+        std::process::exit(1);
+    }
+    DemoMint::new()
+}
+
 /// Host-side mint-role demo server.
 ///
 /// Each stdin line is one hex-encoded `MintRpcRequest` frame and each stdout
 /// line is one hex-encoded `MintRpcResponse` frame. This keeps the mint role
 /// explicit without introducing networking before serial or microfips framing.
 pub fn run_mint_server_stdio() -> Result<(), Box<dyn std::error::Error>> {
-    let mut handler = demo_mint_handler();
+    let mut handler = MintRpcHandler::new(mint_from_env());
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -82,7 +106,8 @@ pub fn run_wallet_demo() -> Result<(), CashuError> {
     println!("1. Mint info:");
     println!("   Name: {}", info.name);
     println!("   Version: {}", info.version);
-    println!("   Supported NUTs: {:?}", info.nuts.supported);
+    let supported: Vec<&str> = info.nuts.iter().map(|(id, _)| id.as_str()).collect();
+    println!("   Supported NUTs: {:?}", supported);
 
     // ---- Step 2: Get keys (NUT-01) ----
     let keys = wallet.get_keys()?;

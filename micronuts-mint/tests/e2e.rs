@@ -40,8 +40,17 @@ fn test_get_mint_info() {
     let info = wallet.get_info().unwrap();
     assert_eq!(info.name, "Micronuts Demo Mint");
     assert!(!info.pubkey.is_empty());
-    assert!(info.nuts.supported.contains(&0));
-    assert!(info.nuts.supported.contains(&4));
+    let nuts: Vec<&str> = info.nuts.iter().map(|(id, _)| id.as_str()).collect();
+    assert!(nuts.contains(&"4"));
+    assert!(nuts.contains(&"5"));
+    let (_, nut4) = info
+        .nuts
+        .iter()
+        .find(|(id, _)| id == "4")
+        .expect("nut 4 advertised");
+    assert_eq!(nut4.methods.len(), 1);
+    assert_eq!(nut4.methods[0].method, "bolt11");
+    assert_eq!(nut4.methods[0].unit, "sat");
 }
 
 // ---- NUT-01: Mint Keys ----
@@ -86,15 +95,16 @@ fn test_mint_quote_and_mint() {
     let mut rng = test_rng();
     let keyset_id = keyset.id.clone();
 
-    // Step 1: Request mint quote for 13 sats
+    // Step 1: Request mint quote for 13 sats — born UNPAID (real state machine)
     let quote = wallet.request_mint_quote(13, "sat").unwrap();
-    assert!(quote.paid, "demo quote should be auto-paid");
-    assert_eq!(quote.state, nut04::state::PAID);
+    assert!(!quote.paid, "fresh quote must start UNPAID");
+    assert_eq!(quote.state, nut04::state::UNPAID);
     assert!(!quote.quote.is_empty());
 
-    // Step 2: Check quote state (should still be PAID)
+    // Step 2: Poll the quote — FakeWallet settles on first poll → PAID
     let checked = wallet.check_mint_quote(&quote.quote).unwrap();
     assert_eq!(checked.state, nut04::state::PAID);
+    assert!(checked.paid);
 
     // Step 3: Mint ecash — 13 sats decomposes to [1, 4, 8]
     let proofs = wallet
@@ -290,9 +300,10 @@ fn test_full_e2e_flow() {
     let keysets = wallet.get_keysets().unwrap();
     assert!(keysets.keysets[0].active);
 
-    // 4. Mint 100 sats
+    // 4. Mint 100 sats (poll first: quote born UNPAID, FakeWallet settles on poll)
     let mint_quote = wallet.request_mint_quote(100, "sat").unwrap();
-    assert!(mint_quote.paid);
+    let settled = wallet.check_mint_quote(&mint_quote.quote).unwrap();
+    assert!(settled.paid);
     let proofs = wallet
         .mint_tokens(&mint_quote.quote, 100, &keyset_id, &keyset, &mut rng)
         .unwrap();

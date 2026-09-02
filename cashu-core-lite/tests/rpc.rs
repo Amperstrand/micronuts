@@ -129,9 +129,15 @@ fn rpc_response_roundtrip_success() {
             version: "micronuts-mint/0.1.0".to_string(),
             description: "Demo".to_string(),
             contact: vec![],
-            nuts: nut06::NutSupport {
-                supported: vec![0, 1, 2, 3, 4, 5, 6, 7],
-            },
+            nuts: vec![(
+                "4".to_string(),
+                nut06::NutSettings {
+                    methods: vec![nut06::PaymentMethod {
+                        method: "bolt11".to_string(),
+                        unit: "sat".to_string(),
+                    }],
+                },
+            )],
         })),
     };
 

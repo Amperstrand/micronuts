@@ -2,13 +2,29 @@
 //!
 //! Test patterns follow CDK: https://github.com/cashubtc/cdk
 
-use cashu_core_lite::nuts::nut06::{ContactInfo, MintInfo, NutSupport};
+use cashu_core_lite::nuts::nut06::{ContactInfo, MintInfo, NutSettings, PaymentMethod};
 
 fn sample_contact() -> ContactInfo {
     ContactInfo {
         method: "email".to_string(),
         info: "test@example.com".to_string(),
     }
+}
+
+fn sample_nuts() -> Vec<(String, NutSettings)> {
+    vec![
+        ("3".to_string(), NutSettings { methods: vec![] }),
+        (
+            "4".to_string(),
+            NutSettings {
+                methods: vec![PaymentMethod {
+                    method: "bolt11".to_string(),
+                    unit: "sat".to_string(),
+                }],
+            },
+        ),
+        ("7".to_string(), NutSettings { methods: vec![] }),
+    ]
 }
 
 #[test]
@@ -31,9 +47,7 @@ fn test_mint_info_cbor_roundtrip() {
         version: "0.1.0".to_string(),
         description: "A test mint for unit tests".to_string(),
         contact: vec![sample_contact()],
-        nuts: NutSupport {
-            supported: vec![0, 1, 2, 3, 4, 5, 6, 7],
-        },
+        nuts: sample_nuts(),
     };
 
     let mut buf = vec![];
@@ -42,6 +56,7 @@ fn test_mint_info_cbor_roundtrip() {
 
     assert_eq!(decoded.name, "Test Mint");
     assert_eq!(decoded.version, "0.1.0");
+    assert_eq!(decoded.nuts, sample_nuts());
 }
 
 #[test]
@@ -52,7 +67,7 @@ fn test_mint_info_minimal() {
         version: "1.0".to_string(),
         description: "".to_string(),
         contact: vec![],
-        nuts: NutSupport { supported: vec![0] },
+        nuts: vec![],
     };
 
     let mut buf = vec![];
@@ -60,17 +75,50 @@ fn test_mint_info_minimal() {
     let decoded: MintInfo = minicbor::decode(&buf).expect("decode");
 
     assert_eq!(decoded.contact.len(), 0);
+    assert_eq!(decoded.nuts.len(), 0);
 }
 
 #[test]
-fn test_nut_support_supported_nuts() {
-    let support = NutSupport {
-        supported: vec![0, 1, 2, 3, 4, 5, 6, 7, 13],
+fn test_nut_settings_entries() {
+    let nuts = sample_nuts();
+
+    assert_eq!(nuts.len(), 3);
+    let nut4 = nuts
+        .iter()
+        .find(|(nut, _)| nut == "4")
+        .expect("nut 4 advertised");
+    assert_eq!(nut4.1.methods.len(), 1);
+    assert_eq!(nut4.1.methods[0].method, "bolt11");
+    assert_eq!(nut4.1.methods[0].unit, "sat");
+
+    let nut7 = nuts
+        .iter()
+        .find(|(nut, _)| nut == "7")
+        .expect("nut 7 advertised");
+    assert_eq!(nut7.1.methods.len(), 0);
+}
+
+#[test]
+fn test_nut_settings_cbor_roundtrip() {
+    let settings = NutSettings {
+        methods: vec![
+            PaymentMethod {
+                method: "bolt11".to_string(),
+                unit: "sat".to_string(),
+            },
+            PaymentMethod {
+                method: "bolt11".to_string(),
+                unit: "usd".to_string(),
+            },
+        ],
     };
 
-    assert_eq!(support.supported.len(), 9);
-    assert!(support.supported.contains(&0));
-    assert!(support.supported.contains(&13));
+    let mut buf = vec![];
+    minicbor::encode(&settings, &mut buf).expect("encode");
+    let decoded: NutSettings = minicbor::decode(&buf).expect("decode");
+
+    assert_eq!(decoded, settings);
+    assert_eq!(decoded.methods[1].unit, "usd");
 }
 
 #[test]
@@ -90,7 +138,7 @@ fn test_mint_info_multiple_contacts() {
                 info: "npub1...".to_string(),
             },
         ],
-        nuts: NutSupport { supported: vec![0] },
+        nuts: sample_nuts(),
     };
 
     let mut buf = vec![];

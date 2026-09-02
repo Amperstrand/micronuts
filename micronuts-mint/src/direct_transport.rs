@@ -58,9 +58,8 @@ impl MintClient for DirectTransport {
     }
 
     fn get_mint_quote(&mut self, quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError> {
-        self.mint.borrow().get_mint_quote(quote_id)
+        self.mint.borrow_mut().get_mint_quote(quote_id)
     }
-
     fn post_mint(
         &mut self,
         request: nut04::MintRequest,

@@ -12,6 +12,7 @@
 //! - Payment preimages are dummy hex strings
 
 pub mod keyset;
+pub mod ln;
 pub mod type_conversion;
 
 mod mint_core;
@@ -30,3 +31,10 @@ pub use demo_roles::{
     demo_mint_handler, handle_demo_mint_hex_request_line, handle_demo_mint_request_bytes,
     run_mint_server_stdio, run_wallet_demo,
 };
+
+#[cfg(feature = "backend-upstream")]
+pub mod reserve;
+#[cfg(feature = "backend-upstream")]
+pub mod upstream;
+#[cfg(feature = "backend-upstream")]
+mod upstream_wire;

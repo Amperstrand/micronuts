@@ -464,6 +464,9 @@ fn cashu_error_to_response(err: &CashuError) -> Response {
         CashuError::InsufficientInputs => (StatusCode::BAD_REQUEST, "INSUFFICIENT_INPUTS"),
         CashuError::QuoteNotPaid => (StatusCode::BAD_REQUEST, "QUOTE_NOT_PAID"),
         CashuError::QuoteAlreadyIssued => (StatusCode::BAD_REQUEST, "QUOTE_ALREADY_ISSUED"),
+        CashuError::TokensAlreadySpent => (StatusCode::BAD_REQUEST, "TOKENS_ALREADY_SPENT"),
+        CashuError::MeltAlreadyPaid => (StatusCode::BAD_REQUEST, "MELT_ALREADY_PAID"),
+        CashuError::PaymentFailed => (StatusCode::INTERNAL_SERVER_ERROR, "PAYMENT_FAILED"),
         CashuError::Protocol(_) => (StatusCode::INTERNAL_SERVER_ERROR, "PROTOCOL_ERROR"),
         CashuError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR"),
         CashuError::Transport(_) => (StatusCode::INTERNAL_SERVER_ERROR, "TRANSPORT_ERROR"),
@@ -719,6 +722,19 @@ fn mint_info_to_json(info: &nut06::MintInfo) -> Value {
         .iter()
         .map(|c| json!({ "method": c.method, "info": c.info }))
         .collect();
+    let mut nuts = serde_json::Map::new();
+    for (id, settings) in &info.nuts {
+        nuts.insert(
+            id.clone(),
+            json!({
+                "methods": settings
+                    .methods
+                    .iter()
+                    .map(|m| json!({ "method": m.method, "unit": m.unit }))
+                    .collect::<Vec<_>>(),
+            }),
+        );
+    }
     json!({
         "name": info.name,
         "pubkey": info.pubkey,
@@ -727,9 +743,7 @@ fn mint_info_to_json(info: &nut06::MintInfo) -> Value {
         "description_long": "",
         "contact": contacts,
         "motd": "",
-        "nuts": {
-            "supported": info.nuts.supported,
-        },
+        "nuts": Value::Object(nuts),
     })
 }
 
@@ -766,6 +780,11 @@ fn mint_quote_response_to_json(resp: &nut04::MintQuoteResponse) -> Value {
         "paid": resp.paid,
         "state": resp.state,
         "expiry": resp.expiry,
+        "amount": resp.amount,
+        "unit": resp.unit,
+        "amount_paid": resp.amount_paid,
+        "amount_issued": resp.amount_issued,
+        "updated_at": resp.updated_at,
     })
 }
 
@@ -789,6 +808,8 @@ fn melt_quote_response_to_json(resp: &nut05::MeltQuoteResponse) -> Value {
         "paid": resp.paid,
         "state": resp.state,
         "expiry": resp.expiry,
+        "request": resp.request,
+        "unit": resp.unit,
     })
 }
 
@@ -802,6 +823,12 @@ fn melt_response_to_json(resp: &nut05::MeltResponse) -> Value {
         "state": resp.state,
         "payment_preimage": resp.payment_preimage,
         "change": change,
+        "quote": resp.quote,
+        "amount": resp.amount,
+        "fee_reserve": resp.fee_reserve,
+        "unit": resp.unit,
+        "expiry": resp.expiry,
+        "request": resp.request,
     })
 }
 
@@ -812,8 +839,14 @@ fn check_state_response_to_json(resp: &nut07::CheckStateResponse) -> Value {
 }
 
 fn restore_response_to_json(resp: &nut09::RestoreResponse) -> Value {
+    // NUT-09: flat parallel arrays — outputs[i] (B_ hex) ↔ signatures[i].
     json!({
-        "outputs": resp.outputs.iter().map(restore_output_to_json).collect::<Vec<_>>()
+        "outputs": resp.outputs.iter()
+            .map(|o| hex::encode(o.y.to_bytes()))
+            .collect::<Vec<_>>(),
+        "signatures": resp.outputs.iter()
+            .map(|o| blind_signature_to_json(&o.signature))
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -838,12 +871,4 @@ fn blind_signature_to_json(sig: &nut00::BlindSignature) -> Value {
         });
     }
     obj
-}
-
-fn restore_output_to_json(out: &nut09::RestoreOutput) -> Value {
-    // NUT-09 spec response: each entry is `{"Y": ..., "promises": [<blind sig>...]}`.
-    json!({
-        "Y": hex::encode(out.y.to_bytes()),
-        "promises": [blind_signature_to_json(&out.signature)],
-    })
 }

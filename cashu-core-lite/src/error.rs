@@ -48,6 +48,15 @@ pub enum CashuError {
     /// Persistence-layer failure (proof store unavailable or write failed).
     #[n(12)]
     Storage(#[n(0)] String),
+    /// A proof (or a duplicate within the same request) was already spent.
+    #[n(13)]
+    TokensAlreadySpent,
+    /// A melt quote was already paid; it cannot be melted again.
+    #[n(14)]
+    MeltAlreadyPaid,
+    /// The underlying payment backend failed to pay the invoice.
+    #[n(15)]
+    PaymentFailed,
 }
 
 impl fmt::Display for CashuError {
@@ -66,6 +75,9 @@ impl fmt::Display for CashuError {
             Self::AmountMismatch => write!(f, "input/output amount mismatch"),
             Self::Unknown(msg) => write!(f, "unknown error: {}", msg),
             Self::Storage(msg) => write!(f, "storage error: {}", msg),
+            Self::TokensAlreadySpent => write!(f, "tokens already spent"),
+            Self::MeltAlreadyPaid => write!(f, "melt already paid"),
+            Self::PaymentFailed => write!(f, "payment failed"),
         }
     }
 }

@@ -164,6 +164,11 @@ fn parse_quote(v: &serde_json::Value) -> nut04::MintQuoteResponse {
         paid: matches!(v["state"].as_str(), Some("PAID") | Some("ISSUED")),
         state: v["state"].as_str().unwrap_or("UNPAID").to_string(),
         expiry: v["expiry"].as_u64().unwrap_or_default(),
+        amount: v["amount"].as_u64().unwrap_or_default(),
+        unit: v["unit"].as_str().unwrap_or("sat").to_string(),
+        amount_paid: v["amount_paid"].as_u64().unwrap_or_default(),
+        amount_issued: v["amount_issued"].as_u64().unwrap_or_default(),
+        updated_at: v["updated_at"].as_u64().unwrap_or_default(),
     }
 }
 
