@@ -41,6 +41,9 @@ jobs:
       - name: Test micronuts-mint
         run: cargo test -p micronuts-mint
 
+      - name: Test micronuts-mint (upstream backend feature)
+        run: cargo test -p micronuts-mint --features backend-upstream
+
       - name: Test micronuts-fips-bridge
         run: cargo test -p micronuts-fips-bridge
 
@@ -80,6 +83,9 @@ jobs:
           cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool
           -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter
           --all-targets -- -D warnings
+
+      - name: Clippy (micronuts-mint upstream feature, deny warnings)
+        run: cargo clippy -p micronuts-mint --all-targets --features backend-upstream -- -D warnings
 
   firmware-build:
     runs-on: ubuntu-latest

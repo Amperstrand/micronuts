@@ -22,6 +22,7 @@ firmware + a backend-driven demo/prototype mint. Rust workspace; own git repo
 
 ```bash
 cargo +stable test -p cashu-core-lite --features std -p walletport -p micronuts-mint -p micronuts-fips-bridge
+cargo +stable test -p micronuts-mint --features backend-upstream
 cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter --all-targets -- -D warnings
 cargo build -p cashu-core-lite -p walletport --target thumbv7em-none-eabihf
 (cd firmware && cargo build --release)
