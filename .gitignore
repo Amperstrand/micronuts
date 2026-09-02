@@ -79,4 +79,4 @@ tests/results/
 .sisyphus/
 .playwright-mcp/
 .omo/
-nuts/
+/nuts/
