@@ -206,6 +206,11 @@ jobs:
         run: cargo install --locked espup espflash
 
       - name: Install Xtensa ESP toolchain
+        # espup queries the GitHub API for the latest Xtensa Rust version;
+        # unauthenticated that 403s (rate limit) on shared runner IPs.
+        # Documented CI usage: provide GITHUB_TOKEN.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: espup install
 
       - name: Cache Espressif tools
