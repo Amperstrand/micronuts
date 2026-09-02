@@ -65,6 +65,12 @@ impl ReserveWallet {
             &json!({"amount": amount_sat, "unit": self.unit}),
         )?;
         let quote_id = json_str("quote", &quote["quote"])?;
+        // A real upstream needs an external payer — surface the invoice so
+        // automation (or an operator) can pay it within the poll window.
+        let invoice = json_str("request", &quote["request"])?;
+        eprintln!(
+            "micronuts reserve: bootstrap invoice for {amount_sat} sats (pay within the poll window): {invoice}"
+        );
         if !self.poll_until_paid(&quote_id, http)? {
             return Err(CashuError::QuoteNotPaid);
         }
@@ -137,15 +143,16 @@ impl ReserveWallet {
             .checked_sub(amount_needed)
             .and_then(|v| v.checked_sub(input_fee))
             .ok_or(CashuError::InvalidAmount)?;
-        // v4-wallet convention: change leaves as amount-0 blank outputs
-        // (ceil(log2(change)) of them); the upstream imprints the overpay
-        // decomposition and returns only the signatures it filled.
-        let blank_count = if change_amount > 0 {
-            (u64::BITS - change_amount.leading_zeros()) as usize
+        // Explicit-amount change (binary decomposition of the overpay).
+        // Real cashu upstreams do NOT imprint blanks: signut (cashu-cf
+        // saga, 2026-09-02) signed our amount-0 blanks as-is, returning
+        // worthless 0-amount signatures — blanks are a micronuts-local
+        // convention (our own FakeWallet front mint honors them).
+        let amounts = if change_amount > 0 {
+            nut00::decompose_amount(change_amount)
         } else {
-            0
+            Vec::new()
         };
-        let amounts = vec![0u64; blank_count];
         let (outputs, pending) = blind_outputs(&amounts, &keyset.id)?;
         let inputs: Vec<Value> = selected
             .iter()
@@ -196,10 +203,23 @@ impl ReserveWallet {
                 if let Err(err) =
                     self.append_unblinded(pending, change_sigs, &keyset, change_amount)
                 {
+                    let entries = change_sigs
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "amount={} id={}",
+                                s.get("amount").map(|v| v.to_string()).unwrap_or_default(),
+                                s.get("id").and_then(Value::as_str).unwrap_or("?")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     eprintln!(
                         "micronuts reserve: change recovery failed ({err}); \
-                         {change_amount} sats at risk upstream, balance {} sats",
-                        self.balance_sats()
+                         {change_amount} sats at risk upstream, balance {} sats; \
+                         change entries: [{entries}] (cached keyset {})",
+                        self.balance_sats(),
+                        keyset.id
                     );
                 }
             }
@@ -238,11 +258,23 @@ impl ReserveWallet {
 
     fn poll_until_paid(&self, quote_id: &str, http: &ureq::Agent) -> Result<bool, CashuError> {
         let url = format!("{}/v1/mint/quote/bolt11/{quote_id}", self.base_url);
-        for _ in 0..10 {
+        // Fake upstreams settle within the 5s default; real ones need an
+        // external payer, so the window is env-tunable.
+        let timeout_secs: u64 = std::env::var("MICRONUTS_UPSTREAM_PAY_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let tries = timeout_secs.saturating_mul(2).max(1);
+        for i in 0..tries {
             let quote = upstream_get(http, &url)?;
             let state = json_str("state", &quote["state"])?;
             if matches!(state.as_str(), "PAID" | "ISSUED") {
                 return Ok(true);
+            }
+            if i > 0 && i % 20 == 0 {
+                eprintln!(
+                    "micronuts reserve: still waiting for payment of quote {quote_id} ({i}/{tries} polls)"
+                );
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
@@ -261,9 +293,10 @@ impl ReserveWallet {
 
     /// Indices of proofs covering `target`, largest denomination first.
     fn select_covering(&self, target: u64) -> Vec<usize> {
-        // Ascending greedy = minimal overshoot. Saga-v2 cashu-cf upstreams
-        // do not return melt change, so overshoot is an accepted loss —
-        // keep it dust-sized by preferring small denominations.
+        // Ascending greedy = minimal overshoot. Upstream melt change is
+        // recovered via explicit outputs, but a no-change upstream (the
+        // FakeWallet testnut mint) keeps the overpay — so overshoot stays
+        // minimized by preferring small denominations.
         let mut order: Vec<usize> = (0..self.proofs.len()).collect();
         order.sort_by_key(|&i| self.proofs[i].amount);
         let mut sum = 0u64;

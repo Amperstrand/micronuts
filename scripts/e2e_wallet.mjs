@@ -11,13 +11,22 @@
 // Usage:
 //   MINT_URL=http://localhost:3030 node scripts/e2e_wallet.mjs
 // Env:
-//   MINT_URL       (default http://localhost:3030)
-//   CASHU_CF_ROOT  (default: ../../.. relative to this script — for node_modules)
+//   MINT_URL          (default http://localhost:3030)
+//   CASHU_CF_ROOT     (default: ../../.. relative to this script — for node_modules)
+//   SETTLE_POLL_TRIES (default 10) — mint-quote settle poll iterations
+//   SETTLE_POLL_MS    (default 200) — per-iteration sleep
+//   PAY_CMD           shell snippet run with $INVOICE set to the mint-quote
+//                     bolt11 right after creation — for upstreams that need
+//                     a real payer (signut); unset = no external payment
+//   MELT_INVOICE      real bolt11 melt target (upstream mode; preimage
+//                     asserted from the upstream payment)
+//   MELT_AMOUNT       (default 10) must equal the MELT_INVOICE amount
 
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MINT_URL = process.env.MINT_URL ?? 'http://localhost:3030';
@@ -73,15 +82,26 @@ async function main() {
     );
     console.log(`     invoice: ${quoteResp.request.slice(0, 24)}… state=${quoteResp.state ?? quoteResp.paid}`);
 
+    if (process.env.PAY_CMD) {
+        console.log(`     paying via PAY_CMD: ${process.env.PAY_CMD.slice(0, 60)}…`);
+        execSync(process.env.PAY_CMD, {
+            stdio: 'inherit',
+            timeout: 180_000,
+            env: { ...process.env, INVOICE: quoteResp.request },
+        });
+    }
+
     let quoteObj;
     let state = quoteResp.state ?? 'UNPAID';
-    for (let i = 0; i < 10 && state !== 'PAID'; i++) {
-        await sleep(200);
+    const settleTries = Number(process.env.SETTLE_POLL_TRIES ?? 10);
+    const settleMs = Number(process.env.SETTLE_POLL_MS ?? 200);
+    for (let i = 0; i < settleTries && state !== 'PAID'; i++) {
+        await sleep(settleMs);
         quoteObj = await mint.checkMintQuoteBolt11(quoteResp.quote);
         state = quoteObj.state;
     }
     if (!quoteObj) quoteObj = await mint.checkMintQuoteBolt11(quoteResp.quote);
-    assert(state === 'PAID', 'NUT-04 FakeWallet settles quote to PAID on poll');
+    assert(state === 'PAID', `NUT-04 quote settles to PAID on poll (state=${state})`);
 
     // v4: mintProofs is (method, amount, quote); mintProofsBolt11 takes the
     // quote OBJECT (accounting fields required), not an ID.
