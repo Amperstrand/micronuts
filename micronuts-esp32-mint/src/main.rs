@@ -20,6 +20,8 @@ use esp_idf_svc::http::server::{
 #[cfg(target_os = "espidf")]
 use esp_idf_svc::http::Method;
 #[cfg(target_os = "espidf")]
+use esp_idf_svc::io::Write;
+#[cfg(target_os = "espidf")]
 use esp_idf_svc::hal::io::EspIOError;
 #[cfg(target_os = "espidf")]
 use log::{error, info};
