@@ -785,6 +785,7 @@ fn mint_quote_response_to_json(resp: &nut04::MintQuoteResponse) -> Value {
         "amount_paid": resp.amount_paid,
         "amount_issued": resp.amount_issued,
         "updated_at": resp.updated_at,
+        "method": resp.method,
     })
 }
 
@@ -810,6 +811,7 @@ fn melt_quote_response_to_json(resp: &nut05::MeltQuoteResponse) -> Value {
         "expiry": resp.expiry,
         "request": resp.request,
         "unit": resp.unit,
+        "method": resp.method,
     })
 }
 
@@ -829,6 +831,7 @@ fn melt_response_to_json(resp: &nut05::MeltResponse) -> Value {
         "unit": resp.unit,
         "expiry": resp.expiry,
         "request": resp.request,
+        "method": resp.method,
     })
 }
 

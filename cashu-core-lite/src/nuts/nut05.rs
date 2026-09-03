@@ -60,6 +60,9 @@ pub struct MeltQuoteResponse {
     /// Unit of the quote (e.g. "sat").
     #[n(7)]
     pub unit: String,
+    /// Payment method of the quote (NUT-05: response MUST carry it).
+    #[n(8)]
+    pub method: String,
 }
 
 /// Request body for `POST /v1/melt/bolt11` (NUT-05).
@@ -110,4 +113,7 @@ pub struct MeltResponse {
     /// The payment request that was paid (bolt11 string).
     #[n(9)]
     pub request: String,
+    /// Payment method of the melt (quote-shaped response, NUT-05).
+    #[n(10)]
+    pub method: String,
 }

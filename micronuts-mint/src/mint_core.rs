@@ -243,6 +243,7 @@ impl DemoMint {
             amount_paid: 0,
             amount_issued: 0,
             updated_at: now,
+            method: "bolt11".to_string(),
         })
     }
 
@@ -270,6 +271,7 @@ impl DemoMint {
             amount_paid: entry.amount_paid,
             amount_issued: entry.amount_issued,
             updated_at: entry.updated_at,
+            method: "bolt11".to_string(),
         })
     }
 
@@ -413,6 +415,7 @@ impl DemoMint {
             expiry,
             request: entry_request,
             unit: entry_unit,
+            method: "bolt11".to_string(),
         })
     }
 
@@ -433,6 +436,7 @@ impl DemoMint {
             expiry: entry.expiry,
             request: entry.request.clone(),
             unit: entry.unit.clone(),
+            method: "bolt11".to_string(),
         })
     }
 
@@ -553,6 +557,7 @@ impl DemoMint {
                     unit: entry.unit.clone(),
                     expiry: entry.expiry,
                     request: entry.request.clone(),
+                    method: "bolt11".to_string(),
                 })
             }
             Err(_) => {
@@ -922,7 +927,7 @@ impl DemoMint {
                     cashu::nuts::nut02::Id::from_str(&self.keyset.id)
                         .map_err(|e| CashuError::Crypto(format!("invalid keyset id: {e}")))?,
                     &cashu_blinded,
-                    cashu_sk,
+                    &cashu_sk,
                 )
                 .map_err(|e| CashuError::Crypto(format!("DLEQ construction failed: {e:?}")))?;
 

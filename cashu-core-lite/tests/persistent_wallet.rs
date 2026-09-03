@@ -175,6 +175,7 @@ impl MintClient for MockMint {
                 unit: "sat".to_string(),
                 expiry: 0,
                 request: "lnbcdemo10sat1micronuts".to_string(),
+                method: "bolt11".to_string(),
             });
         }
         let fee_used = 1u64;
@@ -194,6 +195,7 @@ impl MintClient for MockMint {
             unit: "sat".to_string(),
             expiry: 0,
             request: "lnbcdemo10sat1micronuts".to_string(),
+            method: "bolt11".to_string(),
         })
     }
 

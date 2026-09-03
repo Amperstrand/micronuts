@@ -9,7 +9,7 @@ description = "Demo Cashu mint for Micronuts — backend-driven, optional durabl
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
 # Upstream cashu crate provides dhke/* crypto; cashu-core-lite stays as the
 # MintService trait seam (see src/type_conversion.rs).
-cashu = "0.17.3"
+cashu = "0.18.0"
 k256 = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }

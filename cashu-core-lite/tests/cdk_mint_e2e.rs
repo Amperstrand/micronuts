@@ -206,6 +206,7 @@ impl MintClient for CdkMint {
                 unit: "sat".to_string(),
                 expiry: 0,
                 request: "lnbcdemo10sat1micronuts".to_string(),
+                method: "bolt11".to_string(),
             });
         }
         for proof in &request.inputs {
@@ -249,6 +250,7 @@ impl MintClient for CdkMint {
             unit: "sat".to_string(),
             expiry: 0,
             request: "lnbcdemo10sat1micronuts".to_string(),
+            method: "bolt11".to_string(),
         })
     }
 

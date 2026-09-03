@@ -1,4 +1,4 @@
-# Cashu Conformance Matrix — 2026-09-02 18:05 UTC
+# Cashu Conformance Matrix — 2026-09-03 13:11 UTC
 
 **Summary**: 69 passed, 37 failed, 3 skipped (109 total)
 
@@ -208,11 +208,11 @@
 | `nut20_locked_quote_wrong_signature_fails` | ❌ |
 | `nut20_quote_echoes_pubkey` | ❌ |
 
-> ❌ `nut20_locked_quote_requires_signature` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '033d34c8ab1d3ddfe2b9ad5c232826a925b9399e27b5b5c00feddfdefd3b2127ce', 'amount': 8, 'dleq': {'e': 'd9ea9a82629f378a9d91156013501babe7829f91ce1d44d74e6606f511c9d67c', 's': '0477c7
+> ❌ `nut20_locked_quote_requires_signature` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '028a76c9c4b6568c29ac49afc198b1a5a28bdecf6849f71de60b16b4355e6073b4', 'amount': 8, 'dleq': {'e': '2398c4c78de3e6c4221d3704f11c655d1f88b66d2024fb2227020b16a557ff38', 's': '58297c
 
-> ❌ `nut20_locked_quote_wrong_signature_fails` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '021f9b6f1b441aee9c93b0af4ad13cc741ced23068f7cad91f2368ce547f0d8b21', 'amount': 8, 'dleq': {'e': 'e0f0a4a0f869410d6966b2069f3f807422a1498a811cbca18d1c737fb061fd4b', 's': 'e8fa4c
+> ❌ `nut20_locked_quote_wrong_signature_fails` @ `http://localhost:3030`: expected rejection, got 200: {'signatures': [{'C_': '0326f78eb4ec53adfe2d514f5ee520588f3b219c683c882b05414d4971811a48e8', 'amount': 8, 'dleq': {'e': '538022c43cf40a6b187770ef66bc6451df1b26f110c539751ca5876cd290c749', 's': '2e1631
 
-> ❌ `nut20_quote_echoes_pubkey` @ `http://localhost:3030`: expected pubkey=030e32a60de91669b413..., got ''
+> ❌ `nut20_quote_echoes_pubkey` @ `http://localhost:3030`: expected pubkey=021eaea62cbb77424860..., got ''
 
 ## NUT-26 Bech32m
 

@@ -45,6 +45,7 @@ fn test_mint_quote_response_cbor_roundtrip() {
         amount_paid: 0,
         amount_issued: 0,
         updated_at: 0,
+        method: "bolt11".to_string(),
     };
 
     let mut buf = vec![];
@@ -130,6 +131,7 @@ fn test_mint_quote_state_transitions() {
         amount_paid: 0,
         amount_issued: 0,
         updated_at: 0,
+        method: "bolt11".to_string(),
     };
 
     let paid = MintQuoteResponse {
@@ -143,6 +145,7 @@ fn test_mint_quote_state_transitions() {
         amount_paid: 100,
         amount_issued: 0,
         updated_at: 41,
+        method: "bolt11".to_string(),
     };
 
     let issued = MintQuoteResponse {
@@ -156,6 +159,7 @@ fn test_mint_quote_state_transitions() {
         amount_paid: 100,
         amount_issued: 100,
         updated_at: 42,
+        method: "bolt11".to_string(),
     };
 
     assert!(!unpaid.paid);

@@ -64,6 +64,9 @@ pub struct MintQuoteResponse {
     /// Unix seconds of the last accounting change (monotonic per quote).
     #[n(9)]
     pub updated_at: u64,
+    /// Payment method of the quote (NUT-04: response MUST carry it).
+    #[n(10)]
+    pub method: String,
 }
 
 /// Request body for `POST /v1/mint/bolt11` (NUT-04).

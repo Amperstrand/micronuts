@@ -43,6 +43,7 @@ fn test_melt_quote_response_cbor_roundtrip() {
         expiry: 1893456000,
         request: "lnbcdemo10sat1micronuts".to_string(),
         unit: "sat".to_string(),
+        method: "bolt11".to_string(),
     };
 
     let mut buf = vec![];
@@ -91,6 +92,7 @@ fn test_melt_response_cbor_roundtrip() {
         unit: "sat".to_string(),
         expiry: 0,
         request: "lnbcdemo100sat1micronuts".to_string(),
+        method: "bolt11".to_string(),
     };
 
     let mut buf = vec![];
@@ -149,6 +151,7 @@ fn test_melt_response_with_change() {
         unit: "sat".to_string(),
         expiry: 0,
         request: "lnbcdemo100sat1micronuts".to_string(),
+        method: "bolt11".to_string(),
         change: Some(vec![BlindSignature {
             amount: 10,
             id: "00".to_string(),
@@ -211,6 +214,7 @@ fn test_melt_state_transitions() {
         expiry: 0,
         request: "lnbcdemo10sat1micronuts".to_string(),
         unit: "sat".to_string(),
+        method: "bolt11".to_string(),
     };
 
     let pending = MeltQuoteResponse {
@@ -222,6 +226,7 @@ fn test_melt_state_transitions() {
         expiry: 0,
         request: "lnbcdemo10sat1micronuts".to_string(),
         unit: "sat".to_string(),
+        method: "bolt11".to_string(),
     };
 
     let paid = MeltQuoteResponse {
@@ -233,6 +238,7 @@ fn test_melt_state_transitions() {
         expiry: 0,
         request: "lnbcdemo10sat1micronuts".to_string(),
         unit: "sat".to_string(),
+        method: "bolt11".to_string(),
     };
 
     assert_eq!(unpaid.state, "UNPAID");

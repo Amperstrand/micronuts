@@ -187,14 +187,14 @@ fn verify_dleq_accepts_dleq_constructed_by_cdk() {
 
     // Construct a BlindSignature with DLEQ in CDK. This internally runs
     // `calculate_dleq` (HMAC-SHA256 deterministic nonce + the prover side
-    // of the protocol). Note: 0.17.3 takes `mint_secretkey` by value.
+    // of the protocol). 0.18 takes `mint_secretkey` by reference.
     let cdk_id = Id::from_str("00882760bfa2eb41").expect("valid keyset id");
     let cdk_bs = cashu::BlindSignature::new(
         Amount::from(8),
         cdk_c_prime,
         cdk_id,
         &cdk_b_prime,
-        cdk_mint_sk.clone(),
+        &cdk_mint_sk,
     )
     .expect("cdk BlindSignature::new with DLEQ");
 
