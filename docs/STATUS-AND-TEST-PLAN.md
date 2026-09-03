@@ -28,7 +28,7 @@
 
 | Feature | Status | Blocker |
 |---|---|---|
-| **Firmware USB CDC serial transport** | ⏳ Not tested | Boot splash blocks USB init (needs touch or code change). Firmware builds on Linux with patched cortex-m. |
+| **Firmware USB CDC serial transport** | ✅ Verified 2026-09-03 | Enumeration + full swap flow + decoder battery green on hardware (docs/HARDWARE-TEST-RESULTS-20260903.md). Splash times out after ~18 s — no touch needed. |
 | **QR code scanning (GM65)** | ⏳ Not tested | Hardware not connected this session. Firmware has scanner support code. |
 | **RNG quality verification** | ⏳ Not tested | Need 1M+ samples from hardware. T7.1 planned. |
 | **Firmware CI build** | ⚠️ continue-on-error | Linux LLVM doesn't recognize ARM `wfe`/`sev` mnemonics. Fixed by patching cortex-m + embassy-executor sources to `.inst` binary encodings. Patch is in cargo registry (not persistent across `cargo clean`). |
