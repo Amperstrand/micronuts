@@ -195,17 +195,23 @@ impl FrameDecoder {
                     self.length |= byte as u16;
 
                     if self.length as usize > MAX_PAYLOAD_SIZE {
+                        // Reset and keep scanning this chunk: chunking is
+                        // arbitrary on USB CDC, so bytes after a bad header
+                        // must get the same chance to decode as they would
+                        // in a later chunk.
                         self.reset();
-                        return None;
+                        continue;
                     }
 
                     if self.length == 0 {
                         // Reset before parsing: an invalid command byte
-                        // early-returns below and must not leave the
+                        // skips the frame (below) and must not leave the
                         // decoder mid-frame (gate-2 W2).
                         let cmd_byte = self.command_byte;
                         self.reset();
-                        let cmd = Command::from_byte(cmd_byte)?;
+                        let Some(cmd) = Command::from_byte(cmd_byte) else {
+                            continue;
+                        };
                         return Some(Frame::new(cmd));
                     }
 
@@ -219,7 +225,7 @@ impl FrameDecoder {
                     if self.payload_idx >= self.length as usize {
                         // Reset before parsing: with payload_idx ==
                         // length and state still Payload, an invalid
-                        // command byte early-returning made the NEXT
+                        // command byte skipping the frame made the NEXT
                         // decoded byte an out-of-bounds write (gate-2
                         // W2: 1030 unauthenticated USB CDC bytes hung
                         // the wallet until power cycle). reset() keeps
@@ -227,7 +233,9 @@ impl FrameDecoder {
                         let cmd_byte = self.command_byte;
                         let len = self.payload_idx;
                         self.reset();
-                        let cmd = Command::from_byte(cmd_byte)?;
+                        let Some(cmd) = Command::from_byte(cmd_byte) else {
+                            continue;
+                        };
                         return Frame::with_payload(cmd, &self.payload[..len]);
                     }
                 }
@@ -287,6 +295,10 @@ mod tests {
         evil.push(0x42); // the byte that used to panic
         assert!(decoder.decode(&evil).is_none());
 
+        // A garbage prefix leaves a bogus header in flight — complete it
+        // so the next frame starts at a clean boundary.
+        assert!(decoder.decode(&[0x00, 0x00]).is_none());
+
         // The decoder recovered: a valid frame parses next.
         let frame = Frame::with_payload(Command::GetTokenInfo, b"ok").unwrap();
         let mut buf = [0u8; 260];
@@ -327,6 +339,43 @@ mod tests {
         assert_eq!(
             decoder.decode(&buf[..len]).map(|f| f.command),
             Some(Command::GetProofs)
+        );
+    }
+
+    #[test]
+    fn test_decoder_resyncs_within_chunk_after_bad_length() {
+        // Fuzz finding (chunking non-invariance): an oversized length
+        // header must not swallow the remainder of the SAME chunk — USB
+        // CDC chunking is arbitrary, so the decoded stream must not
+        // depend on where the transport splits it.
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(
+            decoder
+                .decode(&[0x05, 0x57, 0x00, 0x01, 0x00, 0x00])
+                .map(|f| f.command),
+            Some(Command::ImportToken)
+        );
+    }
+
+    #[test]
+    fn test_decoder_resyncs_within_chunk_after_invalid_command() {
+        // Same asymmetry via the invalid-command early-return paths
+        // (zero-length and completed-payload): garbage frame followed by
+        // a valid frame in one chunk must decode the valid frame.
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(
+            decoder
+                .decode(&[0xFF, 0x00, 0x00, 0x01, 0x00, 0x00])
+                .map(|f| f.command),
+            Some(Command::ImportToken)
+        );
+
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(
+            decoder
+                .decode(&[0xFF, 0x00, 0x01, 0x61, 0x02, 0x00, 0x00])
+                .map(|f| f.command),
+            Some(Command::GetTokenInfo)
         );
     }
 
