@@ -28,18 +28,13 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     result
 }
 
-// Failure carries no diagnostic; callers treat any miss as the demo-key fallback.
+// #54: the swap flow's trust root is a PINNED key (the host-mint-tool demo
+// mint's fixed seed), never a key derived from the imported token's mint
+// URL — whoever chooses the URL would know the private key.
+// Failure carries no diagnostic; callers treat any miss as fatal.
 #[allow(clippy::result_unit_err)]
-pub fn derive_demo_mint_key(token: &Option<cashu_core_lite::TokenV4>) -> Result<PublicKey, ()> {
-    let mint_url = token
-        .as_ref()
-        .map(|t| t.mint.as_str())
-        .unwrap_or("demo://micronuts");
-
-    let mut hasher = Sha256::new();
-    Digest::update(&mut hasher, mint_url.as_bytes());
-    let seed = Digest::finalize(hasher);
-
+pub fn pinned_demo_mint_key() -> Result<PublicKey, ()> {
+    let seed = Sha256::digest(b"demo://micronuts");
     let sk = SecretKey::from_slice(&seed).map_err(|_| ())?;
     Ok(sk.public_key())
 }

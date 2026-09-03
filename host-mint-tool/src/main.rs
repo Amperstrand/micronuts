@@ -289,6 +289,13 @@ fn sign_blinded_outputs(mint: &DemoMint, payload: &[u8]) -> Result<Vec<u8>> {
         let blinded = PublicKey::from_sec1_bytes(chunk).context("Invalid blinded public key")?;
         let sig = mint.sign(&blinded);
         signatures.extend_from_slice(sig.to_encoded_point(true).as_bytes());
+        // #54: each entry is [C' 33B || e 32B || s 32B] — the wallet
+        // verifies the NUT-12 DLEQ against its pinned demo key.
+        let dleq = mint
+            .prove_dleq(&blinded)
+            .context("Failed to produce NUT-12 DLEQ proof")?;
+        signatures.extend_from_slice(&dleq.e.to_secret_bytes());
+        signatures.extend_from_slice(&dleq.s.to_secret_bytes());
     }
 
     Ok(signatures)

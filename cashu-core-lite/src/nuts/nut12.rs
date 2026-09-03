@@ -232,6 +232,51 @@ pub fn verify_proof_dleq(
     verify_dleq(&blinded, &c_prime, &dleq.e, &dleq.s, mint_amount_pubkey).unwrap_or(false)
 }
 
+/// Mint-side NUT-12 prover: produce a DLEQ proof that the same scalar `a`
+/// derived both `A = a*G` (the mint's public key) and `C' = a*B'` (the blind
+/// signature over the blinded message).
+///
+/// Picks nonce `rho`, computes `R1 = rho*G`, `R2 = rho*B'`,
+/// `e = hash_e(R1, R2, A, C')`, `s = rho + e*a`.
+///
+/// `nonce` supplies `rho` explicitly (required for no_std determinism /
+/// test vectors); on std builds `None` draws a fresh nonce from `OsRng`,
+/// mirroring [`crate::crypto::blind_message`]'s blinder handling.
+#[allow(clippy::result_unit_err)]
+pub fn prove_dleq(
+    b_prime: &PublicKey,
+    mint_key: &SecretKey,
+    nonce: Option<SecretKey>,
+) -> Result<BlindSignatureDleq, ()> {
+    let rho = match nonce {
+        Some(n) => n,
+        #[cfg(feature = "std")]
+        None => {
+            SecretKey::from_slice(&k256::Scalar::generate_vartime(&mut rand_core::OsRng).to_bytes())
+                .map_err(|_| ())?
+        }
+        #[cfg(not(feature = "std"))]
+        None => panic!("nonce required for no_std"),
+    };
+
+    let a_scalar = mint_key.to_scalar();
+    let rho_scalar = rho.to_scalar();
+
+    let b_prime_proj: ProjectivePoint = b_prime.into();
+    let c_prime_proj = b_prime_proj * a_scalar;
+    let c_prime = PublicKey::from_affine(c_prime_proj.into()).ok_or(())?;
+
+    let r1 = PublicKey::from_affine((ProjectivePoint::GENERATOR * rho_scalar).into()).ok_or(())?;
+    let r2 = PublicKey::from_affine((b_prime_proj * rho_scalar).into()).ok_or(())?;
+
+    let e_bytes = hash_e(&r1, &r2, &mint_key.public_key(), &c_prime);
+    let e = SecretKey::from_slice(&e_bytes).map_err(|_| ())?;
+    let s_scalar = rho_scalar + e.to_scalar() * a_scalar;
+    let s = SecretKey::from_slice(&s_scalar.to_bytes()).map_err(|_| ())?;
+
+    Ok(BlindSignatureDleq { e, s })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,6 +300,34 @@ mod tests {
             hex::encode(e),
             "a4dc034b74338c28c6bc3ea49731f2a24440fc7c4affc08b31a93fc9fbe6401e"
         );
+    }
+
+    #[test]
+    fn prove_dleq_roundtrip_with_verify_dleq() {
+        let mint_key = SecretKey::from_slice(&[0x07; 32]).unwrap();
+        let nonce = SecretKey::from_slice(&[0x0B; 32]).unwrap();
+        let bm = crate::crypto::blind_message(b"roundtrip-secret", Some(nonce.clone())).unwrap();
+
+        let dleq = prove_dleq(&bm.blinded, &mint_key, Some(nonce)).unwrap();
+        assert!(verify_dleq(
+            &bm.blinded,
+            &crate::crypto::sign_message(&mint_key, &bm.blinded),
+            &dleq.e,
+            &dleq.s,
+            &mint_key.public_key()
+        )
+        .unwrap());
+
+        // A proof for a different key/message must not verify.
+        let other_key = SecretKey::from_slice(&[0x09; 32]).unwrap();
+        assert!(!verify_dleq(
+            &bm.blinded,
+            &crate::crypto::sign_message(&mint_key, &bm.blinded),
+            &dleq.e,
+            &dleq.s,
+            &other_key.public_key()
+        )
+        .unwrap());
     }
 
     fn hex_decode_33(s: &str) -> [u8; 33] {

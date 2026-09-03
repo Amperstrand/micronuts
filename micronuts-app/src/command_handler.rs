@@ -7,7 +7,8 @@ use crate::hardware::MicronutsHardware;
 use crate::protocol::{Command, Response, Status, MAX_PAYLOAD_SIZE};
 use crate::qr;
 use crate::state::{FirmwareState, SwapState};
-use crate::util::{decode_hex, derive_demo_mint_key, encode_hex};
+use crate::util::{decode_hex, encode_hex, pinned_demo_mint_key};
+use cashu_core_lite::nuts::nut12::ProofDleq;
 use cashu_core_lite::{
     blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, PublicKey,
     SecretKey, TokenV4, TokenV4Token,
@@ -196,16 +197,21 @@ fn handle_send_signatures<H: MicronutsHardware>(
         None => return Response::new(Status::Error),
     };
 
-    if !payload.len().is_multiple_of(33) {
+    // #54: each entry is [C' 33B || e 32B || s 32B] — a blind signature
+    // plus its NUT-12 DLEQ proof. The DLEQ is verified against the PINNED
+    // mint key; without it any parseable point would be accepted (the
+    // gate-2 W1 forgery).
+    const ENTRY_LEN: usize = 33 + 32 + 32;
+    if !payload.len().is_multiple_of(ENTRY_LEN) {
         return Response::new(Status::InvalidPayload);
     }
 
-    let sig_count = payload.len() / 33;
+    let sig_count = payload.len() / ENTRY_LEN;
     if sig_count != blinded_messages.len() {
         return Response::new(Status::InvalidPayload);
     }
 
-    let mint_pubkey = match derive_demo_mint_key(&state.imported_token) {
+    let mint_pubkey = match pinned_demo_mint_key() {
         Ok(pk) => pk,
         Err(_) => return Response::new(Status::CryptoError),
     };
@@ -219,30 +225,37 @@ fn handle_send_signatures<H: MicronutsHardware>(
         .unwrap_or_else(|| alloc::string::String::from("00"));
 
     for (i, blinded) in blinded_messages.iter().enumerate() {
-        let sig_bytes = &payload[i * 33..(i + 1) * 33];
-        let mut full_bytes = [0u8; 65];
-        full_bytes[0] = 0x04;
-        full_bytes[1..34].copy_from_slice(sig_bytes);
-        full_bytes[34..].copy_from_slice(&sig_bytes[1..32]);
+        let entry = &payload[i * ENTRY_LEN..(i + 1) * ENTRY_LEN];
+        let (c_prime_bytes, e_bytes, s_bytes) = (&entry[..33], &entry[33..65], &entry[65..]);
 
-        let blinded_sig = match PublicKey::from_sec1_bytes(&full_bytes[..65]) {
+        let blinded_sig = match PublicKey::from_sec1_bytes(c_prime_bytes) {
             Ok(pk) => pk,
-            Err(_) => {
-                let compressed: [u8; 33] = {
-                    let mut arr = [0u8; 33];
-                    arr.copy_from_slice(sig_bytes);
-                    arr
-                };
-                match PublicKey::from_sec1_bytes(&compressed) {
-                    Ok(pk) => pk,
-                    Err(_) => continue,
-                }
-            }
+            Err(_) => return Response::new(Status::CryptoError),
         };
+
+        // #54: NUT-12 DLEQ — the signer must prove knowledge of the mint
+        // scalar behind the PINNED key (fail closed on any invalid entry).
+        let (e, s) = match (
+            SecretKey::from_slice(e_bytes),
+            SecretKey::from_slice(s_bytes),
+        ) {
+            (Ok(e), Ok(s)) => (e, s),
+            _ => return Response::new(Status::CryptoError),
+        };
+        match cashu_core_lite::nuts::nut12::verify_dleq(
+            &blinded.blinded,
+            &blinded_sig,
+            &e,
+            &s,
+            &mint_pubkey,
+        ) {
+            Ok(true) => {}
+            _ => return Response::new(Status::CryptoError),
+        }
 
         let unblinded = match unblind_signature(&blinded_sig, &blinded.blinder, &mint_pubkey) {
             Ok(pk) => pk,
-            Err(_) => continue,
+            Err(_) => return Response::new(Status::CryptoError),
         };
 
         let secret = &state.swap_secrets.as_ref().unwrap()[i];
@@ -255,7 +268,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
             keyset_id: keyset_id.clone(),
             secret: encode_hex(secret),
             c: c_vec,
-            dleq: None,
+            dleq: Some(ProofDleq::new(e, s, blinded.blinder.clone())),
         });
     }
 

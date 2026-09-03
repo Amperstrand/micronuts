@@ -25,6 +25,13 @@ impl DemoMint {
         let c_prime = sig_projective * scalar;
         PublicKey::from_affine(c_prime.into()).expect("Invalid signature")
     }
+
+    pub fn prove_dleq(
+        &self,
+        blinded: &PublicKey,
+    ) -> Option<cashu_core_lite::nuts::nut12::BlindSignatureDleq> {
+        cashu_core_lite::nuts::nut12::prove_dleq(blinded, &self.key_1, None).ok()
+    }
 }
 
 impl Default for DemoMint {
