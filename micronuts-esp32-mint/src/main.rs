@@ -30,17 +30,20 @@ use micronuts_mint::DemoMint;
 #[cfg(target_os = "espidf")]
 use micronuts_esp32_mint::json;
 
-// WiFi credentials: build-time env with fallback (NVS-stored provisioning is
-// the follow-up; hardcoding in source is accepted for the scaffold only).
+// WiFi credentials: build-time env, fail closed (#58) — a placeholder
+// fallback silently ships scannable fake creds and hides unset-env builds
+// (option_env! is invisible to cargo change detection). NVS provisioning
+// is the follow-up; until then unset env = compile error, not a baked
+// "YOUR_SSID".
 #[cfg(target_os = "espidf")]
 const WIFI_SSID: &str = match option_env!("MICRONUTS_WIFI_SSID") {
     Some(ssid) => ssid,
-    None => "YOUR_SSID",
+    None => panic!("MICRONUTS_WIFI_SSID not set — refusing to build with placeholder credentials"),
 };
 #[cfg(target_os = "espidf")]
 const WIFI_PASS: &str = match option_env!("MICRONUTS_WIFI_PASS") {
     Some(pass) => pass,
-    None => "YOUR_PASSWORD",
+    None => panic!("MICRONUTS_WIFI_PASS not set — refusing to build with placeholder credentials"),
 };
 
 #[cfg(target_os = "espidf")]

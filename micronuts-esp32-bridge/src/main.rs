@@ -6,8 +6,16 @@ use esp_idf_sys::link_patches;
 use std::net::TcpListener;
 use std::io::{Read, Write};
 
-const WIFI_SSID: &str = "YOUR_SSID";
-const WIFI_PASS: &str = "YOUR_PASSWORD";
+// #58: fail closed on unset credentials — no placeholder fallbacks in
+// release-shaped binaries.
+const WIFI_SSID: &str = match option_env!("MICRONUTS_WIFI_SSID") {
+    Some(ssid) => ssid,
+    None => panic!("MICRONUTS_WIFI_SSID not set — refusing to build with placeholder credentials"),
+};
+const WIFI_PASS: &str = match option_env!("MICRONUTS_WIFI_PASS") {
+    Some(pass) => pass,
+    None => panic!("MICRONUTS_WIFI_PASS not set — refusing to build with placeholder credentials"),
+};
 const TCP_PORT: u16 = 3333;
 
 fn main() -> anyhow::Result<()> {

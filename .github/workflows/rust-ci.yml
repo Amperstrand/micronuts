@@ -236,10 +236,35 @@ jobs:
       - name: Build micronuts-esp32-mint (Xtensa)
         shell: bash
         working-directory: micronuts-esp32-mint
+        env:
+          # #58: credential consts fail closed at build time without env.
+          MICRONUTS_WIFI_SSID: ci
+          MICRONUTS_WIFI_PASS: ci
         run: |
           . $HOME/.espressif/esp-idf-v5.2.4/export-esp.sh 2>/dev/null || . $HOME/export-esp.sh
-          cargo +esp build
+          cargo +esp build --locked
           file target/xtensa-esp32-espidf/debug/micronuts-esp32-mint | tee /dev/stderr | grep -q Xtensa
+
+      - name: Build micronuts-esp32-bridge (Xtensa, #58)
+        shell: bash
+        working-directory: micronuts-esp32-bridge
+        env:
+          MICRONUTS_WIFI_SSID: ci
+          MICRONUTS_WIFI_PASS: ci
+        run: |
+          . $HOME/.espressif/esp-idf-v5.2.4/export-esp.sh 2>/dev/null || . $HOME/export-esp.sh
+          cargo +esp build --locked
+
+      - name: Binary scan — no placeholder credentials in artifacts (#58)
+        shell: bash
+        run: |
+          SCAN=$(grep -rl "YOUR_SSID\|YOUR_PASSWORD" \
+            micronuts-esp32-mint/target/xtensa-esp32-espidf/debug \
+            micronuts-esp32-bridge/target/xtensa-esp32-espidf/debug || true)
+          if [ -n "$SCAN" ]; then
+            echo "FAIL: placeholder credential markers found in: $SCAN"; exit 1
+          fi
+          echo "OK: no placeholder credential markers in ESP artifacts"
 
       - name: Verify artifact architecture (anti-host-binary guard)
         shell: bash
