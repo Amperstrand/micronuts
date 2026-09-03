@@ -74,6 +74,34 @@ goes away.
    host responder side. One real gap to size before implementation: envelope
    payloads vs the 2048 B FMP frame cap on WiFi transports.
 
+### Peer authorization (gate-2 W4, #57) — v1 decision: daemon-side closed allowlist
+
+Possession of an FSP session is the only authorization the service layer can
+see today (`FspAppHandler::on_fsp_message` gets no peer identity;
+`CashuRpcServiceAdapter` gates method+route only), and the fips daemon's ACL
+**defaults to allow** (`peers.allow`/`peers.deny`, TCP-wrappers ordering:
+allow-match → allow, deny-match → deny, no-match → **allow**). Wired naively,
+any LAN peer the daemon forwards for gets a full mint-RPC oracle (W3
+thin-air minting, spent-set pollution, unbounded quote growth).
+
+**v1 mandate (operational, zero code):** any daemon hosting a
+value-carrying responder deploys with a *closed* ACL — `peers.allow`
+containing only the sidecar's provisioned key, `peers.deny` containing
+`ALL`. Verified against fips 0.5.0 `src/node/acl.rs`: allow-list match
+overrides the deny, so this pins the responder to exactly one peer. The
+default-open posture is acceptable only for the demo mint that never
+custodies real value. This does not change the leaf-side
+`FIPS_PEER_ALLOWLIST` (microfips `fips-identity`, fail-closed env parse) —
+that one gates who *our* node answers and stays as-is.
+
+**v2 (deferred, design):** lift peer identity into the service contract —
+`FspAppHandler::on_fsp_message(msg_type, payload, response, peer)` with the
+responder enforcing per-peer policy itself. Drafted in-org in microfips as
+the API-lift issue (cross-repo coordination; check the owning session
+before picking it up). v1 and v2 are complementary: the allowlist is the
+perimeter, the peer-context API makes the responder defensible even when
+the perimeter is misconfigured.
+
 ### Identity separation (invariant, independent of topology)
 
 The FIPS node identity belongs to the **device** (the ESP32 sidecar), never
