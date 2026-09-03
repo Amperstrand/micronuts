@@ -228,7 +228,7 @@ impl FrameDecoder {
                         let len = self.payload_idx;
                         self.reset();
                         let cmd = Command::from_byte(cmd_byte)?;
-                        return Some(Frame::with_payload(cmd, &self.payload[..len])?);
+                        return Frame::with_payload(cmd, &self.payload[..len]);
                     }
                 }
             }
