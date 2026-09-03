@@ -185,6 +185,48 @@ fn untrusted_mint_is_rejected() {
 }
 
 #[test]
+fn unpinned_keyset_is_rejected() {
+    // #56 provisioning model: a fully valid DLEQ chain minted under a
+    // keyset the gate never pinned must be rejected — validity of the
+    // cryptography is not authorization of the keyset.
+    let mut v = validator();
+    let foreign_id = "eeff0011aa22bb33cc44dd55ee66ff7700112233445566778899aabbccddeeff";
+    let amount = 8u64;
+    let a = sk(amount as u8 + 100);
+    let k_pub = a.public_key();
+    let bm = blind_message(b"0f0e0d0c0b0a".as_ref(), Some(sk(11))).unwrap();
+    let c_prime = sign_message(&a, &bm.blinded);
+    let k_scalar = sk(13).to_scalar();
+    let r1 = PublicKey::from_affine((ProjectivePoint::GENERATOR * k_scalar).into()).unwrap();
+    let bp: ProjectivePoint = (&bm.blinded).into();
+    let r2 = PublicKey::from_affine((bp * k_scalar).into()).unwrap();
+    let e = SecretKey::from_slice(&hash_e(&r1, &r2, &k_pub, &c_prime)).unwrap();
+    let s = SecretKey::from_slice(&(k_scalar + e.to_scalar() * a.to_scalar()).to_bytes()).unwrap();
+    let c = unblind_signature(&c_prime, &bm.blinder, &k_pub).unwrap();
+    let proof = cashu_core_lite::token::Proof {
+        amount,
+        keyset_id: foreign_id.to_string(),
+        secret: String::from("0f0e0d0c0b0a"),
+        c: c.to_bytes().to_vec(),
+        dleq: Some(ProofDleq::new(e, s, bm.blinder)),
+    };
+    let wire = encode_token_wire(&TokenV4 {
+        mint: MINT.to_string(),
+        unit: "sat".to_string(),
+        memo: None,
+        tokens: vec![TokenV4Token {
+            keyset_id: foreign_id.to_string(),
+            proofs: vec![proof],
+        }],
+    })
+    .unwrap();
+    assert!(matches!(
+        v.verify_token(&wire, 8),
+        Err(WalletPortError::InvalidProof(_))
+    ));
+}
+
+#[test]
 fn nut10_style_locked_secret_is_rejected() {
     let mut v = validator();
     // NUT-10 secrets are JSON-shaped; offline gates cannot evaluate locks.
