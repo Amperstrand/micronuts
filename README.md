@@ -15,7 +15,7 @@ tested surface:
 | `walletport/` | Offline gate validator + WalletPort facade: decode → trust → DLEQ-verify vs pinned keysets → value check → persist-before-open spent ring. Runnable demo: `cargo run -p walletport --example gate_demo` |
 | `walletport/fuzz/` | libFuzzer harness (4 targets, committed minimized corpora incl. DLEQ-valid seeds; 60M+ execs, zero panics) |
 | `micronuts-app/` | Shared application core (UI state, commands, QR) used by firmware + simulator |
-| `micronuts-mint/` | Backend-driven prototype mint (LightningBackend seam, quote state machines, NUT-08 fees, NUT-09 restore) — e2e-verified with cashu-ts v4 |
+| `micronuts-mint/` | Backend-driven mint (LightningBackend seam, quote state machines, NUT-08 fees, NUT-09 restore, UUIDv7 quotes) — durable state, upstream settlement verified on testnut + signet; e2e-green with cashu-ts v4 |
 | `micronuts-fips-responder/` | Host-side FIPS responder: microfips service envelope → `CashuRpcServiceAdapter`, plus the FSP-datagram segmentation codec (`frag`, espnow_frag pattern) for replies above the 2048/768 B frame caps |
 | `micronuts-esp32-mint/` | ESP32 esp-idf (std Rust) WiFi front-end for the mint — house-style scaffold (build from that dir with the `esp` toolchain) |
 | `firmware/` | The STM32F469I board binary |
@@ -23,12 +23,14 @@ tested surface:
 
 **CI (all blocking):** fmt, host tests (ccl 151 + walletport 20),
 clippy `-D warnings` (host + thumb targets), no_std thumb builds,
-firmware release build, adapter smoke, cargo-deny advisories, and
-spec-quote drift vs cashubtc/nuts HEAD. See
+firmware release build, adapter smoke, cargo-deny advisories,
+spec-quote drift vs cashubtc/nuts HEAD, and the Xtensa cross-build of
+`micronuts-esp32-mint` with an anti-host-binary `file` guard. See
 [docs/GATE-FIRMWARE-BRINGUP.md](docs/GATE-FIRMWARE-BRINGUP.md) for the
-board bring-up plan and
+board bring-up plan,
 [docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md](docs/WALLETPORT-EDGE-VALIDATOR-DESIGN.md)
-for the gate design.
+for the gate design, and [docs/ROADMAP.md](docs/ROADMAP.md) for what
+comes next.
 
 ## Status: Working Prototype
 

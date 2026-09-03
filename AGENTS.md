@@ -36,6 +36,21 @@ Spec-quote drift: `greatspectate check` per `cashu-core-lite/specquotes.toml`
 (verbatim NUT quotes in `// NUT #XX:` comments; nuts clone at
 `cashu-core-lite/nuts/`). Note zsh needs explicit file globs, not `$FILES`.
 
+## Runtime knobs (mint_server / audit-adapter)
+
+- `MICRONUTS_UPSTREAM_MINT` — upstream Cashu mint settlement backend
+  (rugs02 model); unset = auto-settling FakeWallet.
+- `MICRONUTS_RESERVE_BOOTSTRAP_SATS` — reserve bootstrap margin (default 1000).
+- `MICRONUTS_UPSTREAM_PAY_TIMEOUT_SECS` — settle-poll window for real
+  upstreams that need an external payer (default 5s; signut runs use 240).
+- `MICRONUTS_MINT_STATE_FILE` / `MICRONUTS_RESERVE_STATE_FILE` — durable
+  state (atomic snapshots; corrupt files REFUSE to boot; cross-era reserve
+  snapshots panic). See docs/PERSISTENCE-DESIGN.md.
+- Wallet e2e harness (`scripts/e2e_wallet.mjs`): `PAY_CMD` (payer snippet,
+  run with `$INVOICE`), `SETTLE_POLL_TRIES`/`SETTLE_POLL_MS`, `MELT_INVOICE`
+  + `MELT_AMOUNT`. Signut recipe: pay both the user quote and the printed
+  bootstrap invoice via ssh → cln-hub nsenter lightning-cli.
+
 ## Rules
 
 1. **Never file PRs/issues on upstream projects without human review** —
@@ -57,7 +72,9 @@ Spec-quote drift: `greatspectate check` per `cashu-core-lite/specquotes.toml`
 
 ## Key docs
 
+- `docs/ROADMAP.md` — phase order + ownership for open work
 - `docs/AUDIT-2026-09-02-mint-prototype.md` — full audit + gap list
 - `micronuts-mint/PARITY.md` — upstream parity map
+- `docs/PERSISTENCE-DESIGN.md` — durable state (phases 1-3)
 - `docs/STATUS-AND-TEST-PLAN.md` — hardware verification plan
 - `docs/MINT-WALLET-DEMO.md` — RPC/wallet demo architecture

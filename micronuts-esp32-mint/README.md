@@ -45,6 +45,7 @@ HTTP API on port **3338**.
   copy custom partition CSVs into its build dir).
 - Persistence milestone: spent set + quotes + issued outputs into NVS
   (`EspDefaultNvsPartition` already taken by WiFi; bounded blobs + explicit
-  commits per house NVS rules).
+  commits per house NVS rules) — design: ../docs/PERSISTENCE-DESIGN.md
+  phase 3, tracked as #60.
 - Upstream `cashu` (=0.17.3) compiles for Xtensa ESP-IDF (tollgate-s3-rs
   evidence) — no de-std crypto layer needed on this target.

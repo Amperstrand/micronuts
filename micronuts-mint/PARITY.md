@@ -106,9 +106,11 @@ Landed since (backend-driven rework 2026-09-02):
 - **Payment safety** — atomic batch double-spend rejection, keyset binding,
   spend-before-sign ordering.
 
-Still not implemented: durable persistence (spent set/quotes are RAM-only),
-multiple keysets/rotation, fee_reserve from a real backend, async melt
-polling (PENDING is resolved within the single post_melt call).
+Still not implemented: multiple keysets/rotation, fee_reserve from a real
+backend, async melt polling (PENDING is resolved within the single
+post_melt call). Durable persistence SHIPPED for the host mint and the
+upstream reserve (atomic file snapshots, #52/#59); the device NVS leg is
+#60 — see docs/PERSISTENCE-DESIGN.md.
 
 ## Architecture invariant
 

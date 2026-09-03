@@ -321,12 +321,12 @@ boundary is still the underlying CBOR RPC payload carried by `RpcByteTransport`.
 |------|-------------|-------------------|
 | Key derivation | SHA-256 from fixed seed | BIP-32 from mnemonic (NUT-13) |
 | Lightning | `LightningBackend` trait; FakeWallet auto-settles on poll | Real upstream-mint / node adapter (see docs/UPSTREAM-BACKEND-DESIGN.md) |
-| Persistence | None (RAM only) | Flash storage for quotes, spent proofs (NVS/LittleFS on device) |
-| Double-spend prevention | Atomic in-session rejection (claim-then-sign) | Durable spent-proof database |
+| Persistence | Atomic file snapshots on host — mint + reserve (docs/PERSISTENCE-DESIGN.md; `MICRONUTS_MINT_STATE_FILE`/`MICRONUTS_RESERVE_STATE_FILE`) | NVS/LittleFS on device (#60) |
+| Double-spend prevention | Atomic claim-then-sign, durable across restarts (#52) | Durable spent-proof database |
 | Fees | NUT-08 input fees live (`(sum_ppk+999)/1000`); fee_reserve=0 | Configurable per-keyset fees + backend fee_reserve |
 | Multiple keysets | Single hardcoded | Multiple keysets with rotation |
 | DLEQ proofs | Issued on every signature (upstream `cashu` path) | ✅ done |
-| Restore | Session-scoped B_→signature index | Durable across restarts |
+| Restore | B_→signature index, durable across restarts (#52) | ✅ done |
 | Quote lifecycle | UNPAID→PAID→ISSUED (mint, partial-mint + accounting fields), UNPAID→PENDING→PAID/FAILED (melt, rollback on failure) | Async melt polling for slow backends |
 | Transport | RPC loopback bytes | serial framing, USB CDC, microfips, esp-idf httpd |
 
