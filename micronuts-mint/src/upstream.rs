@@ -53,18 +53,27 @@ impl UpstreamCashuBackend {
     /// Build a backend for `base_url` (e.g. `https://testnut.cashu.exchange`).
     ///
     /// `bootstrap_sats` is the initial reserve size and auto-top-up margin.
-    pub fn new(base_url: &str, unit: &str, bootstrap_sats: u64) -> Self {
+    pub fn new(
+        base_url: &str,
+        unit: &str,
+        bootstrap_sats: u64,
+        reserve_state_file: Option<std::path::PathBuf>,
+    ) -> Self {
         let http = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(10))
             .timeout(Duration::from_secs(60))
             .build();
+        let mut reserve = ReserveWallet::new(base_url, unit, bootstrap_sats);
+        if let Some(path) = reserve_state_file {
+            reserve = reserve.with_state_file(path);
+        }
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             unit: unit.to_string(),
             http,
             mint_quotes: HashMap::new(),
             melt_quotes: HashMap::new(),
-            reserve: ReserveWallet::new(base_url, unit, bootstrap_sats),
+            reserve,
         }
     }
 
@@ -156,7 +165,8 @@ impl LightningBackend for UpstreamCashuBackend {
 
 /// Build the upstream backend from the environment:
 /// `MICRONUTS_UPSTREAM_MINT` (URL), `MICRONUTS_UPSTREAM_UNIT` (default
-/// `sat`), `MICRONUTS_RESERVE_BOOTSTRAP_SATS` (default 1000).
+/// `sat`), `MICRONUTS_RESERVE_BOOTSTRAP_SATS` (default 1000),
+/// `MICRONUTS_RESERVE_STATE_FILE` (optional durable reserve; era-guarded).
 ///
 /// Returns `None` when `MICRONUTS_UPSTREAM_MINT` is unset/empty (caller
 /// falls back to the FakeWallet demo backend).
@@ -171,8 +181,16 @@ pub fn upstream_backend_from_env(
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(DEFAULT_BOOTSTRAP_SATS);
+    let reserve_state_file = std::env::var_os("MICRONUTS_RESERVE_STATE_FILE")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from);
     Some((
-        Box::new(UpstreamCashuBackend::new(&base_url, &unit, bootstrap_sats)),
+        Box::new(UpstreamCashuBackend::new(
+            &base_url,
+            &unit,
+            bootstrap_sats,
+            reserve_state_file,
+        )),
         Box::new(SystemClock),
     ))
 }

@@ -8,15 +8,43 @@
 //! while reserve proofs from the old era are outstanding — melts pay from
 //! the CURRENT upstream regardless of which era minted the tokens.
 
+use std::path::PathBuf;
+
 use cashu_core_lite::crypto::unblind_signature;
 use cashu_core_lite::error::CashuError;
+use cashu_core_lite::keypair::PublicKey;
 use cashu_core_lite::nuts::nut00;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::persist;
 use crate::upstream::{json_amount, json_str, upstream_get, upstream_post};
 use crate::upstream_wire::{
     blind_outputs, json_point, proof_json, signatures_array, PendingChange, UpstreamKeyset,
 };
+
+#[derive(Serialize, Deserialize)]
+struct KeysetSnap {
+    id: String,
+    input_fee_ppk: u64,
+    keys: Vec<(u64, String)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProofSnap {
+    amount: u64,
+    id: String,
+    secret: String,
+    c_hex: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ReserveSnapshot {
+    base_url: String,
+    unit: String,
+    keyset: Option<KeysetSnap>,
+    proofs: Vec<ProofSnap>,
+}
 
 /// Holds the upstream proofs our mint uses to settle melts.
 pub struct ReserveWallet {
@@ -25,6 +53,7 @@ pub struct ReserveWallet {
     bootstrap_sats: u64,
     keyset: Option<UpstreamKeyset>,
     proofs: Vec<nut00::Proof>,
+    store: Option<persist::SnapshotFile<ReserveSnapshot>>,
 }
 
 impl ReserveWallet {
@@ -35,7 +64,28 @@ impl ReserveWallet {
             bootstrap_sats,
             keyset: None,
             proofs: Vec::new(),
+            store: None,
         }
+    }
+
+    /// Enable durable state (same fail-stop semantics as the mint store:
+    /// corrupt/unreadable files refuse to boot; see persist.rs).
+    ///
+    /// Era guard: a snapshot minted against a different upstream URL (or
+    /// unit) panics on restore — reserve proofs are only spendable at the
+    /// upstream that issued them, and mixing eras is the solvency hole the
+    /// module doc forbids.
+    pub fn with_state_file(mut self, path: impl Into<PathBuf>) -> Self {
+        let store = persist::SnapshotFile::new(path);
+        match store.load() {
+            Ok(Some(snapshot)) => self.restore(snapshot),
+            Ok(None) => store
+                .save(&self.snapshot())
+                .unwrap_or_else(|e| panic!("reserve state init failed: {e}")),
+            Err(e) => panic!("refusing to start: {e}"),
+        }
+        self.store = Some(store);
+        self
     }
 
     /// Total reserve balance in sats.
@@ -82,6 +132,7 @@ impl ReserveWallet {
         )?;
         let signatures = signatures_array(&minted)?;
         self.append_unblinded(pending, signatures, &keyset, amount_sat)?;
+        self.persist();
         eprintln!(
             "micronuts reserve: bootstrapped +{amount_sat} sats, balance {} sats",
             self.balance_sats()
@@ -233,6 +284,7 @@ impl ReserveWallet {
             if preimage.is_empty() {
                 eprintln!("micronuts reserve: upstream melt PAID without a preimage");
             }
+            self.persist();
             eprintln!(
                 "micronuts reserve: melted {amount_needed} sats, balance {} sats",
                 self.balance_sats()
@@ -246,6 +298,7 @@ impl ReserveWallet {
             Err(CashuError::PaymentFailed)
         } else {
             self.remove_selected(&selected);
+            self.persist();
             eprintln!(
                 "micronuts reserve: upstream melt state ambiguous ({state:?}), proofs parked, balance {} sats",
                 self.balance_sats()
@@ -253,6 +306,92 @@ impl ReserveWallet {
             Err(CashuError::Protocol(format!(
                 "upstream melt state ambiguous: {state}"
             )))
+        }
+    }
+
+    fn snapshot(&self) -> ReserveSnapshot {
+        ReserveSnapshot {
+            base_url: self.base_url.clone(),
+            unit: self.unit.clone(),
+            keyset: self.keyset.as_ref().map(|k| KeysetSnap {
+                id: k.id.clone(),
+                input_fee_ppk: k.input_fee_ppk,
+                keys: k
+                    .keys
+                    .iter()
+                    .map(|(amount, pk)| (*amount, hex::encode(pk.to_bytes())))
+                    .collect(),
+            }),
+            proofs: self
+                .proofs
+                .iter()
+                .map(|p| ProofSnap {
+                    amount: p.amount,
+                    id: p.id.clone(),
+                    secret: p.secret.clone(),
+                    c_hex: hex::encode(p.c.to_bytes()),
+                })
+                .collect(),
+        }
+    }
+
+    fn restore(&mut self, snap: ReserveSnapshot) {
+        if snap.base_url != self.base_url || snap.unit != self.unit {
+            panic!(
+                "reserve state era mismatch: snapshot is for {} ({}) but this wallet is {} ({}) — \
+                 never mix upstream eras (module doc rule)",
+                snap.base_url, snap.unit, self.base_url, self.unit
+            );
+        }
+        self.keyset = snap.keyset.map(|k| {
+            let keys = k
+                .keys
+                .into_iter()
+                .map(|(amount, pk_hex)| {
+                    let bytes: [u8; 33] = hex::decode(&pk_hex)
+                        .unwrap_or_else(|e| panic!("reserve state: bad pubkey hex: {e}"))
+                        .try_into()
+                        .unwrap_or_else(|v: Vec<u8>| {
+                            panic!("reserve state: pubkey not 33 bytes: {v:?}")
+                        });
+                    (
+                        amount,
+                        PublicKey::from_bytes(&bytes)
+                            .unwrap_or_else(|| panic!("reserve state: bad pubkey point")),
+                    )
+                })
+                .collect();
+            UpstreamKeyset {
+                id: k.id,
+                input_fee_ppk: k.input_fee_ppk,
+                keys,
+            }
+        });
+        self.proofs = snap
+            .proofs
+            .into_iter()
+            .map(|p| {
+                let bytes: [u8; 33] = hex::decode(&p.c_hex)
+                    .unwrap_or_else(|e| panic!("reserve state: bad C hex: {e}"))
+                    .try_into()
+                    .unwrap_or_else(|v: Vec<u8>| panic!("reserve state: C not 33 bytes: {v:?}"));
+                nut00::Proof {
+                    amount: p.amount,
+                    id: p.id,
+                    secret: p.secret,
+                    c: PublicKey::from_bytes(&bytes)
+                        .unwrap_or_else(|| panic!("reserve state: bad C point")),
+                    dleq: None,
+                }
+            })
+            .collect();
+    }
+
+    fn persist(&self) {
+        if let Some(store) = &self.store {
+            store
+                .save(&self.snapshot())
+                .unwrap_or_else(|e| panic!("reserve state persist failed (fail-stop): {e}"));
         }
     }
 

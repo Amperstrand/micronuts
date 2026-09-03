@@ -59,15 +59,18 @@ index restores, melt rollback (proof release + FAILED quote) survives,
 corrupt files refuse boot, and boot creates a valid-JSON snapshot
 eagerly.
 
-## Phase 2 — reserve wallet durability (next)
+## Phase 2 — reserve wallet durability (shipped, #59)
 
-`ReserveWallet` state (proofs, cached upstream keyset, bootstrap margin)
+`ReserveWallet` state (proofs, cached upstream keyset, era identity)
 serializes to its own file (`MICRONUTS_RESERVE_STATE_FILE`, same atomic
-snapshot mechanism) with save points after bootstrap, change recovery,
-and selection-removal. Persist ordering mirrors the mint: selected proofs
-are removed from disk *before* the upstream melt POST (an ambiguous melt
-must not be payable twice from a restored wallet) — the parked-proofs
-caveat in `upstream.rs` already models the in-memory version of this.
+snapshot mechanism). Shipped in #59 with save points after bootstrap,
+after post-PAID bookkeeping, and on PENDING selection-removal (parked
+proofs stay removed — they may have been consumed upstream). Retained
+proofs after a definitive FAILED or an HTTP-error melt are the fail-safe
+direction on restore: worst case the upstream rejects a reuse (already
+spent), never a double-pay. The snapshot carries the upstream URL+unit
+and restore REFUSES a cross-era file (panic) — reserve proofs are only
+spendable at the upstream that issued them.
 
 ## Phase 3 — device (NVS / LittleFS, design only)
 

@@ -14,8 +14,10 @@
 
 use std::fs;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// Serialized form of one NUT-04 mint quote (fields mirror the in-memory
@@ -70,14 +72,19 @@ pub struct MintStateSnapshot {
     pub issued_outputs: Vec<(String, BlindSignatureSnap)>,
 }
 
-/// Atomic-snapshot file store.
-pub struct FileStore {
+/// Atomic-snapshot file store for any JSON-serializable state `T`
+/// (mint state, reserve wallet, …).
+pub struct SnapshotFile<T> {
     path: PathBuf,
+    _marker: PhantomData<fn() -> T>,
 }
 
-impl FileStore {
+impl<T: Serialize + DeserializeOwned> SnapshotFile<T> {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        Self {
+            path: path.into(),
+            _marker: PhantomData,
+        }
     }
 
     /// Load the snapshot, if a state file exists.
@@ -85,37 +92,33 @@ impl FileStore {
     /// Returns a descriptive error (instead of `None`) when the file
     /// exists but cannot be parsed — callers must treat that as a
     /// refuse-to-boot condition.
-    pub fn load(&self) -> Result<Option<MintStateSnapshot>, String> {
+    pub fn load(&self) -> Result<Option<T>, String> {
         if !self.path.exists() {
             return Ok(None);
         }
         let raw = fs::read_to_string(&self.path)
-            .map_err(|e| format!("mint state {}: unreadable: {e}", self.path.display()))?;
+            .map_err(|e| format!("state {}: unreadable: {e}", self.path.display()))?;
         serde_json::from_str(&raw)
             .map(Some)
-            .map_err(|e| format!("mint state {}: corrupt: {e}", self.path.display()))
+            .map_err(|e| format!("state {}: corrupt: {e}", self.path.display()))
     }
 
     /// Atomically replace the state file with `snap`.
-    pub fn save(&self, snap: &MintStateSnapshot) -> Result<(), String> {
+    pub fn save(&self, snap: &T) -> Result<(), String> {
         let tmp = self.tmp_path();
         let json = serde_json::to_string(snap)
-            .map_err(|e| format!("mint state {}: serialize failed: {e}", self.path.display()))?;
+            .map_err(|e| format!("state {}: serialize failed: {e}", self.path.display()))?;
         // Write + fsync the temp file, then rename over the target —
         // rename(2) is atomic, so the target is never torn.
         (|| {
             let mut f = fs::File::create(&tmp)
-                .map_err(|e| format!("mint state {}: create tmp failed: {e}", tmp.display()))?;
+                .map_err(|e| format!("state {}: create tmp failed: {e}", tmp.display()))?;
             f.write_all(json.as_bytes())
-                .map_err(|e| format!("mint state {}: write failed: {e}", tmp.display()))?;
+                .map_err(|e| format!("state {}: write failed: {e}", tmp.display()))?;
             f.sync_all()
-                .map_err(|e| format!("mint state {}: fsync failed: {e}", tmp.display()))?;
-            fs::rename(&tmp, &self.path).map_err(|e| {
-                format!(
-                    "mint state {}: atomic rename failed: {e}",
-                    self.path.display()
-                )
-            })
+                .map_err(|e| format!("state {}: fsync failed: {e}", tmp.display()))?;
+            fs::rename(&tmp, &self.path)
+                .map_err(|e| format!("state {}: atomic rename failed: {e}", self.path.display()))
         })()
         .inspect_err(|_| {
             // Best-effort cleanup of the orphaned temp file.
@@ -151,14 +154,14 @@ mod tests {
 
     #[test]
     fn load_missing_file_is_none() {
-        let store = FileStore::new(temp_path("missing"));
+        let store = SnapshotFile::<MintStateSnapshot>::new(temp_path("missing"));
         assert!(store.load().unwrap().is_none());
     }
 
     #[test]
     fn save_then_load_roundtrips() {
         let path = temp_path("roundtrip");
-        let store = FileStore::new(&path);
+        let store = SnapshotFile::<MintStateSnapshot>::new(&path);
         let snap = MintStateSnapshot {
             spent_ys: vec!["ab".into()],
             ..Default::default()
@@ -173,7 +176,9 @@ mod tests {
     fn corrupt_file_is_an_error_not_none() {
         let path = temp_path("corrupt");
         std::fs::write(&path, b"{ not json").unwrap();
-        let err = FileStore::new(&path).load().unwrap_err();
+        let err = SnapshotFile::<MintStateSnapshot>::new(&path)
+            .load()
+            .unwrap_err();
         assert!(err.contains("corrupt"), "unexpected error: {err}");
         std::fs::remove_file(&path).ok();
     }
@@ -181,7 +186,7 @@ mod tests {
     #[test]
     fn save_leaves_no_tmp_file() {
         let path = temp_path("notmp");
-        let store = FileStore::new(&path);
+        let store = SnapshotFile::<MintStateSnapshot>::new(&path);
         store.save(&MintStateSnapshot::default()).unwrap();
         let entries: Vec<_> = std::fs::read_dir(path.parent().unwrap())
             .unwrap()

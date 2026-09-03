@@ -19,7 +19,7 @@ use mock::{MeltMode, MockUpstream, MELT_PREIMAGE};
 #[test]
 fn create_invoice_settles_after_two_polls() {
     let mock = MockUpstream::start();
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(100, "test").unwrap();
     assert_eq!(invoice, "lnbcmock100sat1mockup");
@@ -35,7 +35,7 @@ fn create_invoice_settles_after_two_polls() {
 fn is_settled_survives_transient_upstream_error() {
     let mock = MockUpstream::start();
     mock.fail_next_mint_quote_poll();
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(5, "test").unwrap();
     assert!(!backend.is_settled(&invoice).unwrap()); // 500 → Ok(false)
@@ -46,7 +46,7 @@ fn is_settled_survives_transient_upstream_error() {
 #[test]
 fn lookup_amount_parses_string_and_number_amounts() {
     let mock = MockUpstream::start();
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(64, "test").unwrap();
     // The mock returns the melt-quote amount as a STRING; mint quotes use
@@ -59,7 +59,7 @@ fn lookup_amount_parses_string_and_number_amounts() {
 #[test]
 fn pay_invoice_melts_reserve_and_returns_preimage() {
     let mock = MockUpstream::start();
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(30, "test").unwrap();
     assert_eq!(backend.lookup_amount(&invoice).unwrap(), 30);
@@ -74,7 +74,7 @@ fn pay_invoice_melts_reserve_and_returns_preimage() {
 #[test]
 fn pay_invoice_maps_definitive_failure_without_touching_reserve() {
     let mock = MockUpstream::with_melt_mode(MeltMode::Failed);
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(10, "test").unwrap();
     backend.lookup_amount(&invoice).unwrap();
@@ -88,7 +88,7 @@ fn pay_invoice_maps_definitive_failure_without_touching_reserve() {
 #[test]
 fn pay_invoice_parks_proofs_on_ambiguous_pending_state() {
     let mock = MockUpstream::with_melt_mode(MeltMode::Pending);
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let invoice = backend.create_invoice(10, "test").unwrap();
     backend.lookup_amount(&invoice).unwrap();
@@ -146,7 +146,7 @@ fn reserve_bootstrap_and_topup_math() {
 #[test]
 fn garbage_upstream_responses_are_protocol_errors_not_panics() {
     let mock = MockUpstream::garbage();
-    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000);
+    let mut backend = UpstreamCashuBackend::new(&mock.base_url, "sat", 1000, None);
 
     let err = backend.create_invoice(21, "test").unwrap_err();
     assert!(matches!(err, CashuError::Protocol(_)));
@@ -165,7 +165,8 @@ fn garbage_upstream_responses_are_protocol_errors_not_panics() {
 #[test]
 #[ignore = "needs network + live https://testnut.cashu.exchange; run manually with --ignored"]
 fn testnut_live_roundtrip() {
-    let mut backend = UpstreamCashuBackend::new("https://testnut.cashu.exchange", "sat", 1000);
+    let mut backend =
+        UpstreamCashuBackend::new("https://testnut.cashu.exchange", "sat", 1000, None);
 
     let invoice = backend
         .create_invoice(21, "micronuts upstream-backend live check")
@@ -195,4 +196,68 @@ fn testnut_live_roundtrip() {
         "reserve after bootstrap(1000) + melt(21) = {}",
         backend.reserve_balance_sats()
     );
+}
+
+#[test]
+fn reserve_state_survives_restart() {
+    let mock = MockUpstream::start();
+    let http = ureq::Agent::new();
+    let path = std::env::temp_dir().join(format!(
+        "micronuts-reserve-restart-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
+    // Era A: bootstrap 64, crash (drop) before any melt.
+    {
+        let mut reserve = ReserveWallet::new(&mock.base_url, "sat", 1000).with_state_file(&path);
+        reserve.bootstrap(64, &http).unwrap();
+        assert_eq!(reserve.balance_sats(), 64);
+    }
+
+    // Era A continued: restored wallet spends the RESTORED proofs.
+    let mut reserve = ReserveWallet::new(&mock.base_url, "sat", 1000).with_state_file(&path);
+    assert_eq!(reserve.balance_sats(), 64, "balance restored");
+    assert_eq!(reserve.proof_count(), 1, "proof restored");
+    let quote = mock_melt_quote(&mock, &http, 16);
+    let preimage = reserve.pay(&quote, 16, &http).unwrap();
+    assert_eq!(preimage, MELT_PREIMAGE);
+    assert_eq!(reserve.balance_sats(), 48, "restored proofs are spendable");
+
+    // The snapshot tracked the melt: a THIRD construction sees 48, not 64.
+    drop(reserve);
+    let reserve = ReserveWallet::new(&mock.base_url, "sat", 1000).with_state_file(&path);
+    assert_eq!(
+        reserve.balance_sats(),
+        48,
+        "post-melt balance survives restart"
+    );
+
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+#[should_panic(expected = "era mismatch")]
+fn reserve_state_refuses_cross_era_restore() {
+    let mock = MockUpstream::start();
+    let http = ureq::Agent::new();
+    let path = std::env::temp_dir().join(format!(
+        "micronuts-reserve-era-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
+    let mut reserve = ReserveWallet::new(&mock.base_url, "sat", 1000).with_state_file(&path);
+    reserve.bootstrap(64, &http).unwrap();
+    drop(reserve);
+
+    // Same file against a DIFFERENT upstream: must refuse to boot.
+    let _ = ReserveWallet::new("https://elsewhere.example", "sat", 1000).with_state_file(&path);
+    std::fs::remove_file(&path).ok();
 }

@@ -85,7 +85,7 @@ pub struct DemoMint {
     issued_outputs: HashMap<String, nut00::BlindSignature>,
     /// Optional durable state — snapshot-per-mutation, atomic rename
     /// (host prototype; docs/PERSISTENCE-DESIGN.md).
-    store: Option<crate::persist::FileStore>,
+    store: Option<crate::persist::SnapshotFile<crate::persist::MintStateSnapshot>>,
     /// Lightning seam for invoices, settlement, and payments.
     backend: Box<dyn LightningBackend + Send>,
     /// Time source for quote expiry.
@@ -127,7 +127,7 @@ impl DemoMint {
     /// would resurrect spent proofs and re-mint. There is no automatic
     /// recovery; restoring from a backup is an operator decision.
     pub fn with_state_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
-        let store = crate::persist::FileStore::new(path);
+        let store = crate::persist::SnapshotFile::new(path);
         match store.load() {
             Ok(Some(snapshot)) => self.restore(snapshot),
             Ok(None) => store
