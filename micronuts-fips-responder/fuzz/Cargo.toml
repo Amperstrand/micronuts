@@ -1,0 +1,23 @@
+[package]
+name = "micronuts-fips-responder-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.micronuts-fips-responder]
+path = ".."
+
+[[bin]]
+name = "frag_reassembly"
+path = "fuzz_targets/frag_reassembly.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
