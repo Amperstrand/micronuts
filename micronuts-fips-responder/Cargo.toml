@@ -1,0 +1,16 @@
+[package]
+name = "micronuts-fips-responder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Host-side FIPS responder: microfips service envelope -> Cashu RPC adapter + FSP datagram segmentation"
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+micronuts-fips-bridge = { path = "../micronuts-fips-bridge" }
+microfips-service = { git = "https://github.com/Amperstrand/microfips", rev = "466dfd5" }
+
+[dev-dependencies]
+micronuts-mint = { path = "../micronuts-mint" }

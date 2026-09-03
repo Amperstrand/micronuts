@@ -5,7 +5,7 @@ members = [
     "cashu-core-lite",
     "host-mint-tool",
     "micronuts-app",
-    "micronuts-mint", "micronuts-fips-bridge", "walletport",
+    "micronuts-mint", "micronuts-fips-bridge", "micronuts-fips-responder", "walletport",
     "micronuts-audit-adapter",
 ]
 exclude = ["micronuts-esp32-bridge", "micronuts-esp32-mint"]

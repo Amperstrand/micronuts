@@ -16,6 +16,7 @@ tested surface:
 | `walletport/fuzz/` | libFuzzer harness (4 targets, committed minimized corpora incl. DLEQ-valid seeds; 60M+ execs, zero panics) |
 | `micronuts-app/` | Shared application core (UI state, commands, QR) used by firmware + simulator |
 | `micronuts-mint/` | Backend-driven prototype mint (LightningBackend seam, quote state machines, NUT-08 fees, NUT-09 restore) — e2e-verified with cashu-ts v4 |
+| `micronuts-fips-responder/` | Host-side FIPS responder: microfips service envelope → `CashuRpcServiceAdapter`, plus the FSP-datagram segmentation codec (`frag`, espnow_frag pattern) for replies above the 2048/768 B frame caps |
 | `micronuts-esp32-mint/` | ESP32 esp-idf (std Rust) WiFi front-end for the mint — house-style scaffold (build from that dir with the `esp` toolchain) |
 | `firmware/` | The STM32F469I board binary |
 | `host-mint-tool/` | USB-CDC mint signing tool for the hardware wallet flow |

@@ -43,6 +43,9 @@ jobs:
       - name: Test micronuts-fips-bridge
         run: cargo test -p micronuts-fips-bridge
 
+      - name: Test micronuts-fips-responder (envelope adapter + segmentation)
+        run: cargo test -p micronuts-fips-responder
+
       - name: Demo smoke test
         run: |
           OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
@@ -74,7 +77,8 @@ jobs:
       - name: Clippy (host crates, deny warnings)
         run: >
           cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool
-          -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter
+          -p micronuts-mint -p micronuts-fips-bridge -p micronuts-fips-responder
+          -p micronuts-audit-adapter
           --all-targets -- -D warnings
 
       - name: Clippy (micronuts-mint upstream feature, deny warnings)
