@@ -3,7 +3,7 @@ name = "micronuts-mint"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Demo Cashu mint for Micronuts — in-memory, auto-approve, no persistence"
+description = "Demo Cashu mint for Micronuts — backend-driven, optional durable state"
 
 [dependencies]
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
@@ -15,21 +15,25 @@ sha2 = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 rand = "0.8"
 hex = "0.4"
-# Quote ids are UUIDv7 (NUT-04/05 ecosystem convention; already in the
+# Durable state snapshots (JSON; see persist.rs + docs/PERSISTENCE-DESIGN.md).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# NUT-04/05 quote ids are UUIDv7 (ecosystem convention; already in the
 # lockfile via the upstream oracle's tree).
 uuid = { version = "1", features = ["v7"] }
 # Host-only upstream-mint settlement backend (same pins walletport already
 # uses; serde_json arrives with ureq's `json` feature anyway).
 ureq = { version = "2", default-features = false, features = ["tls", "json"], optional = true }
-serde_json = { version = "1", optional = true }
 
 [features]
 # Upstream Cashu mint settlement backend (rugs02 model): host-only HTTP via
 # ureq/rustls — never compiled for embedded targets.
-backend-upstream = ["dep:ureq", "dep:serde_json"]
+backend-upstream = ["dep:ureq"]
 
 [dev-dependencies]
 rand = "0.8"
+hex = "0.4"
+serde_json = "1"
 
 [[bin]]
 name = "demo"

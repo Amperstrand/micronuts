@@ -44,10 +44,11 @@ pub fn handle_demo_mint_hex_request_line(
 /// settlement backend; unset → auto-settling FakeWallet demo.
 #[cfg(feature = "backend-upstream")]
 fn mint_from_env() -> DemoMint {
-    match crate::upstream::upstream_backend_from_env() {
+    let mint = match crate::upstream::upstream_backend_from_env() {
         Some((backend, clock)) => DemoMint::with_backend(backend, clock, 0),
         None => DemoMint::new(),
-    }
+    };
+    mint_with_state(mint)
 }
 
 #[cfg(not(feature = "backend-upstream"))]
@@ -60,7 +61,16 @@ fn mint_from_env() -> DemoMint {
         );
         std::process::exit(1);
     }
-    DemoMint::new()
+    mint_with_state(DemoMint::new())
+}
+
+/// Apply `MICRONUTS_MINT_STATE_FILE` when set (durable state; see
+/// docs/PERSISTENCE-DESIGN.md — corrupt files refuse to boot).
+fn mint_with_state(mint: DemoMint) -> DemoMint {
+    match std::env::var_os("MICRONUTS_MINT_STATE_FILE") {
+        Some(path) if !path.is_empty() => mint.with_state_file(path),
+        _ => mint,
+    }
 }
 
 /// Host-side mint-role demo server.

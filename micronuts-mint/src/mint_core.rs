@@ -73,15 +73,19 @@ struct MeltQuoteEntry {
 pub struct DemoMint {
     /// NUT-01/02: the single active keyset.
     keyset: DemoKeyset,
-    /// NUT-04: in-memory mint quote table.
+    /// NUT-04: in-memory mint quote table (durable with a state file).
     mint_quotes: HashMap<String, MintQuoteEntry>,
-    /// NUT-05: in-memory melt quote table.
+    /// NUT-05: in-memory melt quote table (durable with a state file).
     melt_quotes: HashMap<String, MeltQuoteEntry>,
-    /// NUT-07: in-memory spent proof Y-values (hex-encoded for easy lookup).
+    /// NUT-07: in-memory spent proof Y-values (hex-encoded for easy lookup;
+    /// durable with a state file).
     spent_ys: HashSet<String>,
     /// NUT-09: B_ hex → blind signature for every output this mint signed
-    /// (session-scoped restore index).
+    /// (restore index; durable with a state file).
     issued_outputs: HashMap<String, nut00::BlindSignature>,
+    /// Optional durable state — snapshot-per-mutation, atomic rename
+    /// (host prototype; docs/PERSISTENCE-DESIGN.md).
+    store: Option<crate::persist::FileStore>,
     /// Lightning seam for invoices, settlement, and payments.
     backend: Box<dyn LightningBackend + Send>,
     /// Time source for quote expiry.
@@ -110,9 +114,29 @@ impl DemoMint {
             melt_quotes: HashMap::new(),
             spent_ys: HashSet::new(),
             issued_outputs: HashMap::new(),
+            store: None,
             backend,
             clock,
         }
+    }
+
+    /// Enable durable state: load `path` if it exists, else create it.
+    ///
+    /// Fail-stop on any store problem — corrupt/unwritable state refuses
+    /// to boot (panics) rather than silently starting empty: a fresh store
+    /// would resurrect spent proofs and re-mint. There is no automatic
+    /// recovery; restoring from a backup is an operator decision.
+    pub fn with_state_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        let store = crate::persist::FileStore::new(path);
+        match store.load() {
+            Ok(Some(snapshot)) => self.restore(snapshot),
+            Ok(None) => store
+                .save(&self.snapshot())
+                .unwrap_or_else(|e| panic!("mint state init failed: {e}")),
+            Err(e) => panic!("refusing to start: {e}"),
+        }
+        self.store = Some(store);
+        self
     }
 
     /// Get the active keyset ID.
@@ -206,6 +230,7 @@ impl DemoMint {
             unit: unit.clone(),
         };
         self.mint_quotes.insert(quote_id.clone(), entry);
+        self.persist();
 
         Ok(nut04::MintQuoteResponse {
             quote: quote_id,
@@ -277,6 +302,7 @@ impl DemoMint {
             // NUT-04: updated_at MUST increase monotonically even when the
             // clock resolution does not.
             entry.updated_at = now.max(entry.updated_at + 1);
+            self.persist();
         }
         Ok(())
     }
@@ -343,6 +369,7 @@ impl DemoMint {
             }
             entry.updated_at = now.max(entry.updated_at + 1);
         }
+        self.persist();
 
         Ok(nut04::MintResponse { signatures })
     }
@@ -373,6 +400,7 @@ impl DemoMint {
             expiry,
         };
         self.melt_quotes.insert(quote_id.clone(), entry);
+        self.persist();
 
         let entry_request = request.request;
         let entry_unit = request.unit;
@@ -487,6 +515,9 @@ impl DemoMint {
 
         // State transition: UNPAID → PENDING while the payment is in flight.
         self.set_melt_state(&request.quote, nut05::state::PENDING)?;
+        // Persist-before-pay: the claim must be durable before an external
+        // payment can occur, or a crash mid-payment would re-mint the inputs.
+        self.persist();
 
         match self.backend.pay_invoice(&invoice, amount) {
             Ok(preimage) => {
@@ -506,6 +537,7 @@ impl DemoMint {
                 };
                 // State transition: PENDING → PAID
                 self.set_melt_state(&request.quote, nut05::state::PAID)?;
+                self.persist();
                 let entry = self
                     .melt_quotes
                     .get(&request.quote)
@@ -532,6 +564,7 @@ impl DemoMint {
                     }
                 }
                 self.set_melt_state(&request.quote, MELT_STATE_FAILED)?;
+                self.persist();
                 Err(CashuError::PaymentFailed)
             }
         }
@@ -571,6 +604,7 @@ impl DemoMint {
 
         // NUT-00: sign new outputs
         let signatures = self.sign_outputs(&request.outputs)?;
+        self.persist();
 
         Ok(nut03::SwapResponse { signatures })
     }
@@ -635,6 +669,154 @@ impl DemoMint {
     }
 
     // ---- Internal helpers ----
+
+    fn snapshot(&self) -> crate::persist::MintStateSnapshot {
+        use crate::persist::{BlindSignatureSnap, DleqSnap, MintStateSnapshot};
+
+        let signature_snap = |sig: &nut00::BlindSignature| BlindSignatureSnap {
+            amount: sig.amount,
+            id: sig.id.clone(),
+            c_hex: hex::encode(sig.c.to_bytes()),
+            dleq: sig.dleq.as_ref().map(|d| DleqSnap {
+                e_hex: hex::encode(d.e.to_secret_bytes()),
+                s_hex: hex::encode(d.s.to_secret_bytes()),
+            }),
+        };
+
+        MintStateSnapshot {
+            mint_quotes: self
+                .mint_quotes
+                .iter()
+                .map(|(id, e)| {
+                    (
+                        id.clone(),
+                        crate::persist::MintQuoteSnap {
+                            amount: e.amount,
+                            unit: e.unit.clone(),
+                            request: e.request.clone(),
+                            state: e.state.clone(),
+                            expiry: e.expiry,
+                            amount_paid: e.amount_paid,
+                            amount_issued: e.amount_issued,
+                            updated_at: e.updated_at,
+                        },
+                    )
+                })
+                .collect(),
+            melt_quotes: self
+                .melt_quotes
+                .iter()
+                .map(|(id, e)| {
+                    (
+                        id.clone(),
+                        crate::persist::MeltQuoteSnap {
+                            amount: e.amount,
+                            fee_reserve: e.fee_reserve,
+                            unit: e.unit.clone(),
+                            request: e.request.clone(),
+                            state: e.state.clone(),
+                            expiry: e.expiry,
+                        },
+                    )
+                })
+                .collect(),
+            spent_ys: self.spent_ys.iter().cloned().collect(),
+            issued_outputs: self
+                .issued_outputs
+                .iter()
+                .map(|(b, sig)| (b.clone(), signature_snap(sig)))
+                .collect(),
+        }
+    }
+
+    /// Rebuild in-memory state from a snapshot (boot path; fail-stop on
+    /// malformed entries — same rationale as [`Self::with_state_file`]).
+    fn restore(&mut self, snap: crate::persist::MintStateSnapshot) {
+        let signature = |s: &crate::persist::BlindSignatureSnap| -> nut00::BlindSignature {
+            let c_bytes: [u8; 33] = hex::decode(&s.c_hex)
+                .unwrap_or_else(|e| panic!("mint state: bad C_ hex: {e}"))
+                .try_into()
+                .unwrap_or_else(|v: Vec<u8>| panic!("mint state: C_ not 33 bytes: {v:?}"));
+            let c = cashu_core_lite::keypair::PublicKey::from_bytes(&c_bytes)
+                .unwrap_or_else(|| panic!("mint state: bad C_ point"));
+            let dleq = s.dleq.as_ref().map(|d| {
+                let e = cashu_core_lite::keypair::SecretKey::from_slice(
+                    &hex::decode(&d.e_hex)
+                        .unwrap_or_else(|e| panic!("mint state: bad dleq e hex: {e}")),
+                )
+                .unwrap_or_else(|e| panic!("mint state: bad dleq e scalar: {e}"));
+                let s = cashu_core_lite::keypair::SecretKey::from_slice(
+                    &hex::decode(&d.s_hex)
+                        .unwrap_or_else(|e| panic!("mint state: bad dleq s hex: {e}")),
+                )
+                .unwrap_or_else(|e| panic!("mint state: bad dleq s scalar: {e}"));
+                cashu_core_lite::nuts::nut12::BlindSignatureDleq { e, s }
+            });
+            nut00::BlindSignature {
+                amount: s.amount,
+                id: s.id.clone(),
+                c,
+                dleq,
+            }
+        };
+
+        self.mint_quotes = snap
+            .mint_quotes
+            .into_iter()
+            .map(|(id, e)| {
+                (
+                    id,
+                    MintQuoteEntry {
+                        amount: e.amount,
+                        unit: e.unit,
+                        request: e.request,
+                        state: e.state,
+                        expiry: e.expiry,
+                        amount_paid: e.amount_paid,
+                        amount_issued: e.amount_issued,
+                        updated_at: e.updated_at,
+                    },
+                )
+            })
+            .collect();
+        self.melt_quotes = snap
+            .melt_quotes
+            .into_iter()
+            .map(|(id, e)| {
+                (
+                    id,
+                    MeltQuoteEntry {
+                        amount: e.amount,
+                        fee_reserve: e.fee_reserve,
+                        unit: e.unit,
+                        request: e.request,
+                        state: e.state,
+                        expiry: e.expiry,
+                    },
+                )
+            })
+            .collect();
+        self.spent_ys = snap.spent_ys.into_iter().collect();
+        self.issued_outputs = snap
+            .issued_outputs
+            .into_iter()
+            .map(|(b, s)| (b, signature(&s)))
+            .collect();
+    }
+
+    /// Write the state snapshot to the configured store, if any.
+    ///
+    /// Fail-stop: if the state cannot be made durable the process panics —
+    /// continuing would serve claims (spent marks, issued outputs) that a
+    /// restart would lose, re-minting them. The stdio server dies, the
+    /// adapter respawns it, and the last good snapshot is loaded.
+    fn persist(&self) {
+        if let Some(store) = &self.store {
+            store
+                .save(&self.snapshot())
+                .unwrap_or_else(|e| panic!("mint state persist failed (fail-stop): {e}"));
+        }
+    }
 
     fn set_melt_state(&mut self, quote_id: &str, state: &str) -> Result<(), CashuError> {
         let entry = self

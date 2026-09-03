@@ -13,6 +13,7 @@
 
 pub mod keyset;
 pub mod ln;
+pub mod persist;
 pub mod type_conversion;
 
 mod mint_core;
