@@ -263,7 +263,7 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
             cashu_core_lite::unblind_signature(&blinded_sig, &blinded.blinder, &mint.public_key())
                 .map_err(|_| anyhow::anyhow!("Failed to unblind signature"))?;
 
-        let c = sig.to_sec1_bytes();
+        let c = sig.to_bytes().to_vec();
 
         proofs.push(Proof {
             amount: value,

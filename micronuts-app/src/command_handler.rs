@@ -261,7 +261,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
         let secret = state.swap_secrets.as_ref().unwrap()[i].clone();
         let amount = state.swap_amounts.as_ref().unwrap()[i];
 
-        let c_vec = unblinded.to_sec1_bytes();
+        let c_vec = unblinded.to_bytes().to_vec();
 
         proofs.push(Proof {
             amount,
@@ -1059,6 +1059,12 @@ mod tests {
         assert_eq!(state.swap_state, SwapState::ProofsReady);
         let proofs = state.new_proofs.as_ref().unwrap();
         assert_eq!(proofs.len(), blinded_count);
+
+        // NUT-00: C is the COMPRESSED 33-byte point — a 65-byte
+        // uncompressed encoding is not what conformant wallets parse.
+        for proof in proofs {
+            assert_eq!(proof.c.len(), 33);
+        }
 
         // Offline re-verification with the proof-level DLEQ. The secret is
         // a STRING (cross_vectors.rs pins the hex-looking-secret trap: it
