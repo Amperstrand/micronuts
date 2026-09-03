@@ -909,4 +909,170 @@ mod tests {
         assert_eq!(r.status, Status::CryptoError);
         assert!(state.new_proofs.is_none());
     }
+
+    // #54 forgery regressions: SendSignatures must verify the NUT-12 DLEQ
+    // against the PINNED demo mint key, never the token's claimed mint URL.
+    // Assertions pin Status::CryptoError exactly (not `!= Ok`) so a
+    // regression to length-based rejection cannot masquerade as verification.
+
+    fn token_with_mint(mint: &str) -> cashu_core_lite::TokenV4 {
+        cashu_core_lite::TokenV4 {
+            mint: String::from(mint),
+            unit: String::from("sat"),
+            memo: None,
+            tokens: vec![cashu_core_lite::TokenV4Token {
+                keyset_id: String::from("00"),
+                proofs: vec![cashu_core_lite::Proof {
+                    amount: 8,
+                    keyset_id: String::from("00"),
+                    secret: String::from("aabbccdd"),
+                    c: vec![0x02, 0xAB, 0xCD],
+                    dleq: None,
+                }],
+            }],
+        }
+    }
+
+    fn pinned_mint_secret() -> cashu_core_lite::SecretKey {
+        use sha2::{Digest, Sha256};
+        cashu_core_lite::SecretKey::from_slice(&Sha256::digest(b"demo://micronuts")).unwrap()
+    }
+
+    async fn import_and_blind(mint: &str, state: &mut FirmwareState, hw: &mut MockHardware) {
+        let enc = cashu_core_lite::encode_token(&token_with_mint(mint)).unwrap();
+        let r = handle_command(Command::ImportToken, &enc, state, hw, &mut None).await;
+        assert_eq!(r.status, Status::Ok);
+        let r = handle_command(Command::GetBlinded, &[], state, hw, &mut None).await;
+        assert_eq!(r.status, Status::Ok);
+    }
+
+    #[tokio::test]
+    async fn url_forged_key_signature_rejected() {
+        let mut state = FirmwareState::new();
+        let mut hw = MockHardware::new();
+        import_and_blind("https://attacker.example", &mut state, &mut hw).await;
+
+        // The attacker derives the mint scalar for THEIR url and produces
+        // a perfectly valid signature + DLEQ against their own key. Only
+        // pinning (not signature validity) rejects it.
+        use sha2::{Digest, Sha256};
+        let atk_sk = cashu_core_lite::SecretKey::from_slice(&Sha256::digest(
+            state.imported_token.as_ref().unwrap().mint.as_bytes(),
+        ))
+        .unwrap();
+        let mut payload: Vec<u8> = Vec::new();
+        {
+            let blinded = state.blinded_messages.as_ref().unwrap();
+            for bm in blinded.iter() {
+                let c_prime = cashu_core_lite::sign_message(&atk_sk, &bm.blinded);
+                let dleq =
+                    cashu_core_lite::nuts::nut12::prove_dleq(&bm.blinded, &atk_sk, None).unwrap();
+                payload.extend_from_slice(&c_prime.to_bytes());
+                payload.extend_from_slice(&dleq.e.to_secret_bytes());
+                payload.extend_from_slice(&dleq.s.to_secret_bytes());
+            }
+        }
+        let r = handle_command(
+            Command::SendSignatures,
+            &payload,
+            &mut state,
+            &mut hw,
+            &mut None,
+        )
+        .await;
+        assert_eq!(r.status, Status::CryptoError);
+        assert!(state.new_proofs.is_none());
+    }
+
+    fn k256_sec1_generator_compressed() -> [u8; 33] {
+        let mut g = [0u8; 33];
+        g[0] = 0x02;
+        g[1..].copy_from_slice(&[
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87,
+            0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81, 0x5B,
+            0x16, 0xF8, 0x17, 0x98,
+        ]);
+        g
+    }
+
+    #[tokio::test]
+    async fn generator_point_signature_rejected() {
+        let mut state = FirmwareState::new();
+        let mut hw = MockHardware::new();
+        import_and_blind("demo://micronuts", &mut state, &mut hw).await;
+
+        // C' = the generator point parses as a valid pubkey; e/s are valid
+        // scalars. Only the DLEQ check can reject the entry.
+        let gen =
+            cashu_core_lite::PublicKey::from_sec1_bytes(&k256_sec1_generator_compressed()).unwrap();
+        let mut payload: Vec<u8> = Vec::new();
+        for _ in state.blinded_messages.as_ref().unwrap().iter() {
+            payload.extend_from_slice(&gen.to_bytes());
+            let mut scalar = [0u8; 32];
+            scalar[31] = 0x01;
+            payload.extend_from_slice(&scalar);
+            scalar[31] = 0x02;
+            payload.extend_from_slice(&scalar);
+        }
+        let r = handle_command(
+            Command::SendSignatures,
+            &payload,
+            &mut state,
+            &mut hw,
+            &mut None,
+        )
+        .await;
+        assert_eq!(r.status, Status::CryptoError);
+        assert!(state.new_proofs.is_none());
+    }
+
+    #[tokio::test]
+    async fn pinned_mint_signature_with_dleq_accepted() {
+        let mut state = FirmwareState::new();
+        let mut hw = MockHardware::new();
+        import_and_blind("demo://micronuts", &mut state, &mut hw).await;
+
+        let mint_sk = pinned_mint_secret();
+        let mut payload: Vec<u8> = Vec::new();
+        let blinded_count;
+        {
+            let blinded = state.blinded_messages.as_ref().unwrap();
+            blinded_count = blinded.len();
+            for bm in blinded.iter() {
+                let c_prime = cashu_core_lite::sign_message(&mint_sk, &bm.blinded);
+                let dleq =
+                    cashu_core_lite::nuts::nut12::prove_dleq(&bm.blinded, &mint_sk, None).unwrap();
+                payload.extend_from_slice(&c_prime.to_bytes());
+                payload.extend_from_slice(&dleq.e.to_secret_bytes());
+                payload.extend_from_slice(&dleq.s.to_secret_bytes());
+            }
+        }
+        let r = handle_command(
+            Command::SendSignatures,
+            &payload,
+            &mut state,
+            &mut hw,
+            &mut None,
+        )
+        .await;
+        assert_eq!(r.status, Status::Ok);
+        assert_eq!(state.swap_state, SwapState::ProofsReady);
+        let proofs = state.new_proofs.as_ref().unwrap();
+        assert_eq!(proofs.len(), blinded_count);
+
+        // Offline re-verification with the proof-level DLEQ: the secret is
+        // stored hex-encoded; the issuer convention hashes the DECODED
+        // bytes (pins the convention the walletport divergence is about).
+        let mint_pk = crate::util::pinned_demo_mint_key().unwrap();
+        for proof in proofs {
+            let secret_bytes = crate::util::decode_hex(&proof.secret).unwrap();
+            let c = cashu_core_lite::PublicKey::from_sec1_bytes(&proof.c).unwrap();
+            assert!(cashu_core_lite::nuts::nut12::verify_proof_dleq(
+                &secret_bytes,
+                &c,
+                proof.dleq.as_ref().unwrap(),
+                &mint_pk
+            ));
+        }
+    }
 }
