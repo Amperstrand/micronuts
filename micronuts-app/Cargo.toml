@@ -17,19 +17,20 @@ qrcodegen-no-heap = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 embassy-time = { workspace = true }
 embassy-futures = { workspace = true }
+# native_sim example only (optional so unit tests build without SDL2)
+sdl2 = { version = "0.37", default-features = false, features = ["gfx"], optional = true }
+libc = { version = "0.2", optional = true }
+embassy-executor = { workspace = true, optional = true, features = ["platform-std", "executor-thread"] }
 
 [features]
 default = []
 std = ["cashu-core-lite/std", "hex/std", "embassy-time/std"]
+native-sim = ["std", "dep:sdl2", "dep:libc", "dep:embassy-executor"]
 
 [dev-dependencies]
-embassy-executor = { workspace = true, features = ["platform-std", "executor-thread"] }
-static_cell = { workspace = true }
-sdl2 = { version = "0.37", default-features = false, features = ["gfx"] }
-rand = "0.8"
-libc = "0.2"
 tokio = { version = "1", features = ["rt", "macros"] }
+rand = "0.8"
 
 [[example]]
 name = "native_sim"
-required-features = ["std"]
+required-features = ["native-sim"]

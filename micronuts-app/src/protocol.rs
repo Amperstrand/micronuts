@@ -283,7 +283,7 @@ mod tests {
         // more byte used to index out of bounds.
         let mut decoder = FrameDecoder::new();
         let mut evil = vec![0xFF, 0x04, 0x00];
-        evil.extend(std::iter::repeat(0x41).take(MAX_PAYLOAD_SIZE));
+        evil.extend(std::iter::repeat_n(0x41, MAX_PAYLOAD_SIZE));
         evil.push(0x42); // the byte that used to panic
         assert!(decoder.decode(&evil).is_none());
 
@@ -304,7 +304,7 @@ mod tests {
         // must eventually resync on a valid frame.
         let mut decoder = FrameDecoder::new();
         let mut evil = vec![0xFF, 0x00, 0x01, 0x61];
-        evil.extend(std::iter::repeat(0x61).take(MAX_PAYLOAD_SIZE + 8));
+        evil.extend(std::iter::repeat_n(0x61, MAX_PAYLOAD_SIZE + 8));
         assert!(decoder.decode(&evil).is_none());
 
         let frame = Frame::with_payload(Command::ScannerStatus, b"").unwrap();

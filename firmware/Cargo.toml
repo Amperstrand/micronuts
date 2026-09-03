@@ -33,7 +33,7 @@ rand_core = { workspace = true }
 
 # Embassy
 embassy-stm32 = { workspace = true, features = ["stm32f469ni", "time-driver-any", "exti"] }
-embassy-time = { workspace = true }
+    embassy-time = { workspace = true, features = ["tick-hz-32_768"] }
 embassy-executor = { workspace = true, features = ["platform-cortex-m", "executor-thread"] }
 embassy-usb = { workspace = true }
 embassy-usb-synopsys-otg = { workspace = true }

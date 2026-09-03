@@ -46,6 +46,10 @@ jobs:
       - name: Test micronuts-fips-responder (envelope adapter + segmentation)
         run: cargo test -p micronuts-fips-responder
 
+      - name: Test micronuts-app (host)
+        # Tests use std items; a bare build has no embassy-time tick-hz.
+        run: cargo test -p micronuts-app --features std
+
       - name: Demo smoke test
         run: |
           OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
@@ -59,9 +63,9 @@ jobs:
           cargo build -p cashu-core-lite --no-default-features --features transport-microfips
 
   clippy:
-    # Host-buildable crates only. micronuts-app/firmware pull the embassy
-    # BSP whose executor needs an explicit platform feature on host —
-    # their lint coverage is the firmware job's thumb-target clippy.
+    # Host-buildable crates. firmware pulls the embassy BSP (cortex-m
+    # executor platform) — its lint coverage is the firmware job's
+    # thumb-target clippy. micronuts-app is host-clippy'd under `std`.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +84,9 @@ jobs:
           -p micronuts-mint -p micronuts-fips-bridge -p micronuts-fips-responder
           -p micronuts-audit-adapter
           --all-targets -- -D warnings
+
+      - name: Clippy (micronuts-app, host std, deny warnings)
+        run: cargo clippy -p micronuts-app --features std --all-targets -- -D warnings
 
       - name: Clippy (micronuts-mint upstream feature, deny warnings)
         run: cargo clippy -p micronuts-mint --all-targets --features backend-upstream -- -D warnings

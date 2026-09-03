@@ -2305,7 +2305,6 @@ dependencies = [
  "rand_core 0.6.4",
  "sdl2",
  "sha2",
- "static_cell",
  "tokio",
 ]
 

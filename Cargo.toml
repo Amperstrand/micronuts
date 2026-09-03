@@ -42,8 +42,13 @@ nb = "1.1"
 qrcodegen-no-heap = "1.8.1"
 
 # Embassy — from crates.io
-embassy-time = { version = "0.5.1", features = ["tick-hz-32_768"] }
-embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+# embassy-time: exactly one tick-hz-* may be enabled per build — the std
+# feature implies tick-hz-1_000_000, firmware wants 32_768 — per-target.
+embassy-time = { version = "0.5.1" }
+# Platform features are additive across members; embassy-executor
+# compile_error!s on more than one — platform selection belongs to each
+# member crate (firmware: platform-cortex-m, micronuts-app dev: platform-std).
+embassy-executor = { version = "0.10.0", features = ["executor-thread"] }
 embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
 embassy-usb = { version = "0.6.0" }
 embassy-usb-synopsys-otg = { version = "0.3.3" }

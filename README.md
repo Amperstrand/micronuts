@@ -229,7 +229,7 @@ Develop and test the UI on your PC without hardware. Opens a 480x800 portrait wi
 sudo apt install libsdl2-dev
 
 # Run the simulator (requires an X11 or Wayland display)
-cargo run -p micronuts-app --example native_sim --features std
+cargo run -p micronuts-app --example native_sim --features native-sim
 ```
 
 Requirements: Rust, SDL2 dev libraries, an X11 or Wayland display server. No cross-compiler or probe needed.
@@ -242,7 +242,7 @@ sudo apt install xvfb
 Xvfb :1 -screen 0 800x480x24 &
 
 # Run the simulator against the virtual display
-DISPLAY=:1 cargo run -p micronuts-app --example native_sim --features std
+DISPLAY=:1 cargo run -p micronuts-app --example native_sim --features native-sim
 ```
 
 **NVIDIA GPU note:** The simulator auto-detects NVIDIA GPUs, probes the default SDL2 driver, and automatically falls back to `SDL_VIDEODRIVER=software` if it crashes (SIGSEGV). If the software driver is unavailable (some distro packages don't include it), use Xvfb instead. Set `SDL_VIDEODRIVER` yourself to override auto-detection. See [#4](https://github.com/Amperstrand/micronuts/issues/4).
@@ -270,7 +270,7 @@ probe-rs download --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firm
 
 ```bash
 # Unit tests for protocol codec, hex utils, etc.
-cargo test -p micronuts-app
+cargo test -p micronuts-app --features std
 ```
 
 ## Known Issues

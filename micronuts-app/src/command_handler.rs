@@ -387,33 +387,26 @@ mod tests {
     }
 
     impl Scanner for MockHardware {
-        fn trigger(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>> {
-            async move {
-                if self.scanner_connected {
-                    Ok(())
-                } else {
-                    Err(ScanError::NotConnected)
-                }
+        async fn trigger(&mut self) -> Result<(), ScanError> {
+            if self.scanner_connected {
+                Ok(())
+            } else {
+                Err(ScanError::NotConnected)
             }
         }
 
-        fn read_scan(&mut self) -> impl core::future::Future<Output = Option<Vec<u8>>> {
-            async move { self.scan_data.take() }
+        async fn read_scan(&mut self) -> Option<Vec<u8>> {
+            self.scan_data.take()
         }
 
-        fn stop(&mut self) -> impl core::future::Future<Output = ()> {
-            async move {}
-        }
+        async fn stop(&mut self) {}
 
         fn is_connected(&self) -> bool {
             self.scanner_connected
         }
 
-        fn set_aim(
-            &mut self,
-            _enabled: bool,
-        ) -> impl core::future::Future<Output = Result<(), ScanError>> {
-            async move { Ok(()) }
+        async fn set_aim(&mut self, _enabled: bool) -> Result<(), ScanError> {
+            Ok(())
         }
 
         fn debug_dump_settings(&mut self) {}
@@ -431,24 +424,17 @@ mod tests {
             rng.fill_bytes(dest);
         }
 
-        fn transport_recv_frame(&mut self) -> impl core::future::Future<Output = Option<Frame>> {
-            async move { None }
+        async fn transport_recv_frame(&mut self) -> Option<Frame> {
+            None
         }
 
-        fn transport_send(
-            &mut self,
-            _response: &Response,
-        ) -> impl core::future::Future<Output = ()> {
-            async move {}
-        }
+        async fn transport_send(&mut self, _response: &Response) {}
 
         fn touch_get(&mut self) -> Option<TouchPoint> {
             None
         }
 
-        fn delay_ms(&mut self, _ms: u32) -> impl core::future::Future<Output = ()> {
-            async move {}
-        }
+        async fn delay_ms(&mut self, _ms: u32) {}
     }
 
     fn sample_token() -> cashu_core_lite::TokenV4 {
@@ -910,7 +896,7 @@ mod tests {
         assert_eq!(state.blinded_messages.as_ref().unwrap().len(), 2);
 
         let blinded_count = state.blinded_messages.as_ref().unwrap().len();
-        let fake_sigs = vec![0u8; blinded_count * 33];
+        let fake_sigs = vec![0u8; blinded_count * (33 + 32 + 32)];
 
         let r = handle_command(
             Command::SendSignatures,
