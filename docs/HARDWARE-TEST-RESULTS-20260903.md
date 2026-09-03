@@ -28,8 +28,9 @@
 
 ## Operational notes
 
-- **USB enumeration waits for the boot splash timeout** (~18 s wall time:
-  540 frames × 33 ms + render cost). No touch needed — the
+- **USB enumeration waits for the boot splash timeout** (~60 s wall time,
+  measured 2026-09-03 after the compressed-C reflash: 540 SDRAM-rendered
+  frames cost far more than their 33 ms tick). No touch needed — the
   STATUS-AND-TEST-PLAN note "needs touch" predates the timeout.
 - Earlier in the evening the CDC was absent (cable not yet connected):
   zero USB bus events, not a firmware issue. #34/#37 (PHY reset fixes)
