@@ -80,3 +80,7 @@ tests/results/
 .playwright-mcp/
 .omo/
 /nuts/
+
+# Local secrets (gate-2 W5: never commit credentials)
+.env
+.env.*

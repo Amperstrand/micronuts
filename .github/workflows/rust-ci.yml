@@ -198,6 +198,14 @@ jobs:
       - name: Advisories + bans
         run: cargo deny --workspace --all-features check advisories bans
 
+      # Gate-2 W5: the ESP crates are excluded from the workspace, so the
+      # root deny run never traverses them — check them by manifest path
+      # (both inherit the root deny.toml; locks are committed).
+      - name: Advisories + bans (ESP crates)
+        run: |
+          cargo deny --manifest-path micronuts-esp32-mint/Cargo.toml check advisories bans
+          cargo deny --manifest-path micronuts-esp32-bridge/Cargo.toml check advisories bans
+
   esp32-build:
     # Cross-build the ESP32 (esp-idf std) mint front-end. ccid-firmware-rs
     # pattern: espup + cached Espressif tools + cargo +esp, built from the

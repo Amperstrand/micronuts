@@ -200,10 +200,13 @@ impl FrameDecoder {
                     }
 
                     if self.length == 0 {
-                        let cmd = Command::from_byte(self.command_byte)?;
-                        let frame = Frame::new(cmd);
+                        // Reset before parsing: an invalid command byte
+                        // early-returns below and must not leave the
+                        // decoder mid-frame (gate-2 W2).
+                        let cmd_byte = self.command_byte;
                         self.reset();
-                        return Some(frame);
+                        let cmd = Command::from_byte(cmd_byte)?;
+                        return Some(Frame::new(cmd));
                     }
 
                     self.payload_idx = 0;
@@ -214,10 +217,18 @@ impl FrameDecoder {
                     self.payload_idx += 1;
 
                     if self.payload_idx >= self.length as usize {
-                        let cmd = Command::from_byte(self.command_byte)?;
-                        let frame = Frame::with_payload(cmd, &self.payload[..self.payload_idx])?;
+                        // Reset before parsing: with payload_idx ==
+                        // length and state still Payload, an invalid
+                        // command byte early-returning made the NEXT
+                        // decoded byte an out-of-bounds write (gate-2
+                        // W2: 1030 unauthenticated USB CDC bytes hung
+                        // the wallet until power cycle). reset() keeps
+                        // the payload buffer intact for the frame below.
+                        let cmd_byte = self.command_byte;
+                        let len = self.payload_idx;
                         self.reset();
-                        return Some(frame);
+                        let cmd = Command::from_byte(cmd_byte)?;
+                        return Some(Frame::with_payload(cmd, &self.payload[..len])?);
                     }
                 }
             }
@@ -264,6 +275,59 @@ mod tests {
         assert_eq!(buf[1], 0);
         assert_eq!(buf[2], 5);
         assert_eq!(&buf[3..8], payload);
+    }
+
+    #[test]
+    fn test_invalid_command_byte_after_full_payload_does_not_panic() {
+        // Gate-2 W2 regression: 0xFF cmd + length 1024 + payload + one
+        // more byte used to index out of bounds.
+        let mut decoder = FrameDecoder::new();
+        let mut evil = vec![0xFF, 0x04, 0x00];
+        evil.extend(std::iter::repeat(0x41).take(MAX_PAYLOAD_SIZE));
+        evil.push(0x42); // the byte that used to panic
+        assert!(decoder.decode(&evil).is_none());
+
+        // The decoder recovered: a valid frame parses next.
+        let frame = Frame::with_payload(Command::GetTokenInfo, b"ok").unwrap();
+        let mut buf = [0u8; 260];
+        let len = frame.encode(&mut buf);
+        assert_eq!(
+            decoder.decode(&buf[..len]).map(|f| f.command),
+            Some(Command::GetTokenInfo)
+        );
+    }
+
+    #[test]
+    fn test_invalid_command_byte_walkup_does_not_panic() {
+        // Short-length variant: each post-failure byte walks payload_idx
+        // toward 1024 — feeding a stream of bytes must never panic and
+        // must eventually resync on a valid frame.
+        let mut decoder = FrameDecoder::new();
+        let mut evil = vec![0xFF, 0x00, 0x01, 0x61];
+        evil.extend(std::iter::repeat(0x61).take(MAX_PAYLOAD_SIZE + 8));
+        assert!(decoder.decode(&evil).is_none());
+
+        let frame = Frame::with_payload(Command::ScannerStatus, b"").unwrap();
+        let mut buf = [0u8; 260];
+        let len = frame.encode(&mut buf);
+        assert_eq!(
+            decoder.decode(&buf[..len]).map(|f| f.command),
+            Some(Command::ScannerStatus)
+        );
+    }
+
+    #[test]
+    fn test_invalid_command_byte_zero_length_does_not_panic() {
+        let mut decoder = FrameDecoder::new();
+        assert!(decoder.decode(&[0xFF, 0x00, 0x00]).is_none());
+
+        let frame = Frame::with_payload(Command::GetProofs, b"x").unwrap();
+        let mut buf = [0u8; 260];
+        let len = frame.encode(&mut buf);
+        assert_eq!(
+            decoder.decode(&buf[..len]).map(|f| f.command),
+            Some(Command::GetProofs)
+        );
     }
 
     #[test]
