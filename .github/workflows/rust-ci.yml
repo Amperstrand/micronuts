@@ -28,27 +28,35 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # Plain `cargo test` never prints a summary if a test wedges (the
+      # microfips #178 lesson); nextest terminates hung tests per
+      # .config/nextest.toml.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Test cashu-core-lite
-        run: cargo test -p cashu-core-lite --features std
+        run: cargo nextest run -p cashu-core-lite --features std
 
       - name: Test walletport (gate validator + upstream-CDK interop)
-        run: cargo test -p walletport
+        run: cargo nextest run -p walletport
 
       - name: Test micronuts-mint
-        run: cargo test -p micronuts-mint
+        run: cargo nextest run -p micronuts-mint
 
       - name: Test micronuts-mint (upstream backend feature)
-        run: cargo test -p micronuts-mint --features backend-upstream
+        run: cargo nextest run -p micronuts-mint --features backend-upstream
 
       - name: Test micronuts-fips-bridge
-        run: cargo test -p micronuts-fips-bridge
+        run: cargo nextest run -p micronuts-fips-bridge
 
       - name: Test micronuts-fips-responder (envelope adapter + segmentation)
-        run: cargo test -p micronuts-fips-responder
+        run: cargo nextest run -p micronuts-fips-responder
 
       - name: Test micronuts-app (host)
         # Tests use std items; a bare build has no embassy-time tick-hz.
-        run: cargo test -p micronuts-app --features std
+        run: cargo nextest run -p micronuts-app --features std
 
       - name: Demo smoke test
         run: |

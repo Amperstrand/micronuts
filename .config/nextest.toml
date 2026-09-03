@@ -1,0 +1,10 @@
+# Hang canary for the host test suites (microfips #178 lesson: under plain
+# `cargo test --test-threads=1` a wedged test means the suite never prints a
+# summary at all — hangs ship invisibly in failure counts). nextest runs each
+# test in its own process and terminates tests exceeding the budget below.
+#
+# The slowest legitimate suite (walletport upstream-CDK interop) stays under
+# ~60s; 120s marks slow, 2 periods (240s) terminates.
+[profile.default.slow-timeout]
+period = "120s"
+terminate-after = 2
