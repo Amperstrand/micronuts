@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +16,7 @@ pub enum SwapState {
 pub struct FirmwareState {
     pub imported_token: Option<cashu_core_lite::TokenV4>,
     pub blinded_messages: Option<Vec<cashu_core_lite::BlindedMessage>>,
-    pub swap_secrets: Option<Vec<Vec<u8>>>,
+    pub swap_secrets: Option<Vec<String>>,
     pub swap_amounts: Option<Vec<u64>>,
     pub new_proofs: Option<Vec<cashu_core_lite::Proof>>,
     pub swap_state: SwapState,

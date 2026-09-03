@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::display;
@@ -7,7 +8,7 @@ use crate::hardware::MicronutsHardware;
 use crate::protocol::{Command, Response, Status, MAX_PAYLOAD_SIZE};
 use crate::qr;
 use crate::state::{FirmwareState, SwapState};
-use crate::util::{decode_hex, encode_hex, pinned_demo_mint_key};
+use crate::util::pinned_demo_mint_key;
 use cashu_core_lite::nuts::nut12::ProofDleq;
 use cashu_core_lite::{
     blind_message, decode_token, encode_token, unblind_signature, BlindedMessage, Proof, PublicKey,
@@ -130,15 +131,14 @@ fn handle_get_blinded<H: MicronutsHardware>(state: &mut FirmwareState, hw: &mut 
     };
 
     let mut blinded_messages: Vec<BlindedMessage> = Vec::new();
-    let mut secrets: Vec<Vec<u8>> = Vec::new();
+    let mut secrets: Vec<String> = Vec::new();
     let mut amounts: Vec<u64> = Vec::new();
 
     for token_part in &token.tokens {
         for proof in &token_part.proofs {
-            let secret_bytes = match decode_hex(&proof.secret) {
-                Some(s) => s,
-                None => continue,
-            };
+            // NUT-00 secret is a STRING: hash_to_curve operates on its
+            // ASCII bytes (cross_vectors.rs hex-looking-secret trap).
+            let secret_bytes = proof.secret.as_bytes();
 
             let mut blinder_bytes = [0u8; 32];
             hw.rng_fill_bytes(&mut blinder_bytes);
@@ -147,12 +147,12 @@ fn handle_get_blinded<H: MicronutsHardware>(state: &mut FirmwareState, hw: &mut 
                 Err(_) => continue,
             };
 
-            let blinded = match blind_message(&secret_bytes, Some(blinder)) {
+            let blinded = match blind_message(secret_bytes, Some(blinder)) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
 
-            secrets.push(secret_bytes);
+            secrets.push(proof.secret.clone());
             amounts.push(proof.amount);
             blinded_messages.push(blinded);
         }
@@ -258,7 +258,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
             Err(_) => return Response::new(Status::CryptoError),
         };
 
-        let secret = &state.swap_secrets.as_ref().unwrap()[i];
+        let secret = state.swap_secrets.as_ref().unwrap()[i].clone();
         let amount = state.swap_amounts.as_ref().unwrap()[i];
 
         let c_vec = unblinded.to_sec1_bytes();
@@ -266,7 +266,7 @@ fn handle_send_signatures<H: MicronutsHardware>(
         proofs.push(Proof {
             amount,
             keyset_id: keyset_id.clone(),
-            secret: encode_hex(secret),
+            secret,
             c: c_vec,
             dleq: Some(ProofDleq::new(e, s, blinded.blinder.clone())),
         });
@@ -1060,15 +1060,14 @@ mod tests {
         let proofs = state.new_proofs.as_ref().unwrap();
         assert_eq!(proofs.len(), blinded_count);
 
-        // Offline re-verification with the proof-level DLEQ: the secret is
-        // stored hex-encoded; the issuer convention hashes the DECODED
-        // bytes (pins the convention the walletport divergence is about).
+        // Offline re-verification with the proof-level DLEQ. The secret is
+        // a STRING (cross_vectors.rs pins the hex-looking-secret trap: it
+        // must be hashed as its ASCII characters, never hex-decoded).
         let mint_pk = crate::util::pinned_demo_mint_key().unwrap();
         for proof in proofs {
-            let secret_bytes = crate::util::decode_hex(&proof.secret).unwrap();
             let c = cashu_core_lite::PublicKey::from_sec1_bytes(&proof.c).unwrap();
             assert!(cashu_core_lite::nuts::nut12::verify_proof_dleq(
-                &secret_bytes,
+                proof.secret.as_bytes(),
                 &c,
                 proof.dleq.as_ref().unwrap(),
                 &mint_pk

@@ -128,3 +128,30 @@ fn cross_dleq_proof_vector_1() {
         "tampered s must be rejected"
     );
 }
+
+/// The secret-convention contract end to end: a hex-looking secret STRING
+/// must be blinded and verified as its ASCII bytes across the full DHKE
+/// chain, and hex-decoding it first must NOT verify (the 2026-09-04
+/// session found the firmware swap path and host-mint-tool doing exactly
+/// that — self-consistent against the demo signer, rejected by every
+/// string-convention mint and gate).
+#[test]
+fn cross_secret_convention_hex_looking_string() {
+    let secret_str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    let a = sk(9);
+
+    let bm = blind_message(secret_str.as_bytes(), Some(sk(21))).unwrap();
+    let c_prime = sign_message(&a, &bm.blinded);
+    let c = unblind_signature(&c_prime, &bm.blinder, &a.public_key()).unwrap();
+
+    assert!(
+        verify_signature_with_privkey(secret_str.as_bytes(), &c, &a).unwrap(),
+        "string-bytes convention must verify"
+    );
+
+    let decoded = hex::decode(secret_str).unwrap();
+    assert!(
+        !verify_signature_with_privkey(&decoded, &c, &a).unwrap(),
+        "hex-decoded convention must NOT verify the same proof"
+    );
+}

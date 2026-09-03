@@ -247,10 +247,14 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
         let value = 2u64.pow(remaining.ilog2());
         remaining -= value;
 
-        let mut secret = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut secret);
+        // NUT-00 secret is a STRING: hex-encoded random bytes, hashed as
+        // ASCII — hex-decoding first yields a plausible but wrong Y
+        // (cross_vectors.rs hex-looking-secret trap).
+        let mut secret_bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut secret_bytes);
+        let secret = hex::encode(secret_bytes);
 
-        let blinded = blind_message(&secret, None)?;
+        let blinded = blind_message(secret.as_bytes(), None)?;
         let blinded_sig = mint.sign(&blinded.blinded);
         let sig =
             cashu_core_lite::unblind_signature(&blinded_sig, &blinded.blinder, &mint.public_key())
@@ -261,7 +265,7 @@ fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
         proofs.push(Proof {
             amount: value,
             keyset_id: keyset_id.clone(),
-            secret: hex::encode(secret),
+            secret,
             c,
             dleq: None,
         });
