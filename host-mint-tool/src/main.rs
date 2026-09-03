@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::Engine;
 use cashu_core_lite::PublicKey;
 use clap::Parser;
 use std::path::PathBuf;
@@ -130,7 +130,10 @@ fn main() -> Result<()> {
                 println!("Exported proofs successfully");
                 println!("Proof data length: {} bytes", response.payload.len());
 
-                let encoded = STANDARD.encode(&response.payload);
+                // cashuB (NUT-00 V4) tokens are base64URL without padding; the device
+                // payload is already the canonical ccl CBOR encoding.
+                use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+                let encoded = URL_SAFE_NO_PAD.encode(&response.payload);
                 println!("Token: cashuB{}", encoded);
             } else {
                 anyhow::bail!("Device returned error status: 0x{:02X}", response.command);
