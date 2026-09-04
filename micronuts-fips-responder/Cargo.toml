@@ -10,7 +10,7 @@ description = "Host-side FIPS responder: microfips service envelope -> Cashu RPC
 [dependencies]
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
 micronuts-fips-bridge = { path = "../micronuts-fips-bridge" }
-microfips-service = { git = "https://github.com/Amperstrand/microfips", rev = "466dfd5" }
+microfips-service = { git = "https://github.com/Amperstrand/microfips", rev = "b20859b" }
 
 [dev-dependencies]
 micronuts-mint = { path = "../micronuts-mint" }

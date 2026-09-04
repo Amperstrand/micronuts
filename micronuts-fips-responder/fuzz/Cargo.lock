@@ -322,7 +322,7 @@ checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
 [[package]]
 name = "fips-fmp"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "fips-noise",
  "fips-proto-defs",
@@ -331,7 +331,7 @@ dependencies = [
 [[package]]
 name = "fips-identity"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "fips-noise",
  "sha2",
@@ -340,7 +340,7 @@ dependencies = [
 [[package]]
 name = "fips-noise"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "chacha20poly1305",
  "hkdf",
@@ -515,7 +515,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "microfips-build"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "k256",
  "serde_json",
@@ -524,7 +524,7 @@ dependencies = [
 [[package]]
 name = "microfips-core"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "chacha20poly1305",
  "fips-fmp",
@@ -541,7 +541,7 @@ dependencies = [
 [[package]]
 name = "microfips-protocol"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "embassy-futures",
  "embassy-time",
@@ -553,7 +553,7 @@ dependencies = [
 [[package]]
 name = "microfips-service"
 version = "0.1.0"
-source = "git+https://github.com/Amperstrand/microfips?rev=466dfd5#466dfd57b4d3478b321a71235c7e821a1d35b196"
+source = "git+https://github.com/Amperstrand/microfips?rev=b20859b#b20859bd9d6f70814fc5fb698e9cb2af4b478e50"
 dependencies = [
  "microfips-core",
  "microfips-protocol",
