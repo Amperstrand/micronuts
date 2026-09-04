@@ -1,6 +1,7 @@
 # ADR: FIPS Connectivity for Micronuts
 
-**Status:** Proposed (drafted 2026-09-02 from the microfips #113 close-out session)
+**Status:** Proposed (drafted 2026-09-02 from the microfips #113 close-out
+session; amended 2026-09-04 — gate-2 W4 answered: v1 mandate + v2 landed)
 **References:** `docs/AMPERSTRAND-EMBEDDED-REVIEW.md` ("microfips Overlap"),
 microfips `AGENTS.md` (M9 MCU-to-MCU FSP, `microfips-service`,
 `microfips-http-demo`/`-http-test`), microfips issue #179 (FMP v1 + noise-xx
@@ -53,8 +54,9 @@ goes away.
 2. **Security review of micronuts + the new path.** ✅ **done 2026-09-02 —
    PASS WITH FINDINGS** (structured review: 3 hunters + 2 PoC engineers;
    report on #46, findings #54–#58). Wiring precondition: #57 — the
-   responder's peer-authorization contract (daemon-side allowlist mandate or
-   peer-context API change) must be decided here before any wiring lands.
+   responder's peer-authorization contract — ✅ **decided 2026-09-04**
+   (daemon-side closed-allowlist mandate **and** the peer-context API
+   landed; see "Peer authorization" below; #57 closed).
    Real-money graduation blockers: #54 (wallet swap flow performs no
    signature verification — needs NUT-12 DLEQ + pinned keysets) and #56
    (demo-mint keys publicly derivable, PoC'd; this mint never custodies real
@@ -94,13 +96,21 @@ custodies real value. This does not change the leaf-side
 `FIPS_PEER_ALLOWLIST` (microfips `fips-identity`, fail-closed env parse) —
 that one gates who *our* node answers and stays as-is.
 
-**v2 (deferred, design):** lift peer identity into the service contract —
-`FspAppHandler::on_fsp_message(msg_type, payload, response, peer)` with the
-responder enforcing per-peer policy itself. Drafted in-org in microfips as
-the API-lift issue (cross-repo coordination; check the owning session
-before picking it up). v1 and v2 are complementary: the allowlist is the
-perimeter, the peer-context API makes the responder defensible even when
-the perimeter is misconfigured.
+**v2 (landed 2026-09-04, observation-only):** peer identity is now in the
+service contract — `FspAppHandler::on_fsp_message(.., peer: PeerContext)`
+and `ServiceHandler::on_peer` in microfips-service (microfips #198,
+`2094da8`/`b20859b`), carrying `link_pubkey` (Noise-authenticated link
+peer, x-only) and `src_addr` (routing-only FSP datagram source). Micronuts
+consumes rev `b20859b` (`c829190`): `FipsCashuResponder` overrides
+`on_peer` and forwards to `CashuRpcServiceAdapter::observe_peer`, which
+records + logs the peer per request (`7c04913`; the bridge crate stays
+microfips-dep-free — `PeerInfo` carries plain bytes). **Enforcement
+posture is unchanged: policy stays daemon-side per the v1 mandate** — the
+responder observes/logs (the #57 "at least log it" bar); per-peer
+enforcement in the responder itself is now possible but deliberately not
+written yet. Caveat: `link_pubkey` is advisory when OUR node initiates on
+the XX wire until the learned-key comparison lands (microfips #203);
+under IK and on the responder path it is verified.
 
 ### Identity separation (invariant, independent of topology)
 
