@@ -1,7 +1,8 @@
-# 32 KiB main-task stack: HTTP handlers parse Cashu token bodies and run
-# secp256k1 (k256) — the 12 KiB default overflows with stack-canary corruption
-# (tollgate-s3-rs evidence for the same workload class).
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# 64 KiB main-task stack: mint construction derives two full keysets
+# (demo base + seeded) and serializes the init snapshot on the main task
+# — 32 KiB overflowed on hardware (2026-09-04 atom battery, boot loop
+# with "stack overflow in task main" right after the provisioning log).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
 # httpd: enough URI handlers for the NUT route table, generous per-handler
 # stack (32 KiB — token parse + crypto), longish keep-alive for wallet polls.
 CONFIG_HTTPD_MAX_URI_HANDLERS=16

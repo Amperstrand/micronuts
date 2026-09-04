@@ -148,7 +148,19 @@ impl DemoMint {
     /// recovery; restoring from a backup is an operator decision.
     pub fn with_state_store(mut self, store: Box<dyn crate::persist::StateStore>) -> Self {
         match store.load() {
-            Ok(Some(snapshot)) => self.restore(snapshot),
+            Ok(Some(snapshot)) => {
+                // Boot observability (#60): restore-vs-init is otherwise
+                // indistinguishable from the console — the populated-
+                // snapshot battery leg asserts on this line.
+                eprintln!(
+                    "mint state restored: {} mint quotes, {} melt quotes, {} spent, {} issued outputs",
+                    snapshot.mint_quotes.len(),
+                    snapshot.melt_quotes.len(),
+                    snapshot.spent_ys.len(),
+                    snapshot.issued_outputs.len()
+                );
+                self.restore(snapshot)
+            }
             Ok(None) => store
                 .save(&self.snapshot())
                 .unwrap_or_else(|e| panic!("mint state init failed: {e}")),
