@@ -15,9 +15,10 @@
 //! optimization).
 //!
 //! Authorization note (ADR gate 2, micronuts #57): this responder answers
-//! whatever FSP session delivers datagrams to it. Peer-identity policy is a
-//! wiring precondition, not something this crate can enforce today — the
-//! microfips `ServiceHandler` contract carries no peer context.
+//! whatever FSP session delivers datagrams to it. Since the microfips
+//! PeerContext lift (#198) the session peer is OBSERVABLE — `on_peer`
+//! records it on the adapter before each request — but per-peer policy
+//! still lives with the wiring (daemon-side `peers.allow` per ADR v1).
 
 pub mod frag;
 
@@ -111,6 +112,13 @@ fn write_error_reply(
 }
 
 impl<M: MintService> microfips_service::ServiceHandler for FipsCashuResponder<M> {
+    fn on_peer(&mut self, peer: &microfips_service::PeerContext) {
+        self.adapter.observe_peer(
+            &peer.link_pubkey,
+            peer.src_addr.as_ref().map(|a| a.as_bytes()),
+        );
+    }
+
     fn handle(
         &mut self,
         request: ServiceRequest<'_>,
@@ -177,6 +185,19 @@ mod tests {
             microfips_service::dispatch_request(responder, env, &mut scratch).expect("dispatch");
         scratch.truncate(len);
         scratch
+    }
+
+    #[test]
+    fn fips_responder_records_peer_context() {
+        let mut responder = FipsCashuResponder::new(DemoMint::new());
+        let peer = microfips_service::PeerContext {
+            link_pubkey: [0x33; 32],
+            src_addr: None,
+        };
+        microfips_service::ServiceHandler::on_peer(&mut responder, &peer);
+        let recorded = responder.adapter().last_peer().expect("recorded");
+        assert_eq!(recorded.link_pubkey, [0x33; 32]);
+        assert!(recorded.src_addr.is_none());
     }
 
     #[test]

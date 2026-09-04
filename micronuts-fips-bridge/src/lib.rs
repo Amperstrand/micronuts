@@ -73,15 +73,56 @@ pub trait ServiceHandler {
 
 pub const CASHU_RPC_ROUTE: &str = "/rpc/mint";
 
+/// FSP peer identity as observed by the adapter (microfips #198
+/// PeerContext, passed as plain bytes so this crate keeps no microfips
+/// dependency): `link_pubkey` is the Noise-authenticated link peer's
+/// x-only key (advisory under the XX initiator path — see the microfips
+/// ADR), `src_addr` the routing-only FSP datagram source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeerInfo {
+    pub link_pubkey: [u8; 32],
+    pub src_addr: Option<[u8; 16]>,
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 pub struct CashuRpcServiceAdapter<S> {
     handler: MintRpcHandler<S>,
+    last_peer: Option<PeerInfo>,
 }
 
 impl<S> CashuRpcServiceAdapter<S> {
     pub fn new(service: S) -> Self {
         Self {
             handler: MintRpcHandler::new(service),
+            last_peer: None,
         }
+    }
+
+    /// Record the FSP session peer (called by the responder's
+    /// `ServiceHandler::on_peer` before each request) and log it — the
+    /// "at least log it" bar of micronuts #57 v2.
+    pub fn observe_peer(&mut self, link_pubkey: &[u8; 32], src_addr: Option<&[u8; 16]>) {
+        let src = src_addr.map(|a| {
+            let mut out = [0u8; 16];
+            out.copy_from_slice(a);
+            out
+        });
+        eprintln!(
+            "fips peer: link_pubkey={} src_addr={}",
+            hex(link_pubkey),
+            src.map(|s| hex(&s)).unwrap_or_else(|| "-".to_string())
+        );
+        self.last_peer = Some(PeerInfo {
+            link_pubkey: *link_pubkey,
+            src_addr: src,
+        });
+    }
+
+    pub fn last_peer(&self) -> Option<PeerInfo> {
+        self.last_peer
     }
 
     pub fn handler(&self) -> &MintRpcHandler<S> {
@@ -223,6 +264,18 @@ mod tests {
         CashuRpcServiceAdapter, ServiceError, ServiceHandler, ServiceHandlerTransport,
         ServiceMethod, ServiceReply, ServiceRequest, ServiceStatus,
     };
+
+    #[test]
+    fn cashu_adapter_observe_peer_records() {
+        let mut adapter = CashuRpcServiceAdapter::new(DemoMint::new());
+        assert!(adapter.last_peer().is_none());
+        let link = [0x11u8; 32];
+        let src = [0x22u8; 16];
+        adapter.observe_peer(&link, Some(&src));
+        let peer = adapter.last_peer().expect("recorded");
+        assert_eq!(peer.link_pubkey, link);
+        assert_eq!(peer.src_addr, Some(src));
+    }
 
     #[test]
     fn rpc_roundtrip_works_over_service_handler_transport() {
