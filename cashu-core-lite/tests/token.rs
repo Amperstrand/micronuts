@@ -324,3 +324,13 @@ fn base64_encode(data: &[u8]) -> String {
     }
     out
 }
+
+#[test]
+fn test_encode_token_wire_roundtrip() {
+    let token = sample_token();
+    let wire = cashu_core_lite::encode_token_wire(&token).expect("should encode wire");
+    assert!(wire.starts_with("cashuB"));
+    assert!(!wire.contains('='), "base64url must be unpadded");
+    let decoded = decode_token(wire.as_bytes()).expect("should decode wire form");
+    assert_eq!(token, decoded);
+}

@@ -180,33 +180,12 @@ fn base64url_decode(input: &str) -> Vec<u8> {
 }
 
 /// Encode a V4 token to the `cashuB…` wire form (inverse of
-/// [`decode_token_or_err`]).
+/// [`decode_token_or_err`]). Delegates to cashu-core-lite so every
+/// consumer (walletport, the device firmware, host-mint-tool) shares
+/// ONE wire encoder — the 2026-09-04 integer-key lesson.
 pub fn encode_token_wire(token: &TokenV4) -> Result<String, WalletPortError> {
-    let bytes = cashu_core_lite::token::encode_token(token)
-        .map_err(|e| WalletPortError::Decode(alloc_string(e)))?;
-    Ok([String::from("cashuB"), base64url_encode(&bytes)].concat())
-}
-
-fn base64url_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b = [
-            chunk[0],
-            chunk.get(1).copied().unwrap_or(0),
-            chunk.get(2).copied().unwrap_or(0),
-        ];
-        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
-        out.push(TABLE[(n >> 18) as usize & 63] as char);
-        out.push(TABLE[(n >> 12) as usize & 63] as char);
-        if chunk.len() > 1 {
-            out.push(TABLE[(n >> 6) as usize & 63] as char);
-        }
-        if chunk.len() > 2 {
-            out.push(TABLE[n as usize & 63] as char);
-        }
-    }
-    out
+    cashu_core_lite::token::encode_token_wire(token)
+        .map_err(|e| WalletPortError::Decode(alloc_string(e)))
 }
 
 /// Keyset lookup used by the offline validator: pinned keysets keyed by

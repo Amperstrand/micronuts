@@ -353,3 +353,34 @@ pub fn encode_token(token: &TokenV4) -> Result<Vec<u8>, minicbor::encode::Error<
     minicbor::encode(token, &mut buf)?;
     Ok(buf)
 }
+
+/// Encode a V4 token to its NUT-00 wire form: `cashuB` + unpadded
+/// base64url of the CBOR body. Inverse of [`decode_token`].
+pub fn encode_token_wire(token: &TokenV4) -> Result<String, minicbor::encode::Error<Infallible>> {
+    let bytes = encode_token(token)?;
+    Ok([String::from("cashuB"), encode_base64url(&bytes)].concat())
+}
+
+/// Base64url (RFC 4648 §5, no padding) — byte-identical alphabet and
+/// chunking to walletport's encoder; one shared implementation.
+fn encode_base64url(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b = [
+            chunk[0],
+            chunk.get(1).copied().unwrap_or(0),
+            chunk.get(2).copied().unwrap_or(0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(TABLE[(n >> 18) as usize & 63] as char);
+        out.push(TABLE[(n >> 12) as usize & 63] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(n >> 6) as usize & 63] as char);
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[n as usize & 63] as char);
+        }
+    }
+    out
+}

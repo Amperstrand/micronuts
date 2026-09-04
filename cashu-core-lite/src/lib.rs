@@ -28,6 +28,6 @@ pub use rpc::{
     MintRpcRequest, MintRpcResponse, MintRpcResult, MintService, RpcByteTransport, RpcMintClient,
 };
 pub use store::{MemoryStore, ProofStore, StoreError};
-pub use token::{decode_token, encode_token, Proof, TokenV4, TokenV4Token};
+pub use token::{decode_token, encode_token, encode_token_wire, Proof, TokenV4, TokenV4Token};
 pub use transport::MintClient;
 pub use wallet::Wallet;
