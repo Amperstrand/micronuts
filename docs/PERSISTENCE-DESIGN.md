@@ -72,7 +72,25 @@ spent), never a double-pay. The snapshot carries the upstream URL+unit
 and restore REFUSES a cross-era file (panic) — reserve proofs are only
 spendable at the upstream that issued them.
 
-## Phase 3 — device (NVS / LittleFS, design only)
+## Phase 3 — device (NVS) — ✅ shipped 2026-09-04 (#60)
+
+Landed as designed, with one deviation: the whole snapshot lives under a
+single NVS key `mint_state` (JSON blob, namespace `micronuts`) rather
+than one key per collection — a single `set_blob` (erase+write+commit)
+is atomic per key, so snapshot-per-mutation keeps the previous-or-new
+guarantee; four keys would need a multi-key commit that NVS does not
+make atomic together. The `keyset_seed` (32 bytes, first-boot generated
+from `esp_fill_random` after WiFi association) is a second key —
+identity and state wipe independently, which the battery exercises.
+Bound: 32 KiB, checked before write (loud fail-stop); `nvs` partition
+grown to 0x10000 in `partitions.csv`. The store trait (`StateStore`)
+was extracted with this second backend, per the YAGNI note below, and
+the restart matrix runs against an NVS-semantics in-memory store on
+host. Hardware battery (first-boot generation ≠ demo id, reset
+persistence, populated-snapshot boot via `nvs_partition_gen` injection,
+erase regeneration): ALL PASS on the bench atom, see
+`docs/HARDWARE-TEST-RESULTS-2026-09-04-nvs-keyset.md`. The original
+design sketch follows for reference:
 
 The ESP32 front-end (`micronuts-esp32-mint`) maps the same snapshot onto
 NVS with house rules (bounded strings/blobs, explicit commits per

@@ -46,6 +46,12 @@ Spec-quote drift: `greatspectate check` per `cashu-core-lite/specquotes.toml`
 - `MICRONUTS_MINT_STATE_FILE` / `MICRONUTS_RESERVE_STATE_FILE` — durable
   state (atomic snapshots; corrupt files REFUSE to boot; cross-era reserve
   snapshots panic). See docs/PERSISTENCE-DESIGN.md.
+- `MICRONUTS_MINT_KEYSET_SEED` — 64-hex (32-byte) entropic keyset seed for
+  `mint_server` (#56: the demo keyset derives from a PUBLIC seed — never
+  custody value with it; a state file without this seed prints a loud
+  warning). Device firmware never uses it: the esp32-mint generates and
+  NVS-persists its own seed on first boot (CI source-guards that the
+  device crate references no demo-keyset constructor).
 - Wallet e2e harness (`scripts/e2e_wallet.mjs`): `PAY_CMD` (payer snippet,
   run with `$INVOICE`), `SETTLE_POLL_TRIES`/`SETTLE_POLL_MS`, `MELT_INVOICE`
   + `MELT_AMOUNT`. Signut recipe: pay both the user quote and the printed
