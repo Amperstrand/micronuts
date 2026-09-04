@@ -199,6 +199,39 @@ jobs:
           greatspectate check --config specquotes.toml
           --comment-start "// " --comment-continue "//" $FILES
 
+  cashuts-conformance:
+    # Real-wallet conformance (graduation of the 2026-09-04 wire finding):
+    # the token wire format is judged by @cashu/cashu-ts — a consumer
+    # OUTSIDE this repo — on every push, so it can't silently regress
+    # against a real wallet again. Selftest proves the cashu-ts surface
+    # decodes the NUT-00 V4 spec example; the TOKEN leg feeds it a
+    # demo-keyset token minted in-process by the print_token example
+    # (16/4/1, DLEQ on every proof). Runners have no sibling cashu-cf
+    # checkout — install the verifier into a scratch node_modules root
+    # and point CASHU_CF_ROOT at it (createRequire only needs that).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install cashu-ts (the external verifier)
+        run: |
+          mkdir -p target/cashu-verifier
+          echo '{"name":"cashu-verifier","private":true}' > target/cashu-verifier/package.json
+          npm install --prefix target/cashu-verifier @cashu/cashu-ts@^4.10 --no-audit --no-fund
+      - name: cashu-ts surface selftest (NUT-00 V4 spec example)
+        run: node scripts/e2e_cashuts_conformance.mjs --selftest
+        env:
+          CASHU_CF_ROOT: ${{ github.workspace }}/target/cashu-verifier
+      - name: Mint a demo-keyset token and judge it with the real wallet
+        run: |
+          TOKEN=$(cargo run --release -q -p walletport --example print_token)
+          TOKEN="$TOKEN" node scripts/e2e_cashuts_conformance.mjs
+        env:
+          CASHU_CF_ROOT: ${{ github.workspace }}/target/cashu-verifier
+
   deny:
     runs-on: ubuntu-latest
     env:
