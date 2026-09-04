@@ -47,9 +47,12 @@ pub struct WifiManager {
 }
 
 impl WifiManager {
-    pub fn new(modem: Modem<'static>) -> Result<Self, WifiError> {
+    /// `nvs` is passed in (not taken here): esp-idf-svc guards the default
+    /// partition with a one-take flag — a second `take()` while another
+    /// holder is alive fails with `ESP_ERR_INVALID_STATE`. main takes it
+    /// once and Arc-shares clones (the mint's `NvsStateStore` keeps one).
+    pub fn new(modem: Modem<'static>, nvs: EspDefaultNvsPartition) -> Result<Self, WifiError> {
         let sys_loop = EspSystemEventLoop::take()?;
-        let nvs = EspDefaultNvsPartition::take()?;
         let wifi = BlockingWifi::wrap(EspWifi::new(modem, sys_loop.clone(), Some(nvs))?, sys_loop)?;
         Ok(Self { wifi })
     }
@@ -75,7 +78,9 @@ impl WifiManager {
 
         let wifi_configuration = Configuration::Client(ClientConfiguration {
             ssid: ssid.try_into().map_err(|_| WifiError::SsidTooLong)?,
-            password: password.try_into().map_err(|_| WifiError::PasswordTooLong)?,
+            password: password
+                .try_into()
+                .map_err(|_| WifiError::PasswordTooLong)?,
             auth_method: AuthMethod::WPA2Personal,
             bssid: None,
             channel: None,

@@ -37,15 +37,29 @@ espflash flash --partition-table partitions.csv \
 
 HTTP API on port **3338**.
 
+## Persistence (NVS)
+
+First boot after WiFi association draws a 32-byte keyset seed
+(`esp_fill_random` — RF-powered hardware RNG), stores it in the default
+NVS partition (namespace `micronuts`, key `keyset_seed`), and derives
+the served keyset from it; every later boot reloads the seed. The
+served keyset is therefore never the public one baked into
+`DemoMint::new()` — CI source-scans this crate for demo-keyset
+constructor references. Whole-mint snapshots (quotes, spent proofs,
+issued outputs) go through the `micronuts_mint::persist::StateStore`
+seam as JSON blobs under `mint_state`, bound-checked to 32 KiB before
+writing; a corrupt blob refuses to boot (fail-stop, same policy as the
+host file backend). The `nvs` partition is grown to 64 KiB in
+`partitions.csv` for this (#60, #56; design: ../docs/PERSISTENCE-DESIGN.md).
+
 ## Notes
 
 - 32 KiB handler + main-task stacks: Cashu token parsing + k256 secp256k1
   overflow 12 KiB (house evidence, tollgate-s3-rs).
 - Custom `partitions.csv` passed to espflash explicitly (esp-idf-sys does not
   copy custom partition CSVs into its build dir).
-- Persistence milestone: spent set + quotes + issued outputs into NVS
-  (`EspDefaultNvsPartition` already taken by WiFi; bounded blobs + explicit
-  commits per house NVS rules) — design: ../docs/PERSISTENCE-DESIGN.md
-  phase 3, tracked as #60.
+- Persistence milestone: spent set + quotes + issued outputs into NVS via
+  `NvsStateStore` (landed — see "Persistence (NVS)" above); design:
+  ../docs/PERSISTENCE-DESIGN.md phase 3, tracked as #60.
 - Upstream `cashu` (=0.17.3) compiles for Xtensa ESP-IDF (tollgate-s3-rs
   evidence) — no de-std crypto layer needed on this target.

@@ -293,6 +293,20 @@ jobs:
           cargo +esp build --locked
           file target/xtensa-esp32-espidf/debug/micronuts-esp32-mint | tee /dev/stderr | grep -q Xtensa
 
+      - name: Source scan — no demo-keyset constructors on the device (#56)
+        # The served keyset must come from the NVS-persisted seed, never
+        # the public one baked into DemoMint::new(). Construction-level
+        # guarantee: the device crate never references the demo-keyset
+        # constructors (with_keyset_seed is always chained in main.rs).
+        shell: bash
+        run: |
+          SCAN=$(grep -rn "demo_default\|demo_with_fee\|micronuts-demo-mint-seed" \
+            micronuts-esp32-mint/src || true)
+          if [ -n "$SCAN" ]; then
+            echo "FAIL: demo-keyset references found in the device crate:"; echo "$SCAN"; exit 1
+          fi
+          echo "OK: no demo-keyset references in micronuts-esp32-mint/src"
+
       - name: Build micronuts-esp32-bridge (Xtensa, #58)
         shell: bash
         working-directory: micronuts-esp32-bridge

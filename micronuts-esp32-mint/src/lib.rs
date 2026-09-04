@@ -6,6 +6,9 @@
 //! unchanged.
 
 #[cfg(target_os = "espidf")]
+pub mod nvs_store;
+
+#[cfg(target_os = "espidf")]
 pub mod wifi;
 
 /// Pure JSON response builders for the NUT GET endpoints.
@@ -41,11 +44,7 @@ pub mod json {
     /// GET /v1/keys — NUT-01.
     pub fn keys_body(mint: &DemoMint) -> String {
         let keys: Vec<String> = match mint.get_keys() {
-            Ok(resp) => resp
-                .keysets
-                .iter()
-                .map(keyset_json)
-                .collect(),
+            Ok(resp) => resp.keysets.iter().map(keyset_json).collect(),
             Err(e) => return super::json::error_body(500, &e.to_string()),
         };
         format!("{{\"keysets\":[{}]}}", keys.join(","))
@@ -73,7 +72,13 @@ pub mod json {
         let keys: Vec<String> = ks
             .keys
             .iter()
-            .map(|kp| format!("\"{}\":\"{}\"", kp.amount, hex::encode(kp.pubkey.to_bytes())))
+            .map(|kp| {
+                format!(
+                    "\"{}\":\"{}\"",
+                    kp.amount,
+                    hex::encode(kp.pubkey.to_bytes())
+                )
+            })
             .collect();
         format!(
             "{{\"id\":\"{}\",\"unit\":\"{}\",\"keys\":{{{}}}}}",

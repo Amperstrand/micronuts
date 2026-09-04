@@ -1700,6 +1700,7 @@ dependencies = [
  "hex",
  "log",
  "micronuts-mint",
+ "serde_json",
 ]
 
 [[package]]

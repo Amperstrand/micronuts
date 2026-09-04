@@ -1,4 +1,9 @@
 # Name,   Type, SubType, Offset,  Size,     Flags
-nvs,      data, nvs,     0x9000,  0x006000,
-phy_init, data, phy,     0xf000,  0x001000,
-factory,  app,  factory, 0x10000, 0x2F0000,
+# nvs grown 0x6000 -> 0x10000 for the device mint (#60/#56): whole-state
+# snapshot blobs up to 32 KiB (MAX_STATE_BLOB in src/nvs_store.rs) plus the
+# 32-byte keyset seed, with NVS erase/write-amplification headroom. Offsets
+# after nvs shift; factory stays 0x10000-aligned (bootloader requirement,
+# hence the gap after phy_init).
+nvs,      data, nvs,     0x9000,  0x010000,
+phy_init, data, phy,     0x109000,0x001000,
+factory,  app,  factory, 0x110000,0x2F0000,
