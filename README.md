@@ -251,19 +251,28 @@ DISPLAY=:1 cargo run -p micronuts-app --example native_sim --features native-sim
 
 Build the firmware and flash it to the STM32F469I-Discovery board via ST-Link.
 
+**Use `st-flash`, not probe-rs, for deployment.** probe-rs halting the CPU
+breaks USB CDC (drops mid-transfer); the verified procedure is objcopy +
+`st-flash --connect-under-reset`. After reset, the CDC device (VID:PID
+`16c0:27dd`) appears only once the boot splash finishes rendering —
+**~60–100 s wall time**; never declare enumeration dead before ~2 min.
+Detect the port by VID:PID, never by tty number. Full verified battery:
+`bash scripts/test_hw_swap_gate.sh` (exit 77 = no cable). Details and
+hardware evidence: [docs/HARDWARE-TEST-RESULTS-20260903.md](docs/HARDWARE-TEST-RESULTS-20260903.md).
+
 ```bash
-# Install ARM target and probe-rs
+# Install ARM target
 rustup target add thumbv7em-none-eabihf
-cargo install probe-rs-tools
 
-# Build (from workspace root)
-cargo build --release
+# Build (from the firmware/ directory — its .cargo/config.toml sets the target)
+cd firmware && cargo build --release
 
-# Flash and run with RTT output
-probe-rs run --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
+# Convert and flash
+arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware firmware.bin
+st-flash --connect-under-reset write firmware.bin 0x08000000
 
-# Flash only (no RTT)
-probe-rs download --chip STM32F469NIHx target/thumbv7em-none-eabihf/release/firmware
+# Reset (also the safe recovery path if USB goes sideways)
+st-flash --connect-under-reset reset
 ```
 
 ### Run Tests

@@ -11,8 +11,8 @@
 
 ### Prerequisites
 
-- STM32F469I-Discovery connected via USB
-- `probe-rs` installed
+- STM32F469I-Discovery connected via the USB OTG FS cable (CN5, micro-B)
+- `arm-none-eabi-objcopy` + `st-flash` installed
 - Rust toolchain with `thumbv7em-none-eabihf` target
 
 ### Step-by-Step
@@ -20,8 +20,17 @@
 #### 1. Flash Firmware
 
 ```bash
-cargo run --release -p firmware
+cd firmware && cargo build --release
+arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/firmware firmware.bin
+st-flash --connect-under-reset write firmware.bin 0x08000000
+st-flash --connect-under-reset reset
 ```
+
+Then wait **~60–100 s** for the boot splash to finish before the CDC
+device (VID:PID `16c0:27dd`) enumerates — detect the port by VID:PID,
+never by tty number. The verified full battery lives in
+`scripts/test_hw_swap_gate.sh`; see
+[HARDWARE-TEST-RESULTS-20260903.md](HARDWARE-TEST-RESULTS-20260903.md).
 
 #### 2. Start Host Tool
 
