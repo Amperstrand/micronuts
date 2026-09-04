@@ -591,6 +591,66 @@ fn run_restart_matrix(make_store: impl Fn() -> Box<dyn StateStore> + Send) {
     matrix_melt_rollback_survives(&make_store);
 }
 
+/// #56 wave 2: the same spent-stays-spent invariant, but under a
+/// custom-seed (entropic, non-public) keyset — proofs minted under real
+/// keys must still be spendable exactly once across a restart, and the
+/// restarted mint must re-derive the SAME keyset id from the seed alone
+/// (the snapshot does not store the keyset).
+#[test]
+fn restart_spent_stays_spent_with_entropic_keyset_seed() {
+    let cells: SharedCells = Arc::new(Mutex::new(HashMap::new()));
+    let seed: [u8; 32] = core::array::from_fn(|i| 0x33 ^ i as u8);
+    let make_mint = || {
+        DemoMint::new()
+            .with_keyset_seed(&seed)
+            .with_state_store(Box::new(InMemoryStateStore::with_shared(
+                cells.clone(),
+                None,
+            )))
+    };
+    let mut rng = StdRng::seed_from_u64(0xE5);
+    let saved_proofs;
+
+    {
+        let mut mint = make_mint();
+        assert_ne!(mint.keyset_id(), "0022e025867793d1");
+        let keyset = mint.public_keyset();
+        let (_, proofs, _) = mint_with_pending(&mut mint, 8, &keyset, &mut rng).unwrap();
+        saved_proofs = proofs.clone();
+
+        let pairs = blind_amounts(&[8], mint.keyset_id(), &mut rng).unwrap();
+        let (messages, _): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+        mint.post_swap(nut03::SwapRequest {
+            inputs: proofs,
+            outputs: messages,
+        })
+        .expect("first swap spends the proofs");
+    } // drop = crash after the mutation
+
+    let mut mint = make_mint();
+    let ys: Vec<PublicKey> = saved_proofs.iter().map(|p| y_of(&p.secret)).collect();
+    let states = mint
+        .post_check_state(nut07::CheckStateRequest { ys })
+        .unwrap();
+    assert!(
+        states.states.iter().all(|s| s.state == nut07::state::SPENT),
+        "all restarted proofs report SPENT under the re-derived keyset"
+    );
+
+    let pairs = blind_amounts(&[8], mint.keyset_id(), &mut rng).unwrap();
+    let (messages, _): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+    let err = mint
+        .post_swap(nut03::SwapRequest {
+            inputs: saved_proofs,
+            outputs: messages,
+        })
+        .expect_err("respend of spent proofs must fail");
+    assert!(
+        matches!(err, CashuError::TokensAlreadySpent),
+        "expected TokensAlreadySpent, got {err:?}"
+    );
+}
+
 #[test]
 fn restart_matrix_snapshot_file_store() {
     let path = temp_state_path("matrix-file");

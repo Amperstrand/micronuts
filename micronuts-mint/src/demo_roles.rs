@@ -65,12 +65,45 @@ fn mint_from_env() -> DemoMint {
 }
 
 /// Apply `MICRONUTS_MINT_STATE_FILE` when set (durable state; see
-/// docs/PERSISTENCE-DESIGN.md — corrupt files refuse to boot).
+/// docs/PERSISTENCE-DESIGN.md — corrupt files refuse to boot) and
+/// `MICRONUTS_MINT_KEYSET_SEED` when set (64 hex chars → entropic keyset
+/// seed, #56 — invalid hex refuses to boot).
 fn mint_with_state(mint: DemoMint) -> DemoMint {
+    let seed = std::env::var_os("MICRONUTS_MINT_KEYSET_SEED").filter(|v| !v.is_empty());
+    let mint = match &seed {
+        Some(raw) => {
+            let bytes = parse_keyset_seed_hex(&raw.to_string_lossy())
+                .unwrap_or_else(|e| panic!("refusing to start: {e}"));
+            mint.with_keyset_seed(&bytes)
+        }
+        None => mint,
+    };
     match std::env::var_os("MICRONUTS_MINT_STATE_FILE") {
-        Some(path) if !path.is_empty() => mint.with_state_file(path),
+        Some(path) if !path.is_empty() => {
+            if seed.is_none() {
+                eprintln!(
+                    "WARNING: serving publicly-derivable DEMO keyset {} — demo only, never custody real value",
+                    mint.keyset_id()
+                );
+            }
+            mint.with_state_file(path)
+        }
         _ => mint,
     }
+}
+
+/// Parse `MICRONUTS_MINT_KEYSET_SEED` (64 hex chars → 32 bytes, #56).
+/// Any other shape — odd length, non-hex characters, wrong byte count —
+/// is a refuse-to-boot configuration error.
+pub(crate) fn parse_keyset_seed_hex(raw: &str) -> Result<[u8; 32], String> {
+    let bytes = hex::decode(raw)
+        .map_err(|e| format!("MICRONUTS_MINT_KEYSET_SEED is not valid hex: {e}"))?;
+    bytes.try_into().map_err(|v: Vec<u8>| {
+        format!(
+            "MICRONUTS_MINT_KEYSET_SEED must be 64 hex chars (32 bytes), got {} bytes",
+            v.len()
+        )
+    })
 }
 
 /// Host-side mint-role demo server.
@@ -220,4 +253,34 @@ pub fn run_wallet_demo() -> Result<(), CashuError> {
 
     println!("\n=== Demo complete ===");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_keyset_seed_hex;
+
+    #[test]
+    fn keyset_seed_hex_accepts_64_hex_chars() {
+        let seed = parse_keyset_seed_hex(&"2a".repeat(32)).expect("64 hex chars parse");
+        assert_eq!(seed, [0x2a; 32]);
+    }
+
+    #[test]
+    fn keyset_seed_hex_rejects_63_chars() {
+        let raw = "2a".repeat(31) + "2";
+        let err = parse_keyset_seed_hex(&raw).unwrap_err();
+        assert!(err.contains("MICRONUTS_MINT_KEYSET_SEED"), "{err}");
+    }
+
+    #[test]
+    fn keyset_seed_hex_rejects_invalid_chars() {
+        let err = parse_keyset_seed_hex(&"zz".repeat(32)).unwrap_err();
+        assert!(err.contains("MICRONUTS_MINT_KEYSET_SEED"), "{err}");
+    }
+
+    #[test]
+    fn keyset_seed_hex_rejects_wrong_byte_count() {
+        let err = parse_keyset_seed_hex(&"2a".repeat(31)).unwrap_err();
+        assert!(err.contains("64 hex chars"), "{err}");
+    }
 }

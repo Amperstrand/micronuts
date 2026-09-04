@@ -33,6 +33,13 @@ impl DemoKeyset {
     /// Demo shortcut: keys are derived as `SHA256(seed || "cashu-key" || index_be)`.
     /// A real mint would use BIP-32 derivation from a mnemonic (NUT-13).
     ///
+    /// Security (#56): the derivation is public knowledge, so safety rests
+    /// ENTIRELY on the seed being secret and entropic — a public, guessable,
+    /// or committed-to-source seed lets anyone derive the private keys and
+    /// forge proofs. Callers custoding real value must supply 32 bytes from
+    /// a CSPRNG (see `DemoMint::with_keyset_seed`); the `demo_*`
+    /// constructors use a PUBLIC constant seed.
+    ///
     /// # Arguments
     /// * `seed` - Bytes for deterministic key derivation
     /// * `unit` - Unit string (e.g., "sat")
@@ -67,6 +74,11 @@ impl DemoKeyset {
     }
 
     /// Create the keyset from the default demo seed with no input fees.
+    ///
+    /// CI/demo-only (#56): the seed is the PUBLIC constant
+    /// `SHA256("micronuts-demo-mint-seed")`, so every key is publicly
+    /// derivable and proofs are forgeable by anyone. Never custody real
+    /// value with this keyset.
     pub fn demo_default() -> Self {
         let seed = Sha256::new()
             .chain_update(b"micronuts-demo-mint-seed")
@@ -75,6 +87,8 @@ impl DemoKeyset {
     }
 
     /// Create the keyset from the default demo seed with a custom input fee.
+    ///
+    /// CI/demo-only, same PUBLIC-seed caveat as [`Self::demo_default`] (#56).
     pub fn demo_with_fee(input_fee_ppk: u64) -> Self {
         let seed = Sha256::new()
             .chain_update(b"micronuts-demo-mint-seed")

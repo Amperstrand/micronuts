@@ -121,6 +121,23 @@ impl DemoMint {
         }
     }
 
+    /// Replace the keyset with one derived from a caller-supplied SECRET
+    /// seed (#56).
+    ///
+    /// The default demo keyset derives from a PUBLIC constant — anyone can
+    /// re-derive its private keys and forge proofs. This swaps in keys
+    /// derived from `seed`, which must be entropic and secret (e.g. 32
+    /// bytes from a CSPRNG). Unit and NUT-08 input fee carry over from the
+    /// current keyset. Deterministic: the same seed always re-derives the
+    /// same keyset id and keys, so restarts restore the exact keyset from
+    /// the seed alone (the state snapshot does not store keys).
+    pub fn with_keyset_seed(mut self, seed: &[u8; 32]) -> Self {
+        let unit = self.keyset.unit.clone();
+        let input_fee_ppk = self.keyset.input_fee_ppk;
+        self.keyset = DemoKeyset::new(seed, &unit, input_fee_ppk);
+        self
+    }
+
     /// Enable durable state via an injected [`persist::StateStore`]
     /// (alternative file layouts, the ESP32 NVS backend, …): load the
     /// stored snapshot if present, else initialize the store.
