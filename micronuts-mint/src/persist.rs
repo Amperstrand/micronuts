@@ -72,6 +72,33 @@ pub struct MintStateSnapshot {
     pub issued_outputs: Vec<(String, BlindSignatureSnap)>,
 }
 
+/// Persistence seam for durable mint state (issue #60).
+///
+/// `save` must make the snapshot durable before returning — the mint's
+/// snapshot-per-mutation fail-stop model assumes any completed mutation
+/// is already durable — and `load` must distinguish "no state yet"
+/// (`Ok(None)`) from "state exists but cannot be decoded" (`Err`): the
+/// latter is a refuse-to-boot condition, never a silent empty store
+/// (same rationale as [`SnapshotFile::load`]). The host file backend is
+/// [`SnapshotFile<MintStateSnapshot>`]; the ESP32 NVS backend implements
+/// this trait directly.
+pub trait StateStore: Send {
+    /// Load the durable snapshot; `Ok(None)` when no state exists yet.
+    fn load(&self) -> Result<Option<MintStateSnapshot>, String>;
+    /// Durably replace the stored snapshot with `snap`.
+    fn save(&self, snap: &MintStateSnapshot) -> Result<(), String>;
+}
+
+impl StateStore for SnapshotFile<MintStateSnapshot> {
+    fn load(&self) -> Result<Option<MintStateSnapshot>, String> {
+        SnapshotFile::load(self)
+    }
+
+    fn save(&self, snap: &MintStateSnapshot) -> Result<(), String> {
+        SnapshotFile::save(self, snap)
+    }
+}
+
 /// Atomic-snapshot file store for any JSON-serializable state `T`
 /// (mint state, reserve wallet, …).
 pub struct SnapshotFile<T> {

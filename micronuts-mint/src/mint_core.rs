@@ -83,9 +83,10 @@ pub struct DemoMint {
     /// NUT-09: B_ hex → blind signature for every output this mint signed
     /// (restore index; durable with a state file).
     issued_outputs: HashMap<String, nut00::BlindSignature>,
-    /// Optional durable state — snapshot-per-mutation, atomic rename
-    /// (host prototype; docs/PERSISTENCE-DESIGN.md).
-    store: Option<crate::persist::SnapshotFile<crate::persist::MintStateSnapshot>>,
+    /// Optional durable state — snapshot-per-mutation through the
+    /// [`StateStore`](crate::persist::StateStore) seam (host prototype
+    /// uses the atomic-rename file backend; docs/PERSISTENCE-DESIGN.md).
+    store: Option<Box<dyn crate::persist::StateStore>>,
     /// Lightning seam for invoices, settlement, and payments.
     backend: Box<dyn LightningBackend + Send>,
     /// Time source for quote expiry.
@@ -120,14 +121,15 @@ impl DemoMint {
         }
     }
 
-    /// Enable durable state: load `path` if it exists, else create it.
+    /// Enable durable state via an injected [`persist::StateStore`]
+    /// (alternative file layouts, the ESP32 NVS backend, …): load the
+    /// stored snapshot if present, else initialize the store.
     ///
     /// Fail-stop on any store problem — corrupt/unwritable state refuses
     /// to boot (panics) rather than silently starting empty: a fresh store
     /// would resurrect spent proofs and re-mint. There is no automatic
     /// recovery; restoring from a backup is an operator decision.
-    pub fn with_state_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
-        let store = crate::persist::SnapshotFile::new(path);
+    pub fn with_state_store(mut self, store: Box<dyn crate::persist::StateStore>) -> Self {
         match store.load() {
             Ok(Some(snapshot)) => self.restore(snapshot),
             Ok(None) => store
@@ -137,6 +139,16 @@ impl DemoMint {
         }
         self.store = Some(store);
         self
+    }
+
+    /// Enable durable state in a file: load `path` if it exists, else
+    /// create it. Thin wrapper over [`Self::with_state_store`] with the
+    /// host atomic-rename file backend.
+    pub fn with_state_file(self, path: impl Into<std::path::PathBuf>) -> Self {
+        let store = Box::new(crate::persist::SnapshotFile::<
+            crate::persist::MintStateSnapshot,
+        >::new(path));
+        self.with_state_store(store)
     }
 
     /// Get the active keyset ID.
