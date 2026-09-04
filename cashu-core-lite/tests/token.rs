@@ -204,6 +204,80 @@ fn test_decode_cashu_b_base64url() {
     assert_eq!(token, decoded);
 }
 
+// The NUT-00 V4 spec example token (nuts/00.md, "V4 tokens") — the
+// cross-implementation ground truth also used by the cashu-ts conformance
+// harness selftest. cashu-ts 4.10.0 decodes this exact string.
+const NUT00_SPEC_EXAMPLE: &str = "cashuBo2F0gqJhaUgA_9SLj17PgGFwgaNhYQFhc3hAYWNjMTI0MzVlN2I4NDg0YzNjZjE4NTAxNDkyMThhZjkwZjcxNmE1MmJmNGE1ZWQzNDdlNDhlY2MxM2Y3NzM4OGFjWCECRFODGd5IXVW-07KaZCvuWHk3WrnnpiDhHki6SCQh88-iYWlIAK0mjE0fWCZhcIKjYWECYXN4QDEzMjNkM2Q0NzA3YTU4YWQyZTIzYWRhNGU5ZjFmNDlmNWE1YjRhYzdiNzA4ZWIwZDYxZjczOGY0ODMwN2U4ZWVhY1ghAjRWqhENhLSsdHrr2Cw7AFrKUL9Ffr1XN6RBT6w659lNo2FhAWFzeEA1NmJjYmNiYjdjYzY0MDZiM2ZhNWQ1N2QyMTc0ZjRlZmY4YjQ0MDJiMTc2OTI2ZDNhNTdkM2MzZGNiYjU5ZDU3YWNYIQJzEpxXGeWZN5qXSmJjY8MzxWyvwObQGr5G1YCCgHicY2FtdWh0dHA6Ly9sb2NhbGhvc3Q6MzMzOGF1Y3NhdA";
+
+#[test]
+fn test_decode_nut00_spec_example() {
+    let token = decode_token(NUT00_SPEC_EXAMPLE.as_bytes()).expect("spec example must decode");
+    assert_eq!(token.mint, "http://localhost:3338");
+    assert_eq!(token.unit, "sat");
+    assert_eq!(token.memo, None);
+    assert_eq!(token.proof_count(), 3);
+    assert_eq!(token.total_amount(), 4);
+
+    assert_eq!(token.tokens.len(), 2);
+    assert_eq!(token.tokens[0].keyset_id, "00ffd48b8f5ecf80");
+    assert_eq!(token.tokens[1].keyset_id, "00ad268c4d1f5826");
+
+    // Every proof inherits its group's keyset id.
+    assert!(token.tokens[0]
+        .proofs
+        .iter()
+        .all(|p| p.keyset_id == "00ffd48b8f5ecf80"));
+    assert!(token.tokens[1]
+        .proofs
+        .iter()
+        .all(|p| p.keyset_id == "00ad268c4d1f5826"));
+
+    // C values arrive as 33-byte compressed points.
+    for p in token.tokens.iter().flat_map(|t| t.proofs.iter()) {
+        assert_eq!(p.c.len(), 33, "C must be a 33-byte compressed point");
+        assert_eq!(p.dleq, None, "spec example carries no dleq");
+    }
+}
+
+#[test]
+fn test_encode_uses_nut00_single_char_string_keys() {
+    // NUT-00 V4: "All keys are single characters and hex strings are
+    // encoded in binary." The encoded top-level map must carry text keys
+    // m/u/t — integer-keyed CBOR is the wire bug cashu-ts rejects with
+    // "Invalid token template" (found 2026-09-04, first external parse).
+    let token = sample_token();
+    let encoded = encode_token(&token).expect("should encode");
+
+    let mut d = minicbor::Decoder::new(&encoded);
+    let n = d
+        .map()
+        .expect("top level must be a map")
+        .expect("definite map");
+    assert_eq!(n, 4, "m, u, d (memo), t");
+    let mut keys = Vec::new();
+    for _ in 0..n {
+        keys.push(d.str().expect("keys must be text strings").to_string());
+        d.skip().expect("value");
+    }
+    for k in ["m", "u", "d", "t"] {
+        assert!(
+            keys.contains(&k.to_string()),
+            "missing single-char key '{k}' in {keys:?}"
+        );
+    }
+
+    let decoded = decode_token(&encoded).expect("should decode");
+    assert_eq!(token, decoded);
+}
+
+#[test]
+fn test_spec_example_roundtrip_is_stable() {
+    let token = decode_token(NUT00_SPEC_EXAMPLE.as_bytes()).expect("spec example must decode");
+    let encoded = encode_token(&token).expect("should encode");
+    let again = decode_token(&encoded).expect("re-decode");
+    assert_eq!(token, again);
+}
+
 #[test]
 fn test_decode_cashu_b_base64url_without_padding() {
     let token = sample_token();

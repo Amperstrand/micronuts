@@ -73,8 +73,41 @@ TOKEN=$(echo "$EXPORT" | grep -o 'cashuB[A-Za-z0-9_=-]*' | head -1)
 [ -n "$TOKEN" ] || { echo "$EXPORT"; fail "no token in export output"; }
 pass "exported ${TOKEN:0:24}..."
 
+echo "== exported-token wire checks (NUT-00 V4, cbor2 — graduated 2026-09-04)"
+python3 - "$TOKEN" <<'PYEOF2'
+import base64, cbor2, sys
+
+token = sys.argv[1][len("cashuB"):]
+t = cbor2.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)))
+
+# NUT-00 V4: single-character string keys, unknown fields tolerated.
+assert set(t) <= {"m", "u", "d", "t"}, f"non-V4 keys: {sorted(t)}"
+assert t["m"] == "demo://micronuts", f"mint: {t['m']!r}"
+assert t["u"] == "sat", f"unit: {t['u']!r}"
+assert t["d"] == "Swapped via Micronuts", f"memo: {t['d']!r}"
+
+groups = t["t"]
+assert len(groups) == 1, f"groups: {len(groups)}"
+assert bytes(groups[0]["i"]) == b"\x00", f"keyset id: {groups[0]['i']!r}"
+
+proofs = groups[0]["p"]
+amounts = sorted(p["a"] for p in proofs)
+assert amounts == [1, 4, 16], f"amounts: {amounts}"
+for i, p in enumerate(proofs):
+    assert set(p) <= {"a", "s", "c", "d"}, f"proof[{i}] keys: {sorted(p)}"
+    assert isinstance(p["s"], str) and len(p["s"]) == 64, f"proof[{i}] secret hex string"
+    assert len(bytes(p["c"])) == 33, f"proof[{i}] C not 33B compressed: {len(bytes(p['c']))}"
+    d = p.get("d")
+    assert d is not None, f"proof[{i}] missing dleq"
+    assert all(len(bytes(d[k])) == 32 for k in ("e", "s", "r")), f"proof[{i}] dleq scalars"
+print("PASS: 3 proofs 16/4/1, C=33B compressed, dleq {e,s,r}, mint/unit/memo intact")
+PYEOF2
+
 echo "== gate verification (pinned demo keyset, expect 21 sats)"
 $GATE --token "$TOKEN" --expect 21
+
+echo "== cashu-ts v4 real-wallet conformance (decodes + verifies DLEQ offline)"
+TOKEN="$TOKEN" node scripts/e2e_cashuts_conformance.mjs
 
 echo "== decoder robustness on the wire"
 python3 - "$PORT" <<'PYEOF'

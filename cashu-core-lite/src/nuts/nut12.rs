@@ -11,11 +11,9 @@
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 
+use crate::keypair::{PublicKey, SecretKey};
 use k256::ProjectivePoint;
 use sha2::{Digest, Sha256};
-
-use crate::keypair::{PublicKey, SecretKey};
-use minicbor::{Decode, Encode};
 
 /// Error returned by [`verify_dleq`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,16 +93,16 @@ impl<'b, C> minicbor::Decode<'b, C> for BlindSignatureDleq {
 /// verification herself.
 ///
 /// Defined in [NUT-12](https://github.com/cashubtc/nuts/blob/main/12.md).
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+///
+/// On the NUT-00 V4 token wire the scalars are byte strings under the
+/// single-character keys `"e"`, `"s"`, `"r"` (nuts/00.md, V4 tokens).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofDleq {
     /// Challenge `e = hash(R1, R2, A, C')`.
-    #[n(0)]
     pub e: SecretKey,
     /// Response `s = (r + e*a) mod n`.
-    #[n(1)]
     pub s: SecretKey,
     /// Blinding factor `r` Alice used when producing `B' = Y + r*G`.
-    #[n(2)]
     pub r: SecretKey,
 }
 
@@ -112,6 +110,68 @@ impl ProofDleq {
     /// Create a new [`ProofDleq`] from its three secret scalars.
     pub fn new(e: SecretKey, s: SecretKey, r: SecretKey) -> Self {
         Self { e, s, r }
+    }
+}
+
+impl<C> minicbor::Encode<C> for ProofDleq {
+    fn encode<W: minicbor::encode::Write>(
+        &self,
+        e: &mut minicbor::Encoder<W>,
+        _ctx: &mut C,
+    ) -> Result<(), minicbor::encode::Error<W::Error>> {
+        e.map(3)?
+            .str("e")?
+            .bytes(&self.e.to_secret_bytes())?
+            .str("s")?
+            .bytes(&self.s.to_secret_bytes())?
+            .str("r")?
+            .bytes(&self.r.to_secret_bytes())?;
+        Ok(())
+    }
+}
+
+impl<'b, C> minicbor::Decode<'b, C> for ProofDleq {
+    fn decode(
+        d: &mut minicbor::Decoder<'b>,
+        _ctx: &mut C,
+    ) -> Result<Self, minicbor::decode::Error> {
+        let mut e = None;
+        let mut s = None;
+        let mut r = None;
+        let len = d.map()?;
+        let entries = len.unwrap_or(u64::MAX);
+        for _ in 0..entries {
+            if len.is_none() && d.datatype()? == minicbor::data::Type::Break {
+                d.skip()?;
+                break;
+            }
+            match d.str()? {
+                "e" => {
+                    e = Some(
+                        SecretKey::from_slice(d.bytes()?)
+                            .map_err(|_| minicbor::decode::Error::message("invalid e scalar"))?,
+                    )
+                }
+                "s" => {
+                    s = Some(
+                        SecretKey::from_slice(d.bytes()?)
+                            .map_err(|_| minicbor::decode::Error::message("invalid s scalar"))?,
+                    )
+                }
+                "r" => {
+                    r = Some(
+                        SecretKey::from_slice(d.bytes()?)
+                            .map_err(|_| minicbor::decode::Error::message("invalid r scalar"))?,
+                    )
+                }
+                _ => d.skip()?,
+            }
+        }
+        Ok(ProofDleq {
+            e: e.ok_or_else(|| minicbor::decode::Error::message("missing 'e'"))?,
+            s: s.ok_or_else(|| minicbor::decode::Error::message("missing 's'"))?,
+            r: r.ok_or_else(|| minicbor::decode::Error::message("missing 'r'"))?,
+        })
     }
 }
 

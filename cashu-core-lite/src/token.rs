@@ -9,7 +9,14 @@ use std::string::String;
 use std::vec::Vec;
 
 use core::convert::Infallible;
-use minicbor::{Decode, Encode};
+use minicbor::data::Type;
+use minicbor::encode::{Error, Write};
+use minicbor::{Decode, Decoder, Encoder};
+
+// The `i` (keyset id), `c` (signature) and DLEQ scalar values are byte strings
+// on the wire; a proof's keyset id is not repeated per proof — it lives once on
+// the enclosing group's `i` and is re-attached to each proof on decode.
+// NUT #00: V4 tokens are a space-efficient way of serializing tokens using the CBOR binary format. All keys are single characters and hex strings are encoded in binary.
 
 /// Decode a base64url-encoded string to bytes.
 ///
@@ -97,49 +104,214 @@ fn decode_base64url(input: &[u8]) -> Option<Vec<u8>> {
     Some(output)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proof {
-    #[n(0)]
     pub amount: u64,
 
-    #[n(1)]
     pub keyset_id: String,
 
-    #[n(2)]
     pub secret: String,
 
     /// `C`: the unblinded signature, compressed-point bytes.
-    #[n(3)]
     pub c: Vec<u8>,
 
     /// NUT-12 proof-level DLEQ (e, s, r) — enables public-key-only
     /// offline verification of this proof.
-    #[n(4)]
     pub dleq: Option<crate::nuts::nut12::ProofDleq>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+impl<C> minicbor::Encode<C> for Proof {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>, _ctx: &mut C) -> Result<(), Error<W::Error>> {
+        e.map(match &self.dleq {
+            Some(_) => 4,
+            None => 3,
+        })?
+        .str("a")?
+        .u64(self.amount)?
+        .str("s")?
+        .str(&self.secret)?
+        .str("c")?
+        .bytes(&self.c)?;
+        if let Some(dleq) = &self.dleq {
+            e.str("d")?;
+            dleq.encode(e, &mut ())?;
+        }
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for Proof {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        let mut amount = None;
+        let mut secret = None;
+        let mut c = None;
+        let mut dleq = None;
+        foreach_key(d, |d, key| {
+            match key {
+                "a" => amount = Some(d.u64()?),
+                "s" => secret = Some(String::from(d.str()?)),
+                "c" => c = Some(d.bytes()?.to_vec()),
+                "d" => dleq = Some(d.decode()?),
+                _ => d.skip()?,
+            }
+            Ok(())
+        })?;
+        Ok(Proof {
+            amount: amount.ok_or_else(|| minicbor::decode::Error::message("missing 'a'"))?,
+            keyset_id: String::new(),
+            secret: secret.ok_or_else(|| minicbor::decode::Error::message("missing 's'"))?,
+            c: c.ok_or_else(|| minicbor::decode::Error::message("missing 'c'"))?,
+            dleq,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenV4Token {
-    #[n(0)]
     pub keyset_id: String,
 
-    #[n(1)]
     pub proofs: Vec<Proof>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+impl<C> minicbor::Encode<C> for TokenV4Token {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>, _ctx: &mut C) -> Result<(), Error<W::Error>> {
+        let id_bytes =
+            hex::decode(&self.keyset_id).map_err(|_| Error::message("keyset id is not hex"))?;
+        e.map(2)?
+            .str("i")?
+            .bytes(&id_bytes)?
+            .str("p")?
+            .array(self.proofs.len() as u64)?;
+        for proof in &self.proofs {
+            proof.encode(e, &mut ())?;
+        }
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for TokenV4Token {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        let mut keyset_id = None;
+        let mut proofs: Option<Vec<Proof>> = None;
+        foreach_key(d, |d, key| {
+            match key {
+                "i" => keyset_id = Some(hex::encode(d.bytes()?)),
+                "p" => proofs = Some(decode_array(d)?),
+                _ => d.skip()?,
+            }
+            Ok(())
+        })?;
+        let keyset_id = keyset_id.ok_or_else(|| minicbor::decode::Error::message("missing 'i'"))?;
+        let mut proofs = proofs.ok_or_else(|| minicbor::decode::Error::message("missing 'p'"))?;
+        for proof in &mut proofs {
+            proof.keyset_id = keyset_id.clone();
+        }
+        Ok(TokenV4Token { keyset_id, proofs })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenV4 {
-    #[n(0)]
     pub mint: String,
 
-    #[n(1)]
     pub unit: String,
 
-    #[n(2)]
     pub memo: Option<String>,
 
-    #[n(3)]
     pub tokens: Vec<TokenV4Token>,
+}
+
+impl<C> minicbor::Encode<C> for TokenV4 {
+    fn encode<W: Write>(&self, e: &mut Encoder<W>, _ctx: &mut C) -> Result<(), Error<W::Error>> {
+        e.map(match &self.memo {
+            Some(_) => 4,
+            None => 3,
+        })?
+        .str("m")?
+        .str(&self.mint)?
+        .str("u")?
+        .str(&self.unit)?;
+        if let Some(memo) = &self.memo {
+            e.str("d")?.str(memo)?;
+        }
+        e.str("t")?.array(self.tokens.len() as u64)?;
+        for group in &self.tokens {
+            group.encode(e, &mut ())?;
+        }
+        Ok(())
+    }
+}
+
+impl<'b, C> Decode<'b, C> for TokenV4 {
+    fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+        let mut mint = None;
+        let mut unit = None;
+        let mut memo = None;
+        let mut tokens = None;
+        foreach_key(d, |d, key| {
+            match key {
+                "m" => mint = Some(String::from(d.str()?)),
+                "u" => unit = Some(String::from(d.str()?)),
+                "d" => memo = Some(String::from(d.str()?)),
+                "t" => tokens = Some(decode_array(d)?),
+                _ => d.skip()?,
+            }
+            Ok(())
+        })?;
+        Ok(TokenV4 {
+            mint: mint.ok_or_else(|| minicbor::decode::Error::message("missing 'm'"))?,
+            unit: unit.ok_or_else(|| minicbor::decode::Error::message("missing 'u'"))?,
+            memo,
+            tokens: tokens.ok_or_else(|| minicbor::decode::Error::message("missing 't'"))?,
+        })
+    }
+}
+
+fn foreach_key<'b, F>(d: &mut Decoder<'b>, mut on_entry: F) -> Result<(), minicbor::decode::Error>
+where
+    F: FnMut(&mut Decoder<'b>, &str) -> Result<(), minicbor::decode::Error>,
+{
+    let len = d.map()?;
+    match len {
+        Some(n) => {
+            for _ in 0..n {
+                let key = d.str()?;
+                on_entry(d, key)?;
+            }
+        }
+        None => loop {
+            if d.datatype()? == Type::Break {
+                d.skip()?;
+                break;
+            }
+            let key = d.str()?;
+            on_entry(d, key)?;
+        },
+    }
+    Ok(())
+}
+
+fn decode_array<'b, T>(d: &mut Decoder<'b>) -> Result<Vec<T>, minicbor::decode::Error>
+where
+    T: minicbor::Decode<'b, ()>,
+{
+    let len = d.array()?;
+    let mut out = Vec::new();
+    match len {
+        Some(n) => {
+            for _ in 0..n {
+                out.push(d.decode()?);
+            }
+        }
+        None => loop {
+            if d.datatype()? == Type::Break {
+                d.skip()?;
+                break;
+            }
+            out.push(d.decode()?);
+        },
+    }
+    Ok(out)
 }
 
 impl TokenV4 {
