@@ -10,8 +10,9 @@ mod usb;
 
 use mint::DemoMint;
 use protocol::{
-    payload_type_name, Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_IMPORT_TOKEN, CMD_SCANNER_DATA,
-    CMD_SCANNER_STATUS, CMD_SCANNER_TRIGGER, CMD_SEND_SIGNATURES, STATUS_OK,
+    payload_type_name, Frame, CMD_GET_BLINDED, CMD_GET_PROOFS, CMD_GET_TOKEN_INFO,
+    CMD_IMPORT_TOKEN, CMD_SCANNER_DATA, CMD_SCANNER_STATUS, CMD_SCANNER_TRIGGER,
+    CMD_SEND_SIGNATURES, STATUS_OK,
 };
 use usb::UsbConnection;
 
@@ -39,6 +40,11 @@ enum Commands {
     Blind,
     Sign,
     Export,
+    Import {
+        /// cashuB… token string ('-' reads one line from stdin)
+        token: String,
+    },
+    TokenInfo,
     Monitor,
     ScannerStatus,
     Scan,
@@ -137,6 +143,62 @@ fn main() -> Result<()> {
                 println!("Token: cashuB{}", encoded);
             } else {
                 anyhow::bail!("Device returned error status: 0x{:02X}", response.command);
+            }
+        }
+        Commands::Import { token } => {
+            let port = cli.port.context("--port is required for this command")?;
+            let mut usb = UsbConnection::open(&port, cli.baud)?;
+
+            let token = if token == "-" {
+                use std::io::BufRead;
+                std::io::stdin()
+                    .lock()
+                    .lines()
+                    .next()
+                    .transpose()?
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            } else {
+                token
+            };
+            anyhow::ensure!(
+                token.starts_with("cashuB"),
+                "not a cashuB token: {}…",
+                &token[..token.len().min(12)]
+            );
+
+            let token_len = token.len();
+            let frame = Frame::new(CMD_IMPORT_TOKEN, token.into_bytes());
+            let response = usb.send_and_receive(&frame)?;
+
+            if response.command == STATUS_OK {
+                println!("Imported cashuB token ({token_len} chars)");
+            } else {
+                anyhow::bail!("Device rejected token: 0x{:02X}", response.command);
+            }
+        }
+        Commands::TokenInfo => {
+            let port = cli.port.context("--port is required for this command")?;
+            let mut usb = UsbConnection::open(&port, cli.baud)?;
+
+            let frame = Frame::new(CMD_GET_TOKEN_INFO, vec![]);
+            let response = usb.send_and_receive(&frame)?;
+
+            if response.command == STATUS_OK && response.payload.len() >= 14 {
+                let p = &response.payload;
+                let mint_len = p[0] as usize;
+                let mint = String::from_utf8_lossy(&p[1..1 + mint_len]).to_string();
+                let mut off = 1 + mint_len;
+                let unit_len = p[off] as usize;
+                let unit = String::from_utf8_lossy(&p[off + 1..off + 1 + unit_len]).to_string();
+                off += 1 + unit_len;
+                let amount = u64::from_be_bytes(p[off..off + 8].try_into()?);
+                off += 8;
+                let proofs = u32::from_be_bytes(p[off..off + 4].try_into()?);
+                println!("TokenInfo: mint={mint} unit={unit} amount={amount} proofs={proofs}");
+            } else {
+                anyhow::bail!("No token imported (status 0x{:02X})", response.command);
             }
         }
         Commands::Monitor => {
