@@ -1,0 +1,78 @@
+# Nightly bounded fuzz runs for the three committed fuzz crates
+# (walletport, micronuts-app, micronuts-fips-responder — corpora live
+# in-tree next to each target). Bounded by -max_total_time so a nightly
+# costs minutes, not hours; crash artifacts are uploaded on failure.
+#
+# Trigger manually any time with workflow_dispatch.
+
+name: Fuzz Nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC — off the hour to miss cron rushes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: ${{ matrix.dir }}/${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: walletport, target: decode_token }
+          - { dir: walletport, target: cbor_token }
+          - { dir: walletport, target: envelope }
+          - { dir: walletport, target: gate_verify }
+          - { dir: micronuts-app, target: frame_decoder }
+          - { dir: micronuts-fips-responder, target: frag_reassembly }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - name: Fuzz (bounded 120s)
+        working-directory: ${{ matrix.dir }}/fuzz
+        run: |
+          set +e
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=120 -timeout=10
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::group::fuzz artifacts"
+            ls -la artifacts/ crash-* timeout-* leak-* oom-* 2>/dev/null || true
+            echo "::endgroup::"
+          fi
+          exit $rc
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.dir }}-${{ matrix.target }}-artifacts
+          path: |
+            ${{ matrix.dir }}/fuzz/artifacts/
+            ${{ matrix.dir }}/fuzz/crash-*
+            ${{ matrix.dir }}/fuzz/timeout-*
+            ${{ matrix.dir }}/fuzz/leak-*
+            ${{ matrix.dir }}/fuzz/oom-*
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload grown corpus
+        # Always upload — the corpus growth step of the fuzz loop is manual
+        # today; the nightly's evolved corpus is the input for that.
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.dir }}-${{ matrix.target }}-corpus
+          path: ${{ matrix.dir }}/fuzz/corpus/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14
