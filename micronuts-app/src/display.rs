@@ -780,3 +780,185 @@ pub fn render_qr_mirror<D: DrawTarget<Color = Rgb888>>(fb: &mut D, data: &[u8]) 
         }
     }
 }
+
+/// The ShowProofs screen: the completed swap's export token as a QR
+/// (#29). Returns false (and renders a status line) when there is
+/// nothing to export or the QR cannot hold the token.
+pub fn render_export_qr<D: DrawTarget<Color = Rgb888>>(
+    fb: &mut D,
+    state: &crate::state::FirmwareState,
+) -> bool {
+    let Some(token) = crate::command_handler::build_export_token(state) else {
+        render_status(fb, "No proofs available yet");
+        return false;
+    };
+    match cashu_core_lite::encode_token_wire(&token) {
+        Ok(wire) => {
+            if render_qr_code(fb, &wire) {
+                true
+            } else {
+                render_status(fb, "QR encode failed");
+                false
+            }
+        }
+        Err(_) => {
+            render_status(fb, "Token encode failed");
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::FirmwareState;
+    use alloc::vec;
+    use core::convert::Infallible;
+    use embedded_graphics::geometry::Size;
+    use embedded_graphics::prelude::OriginDimensions;
+
+    /// Minimal 480x800 framebuffer DrawTarget that counts pixels per
+    /// color — enough to prove a QR (both dark and light modules plus a
+    /// background) actually landed.
+    struct CountingFb {
+        w: u32,
+        h: u32,
+        dark: usize,
+        light: usize,
+        other: usize,
+    }
+
+    impl OriginDimensions for CountingFb {
+        fn size(&self) -> Size {
+            Size::new(self.w, self.h)
+        }
+    }
+
+    impl DrawTarget for CountingFb {
+        type Color = Rgb888;
+        type Error = Infallible;
+
+        fn draw_iter<T>(&mut self, item: T) -> Result<(), Self::Error>
+        where
+            T: IntoIterator<Item = Pixel<Rgb888>>,
+        {
+            for Pixel(p, c) in item {
+                if p.x < 0 || p.y < 0 || p.x as u32 >= self.w || p.y as u32 >= self.h {
+                    continue;
+                }
+                match c {
+                    BLACK => self.dark += 1,
+                    WHITE => self.light += 1,
+                    _ => self.other += 1,
+                }
+            }
+            Ok(())
+        }
+
+        fn clear(&mut self, color: Rgb888) -> Result<(), Self::Error> {
+            match color {
+                BLACK => {
+                    self.dark = (self.w * self.h) as usize;
+                    self.light = 0;
+                }
+                _ => {
+                    self.light = (self.w * self.h) as usize;
+                    self.dark = 0;
+                }
+            }
+            self.other = 0;
+            Ok(())
+        }
+
+        fn fill_solid(&mut self, area: &Rectangle, color: Rgb888) -> Result<(), Self::Error> {
+            let Size { width, height } = area.size;
+            let n = (width as usize) * (height as usize);
+            match color {
+                BLACK => self.dark += n,
+                WHITE => self.light += n,
+                _ => self.other += n,
+            }
+            Ok(())
+        }
+    }
+
+    fn proofs_ready_state() -> FirmwareState {
+        let mut state = FirmwareState::new();
+        state.imported_token = Some(cashu_core_lite::TokenV4 {
+            mint: alloc::string::String::from("demo://micronuts"),
+            unit: alloc::string::String::from("sat"),
+            memo: None,
+            tokens: vec![cashu_core_lite::TokenV4Token {
+                keyset_id: alloc::string::String::from("00"),
+                proofs: vec![],
+            }],
+        });
+        state.new_proofs = Some(vec![
+            cashu_core_lite::Proof {
+                amount: 16,
+                keyset_id: alloc::string::String::from("00"),
+                secret: alloc::string::String::from("7072696e742d746f6b656e2d3136"),
+                c: vec![0x02; 33],
+                dleq: Some(dleq()),
+            },
+            cashu_core_lite::Proof {
+                amount: 4,
+                keyset_id: alloc::string::String::from("00"),
+                secret: alloc::string::String::from("7072696e742d746f6b656e2d3034"),
+                c: vec![0x02; 33],
+                dleq: Some(dleq()),
+            },
+            cashu_core_lite::Proof {
+                amount: 1,
+                keyset_id: alloc::string::String::from("00"),
+                secret: alloc::string::String::from("7072696e742d746f6b656e2d3031"),
+                c: vec![0x02; 33],
+                dleq: Some(dleq()),
+            },
+        ]);
+        state
+    }
+
+    fn dleq() -> cashu_core_lite::nuts::nut12::ProofDleq {
+        cashu_core_lite::nuts::nut12::ProofDleq::new(
+            cashu_core_lite::SecretKey::from_slice(&[0x11; 32]).unwrap(),
+            cashu_core_lite::SecretKey::from_slice(&[0x22; 32]).unwrap(),
+            cashu_core_lite::SecretKey::from_slice(&[0x33; 32]).unwrap(),
+        )
+    }
+
+    #[test]
+    fn export_qr_renders_for_a_real_sized_dleq_token() {
+        let state = proofs_ready_state();
+        let wire = cashu_core_lite::encode_token_wire(
+            &crate::command_handler::build_export_token(&state).unwrap(),
+        )
+        .unwrap();
+        // Real DLEQ-bearing tokens are ~800+ chars — far above the old
+        // 200-char mirror gate; the export screen must still render.
+        assert!(wire.len() > 600, "wire len {}", wire.len());
+
+        let mut fb = CountingFb {
+            w: WIDTH,
+            h: HEIGHT,
+            dark: 0,
+            light: 0,
+            other: 0,
+        };
+        assert!(render_export_qr(&mut fb, &state));
+        assert!(fb.dark > 0 && fb.light > 0, "QR needs both module colors");
+    }
+
+    #[test]
+    fn export_qr_fails_cleanly_without_proofs() {
+        let state = FirmwareState::new();
+        let mut fb = CountingFb {
+            w: WIDTH,
+            h: HEIGHT,
+            dark: 0,
+            light: 0,
+            other: 0,
+        };
+        assert!(!render_export_qr(&mut fb, &state));
+    }
+}

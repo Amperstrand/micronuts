@@ -284,18 +284,14 @@ fn handle_send_signatures<H: MicronutsHardware>(
     Response::new(Status::Ok)
 }
 
-fn handle_get_proofs(state: &mut FirmwareState) -> Response {
-    let proofs = match &state.new_proofs {
-        Some(p) => p,
-        None => return Response::new(Status::Error),
-    };
-
-    let token = match &state.imported_token {
-        Some(t) => t,
-        None => return Response::new(Status::Error),
-    };
-
-    let new_token = TokenV4 {
+/// The export token for the completed swap: proofs re-wrapped in a V4
+/// token carrying the imported mint/unit and the fixed export memo.
+/// Shared by the GetProofs wire response and the on-device proof-QR
+/// display so both export the SAME token (#29 QR round-trip).
+pub fn build_export_token(state: &FirmwareState) -> Option<TokenV4> {
+    let proofs = state.new_proofs.as_ref()?;
+    let token = state.imported_token.as_ref()?;
+    Some(TokenV4 {
         mint: token.mint.clone(),
         unit: token.unit.clone(),
         memo: Some(alloc::string::String::from("Swapped via Micronuts")),
@@ -306,6 +302,13 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
                 .unwrap_or_else(|| alloc::string::String::from("00")),
             proofs: proofs.clone(),
         }],
+    })
+}
+
+fn handle_get_proofs(state: &mut FirmwareState) -> Response {
+    let new_token = match build_export_token(state) {
+        Some(t) => t,
+        None => return Response::new(Status::Error),
     };
 
     let encoded = match encode_token(&new_token) {

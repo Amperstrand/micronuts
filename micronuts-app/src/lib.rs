@@ -109,10 +109,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                 } else if buttons[2].hit(tp.x, tp.y) {
                                     if state.swap_state == state::SwapState::ProofsReady {
                                         screen = AppScreen::ShowProofs;
-                                        display::render_status(
-                                            hw.display(),
-                                            "Generating proof QR...",
-                                        );
+                                        display::render_export_qr(hw.display(), &state);
                                         hw.swap_buffers();
                                     } else {
                                         display::render_status(
