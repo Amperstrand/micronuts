@@ -6,8 +6,9 @@
 # Comment marker syntax in Rust source:
 #   // NUT #00: <verbatim spec quote>
 #
-# Setup (one-time, local):
-#   git clone --depth=1 https://github.com/cashubtc/nuts.git nuts
+# Setup (one-time, local — PINNED to match CI, #66; bump both together):
+#   git clone https://github.com/cashubtc/nuts.git nuts
+#   git -C nuts checkout a845dfc998abae501fc3419592d53dc995d34b12
 #   pip install git+https://github.com/rustyrussell/greatspectations.git
 #
 # Run (from cashu-core-lite/):
