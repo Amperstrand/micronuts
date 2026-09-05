@@ -32,6 +32,8 @@ pub struct MintQuoteRequest {
 
 /// Response body for mint quote endpoints (NUT-04).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #04: Mints **MUST NOT** issue ecash whose total output amount exceeds `amount_paid - amount_issued`. If a wallet mints less than the currently mintable amount, `amount_issued` only increases by the amount that was issued.
+// NUT #04: - `expiry` is the Unix timestamp until which the quote is valid (`null` if it does not expire)
 pub struct MintQuoteResponse {
     /// Unique quote identifier.
     #[n(0)]
@@ -71,6 +73,8 @@ pub struct MintQuoteResponse {
 
 /// Request body for `POST /v1/mint/bolt11` (NUT-04).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #04: "quote": <str>,
+// NUT #04: "outputs": <Array[BlindedMessage]>
 pub struct MintRequest {
     /// The quote ID referencing a paid mint quote.
     #[n(0)]

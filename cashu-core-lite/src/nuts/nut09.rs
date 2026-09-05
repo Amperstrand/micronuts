@@ -17,6 +17,8 @@ use minicbor::{Decode, Encode};
 
 /// Request body for `POST /v1/restore` (NUT-09).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #09: Mints must store the `BlindedMessage` and the corresponding `BlindSignature` in their database every time they issue a `BlindSignature`. Wallets provide the `BlindedMessage` for which they request the `BlindSignature`. Mints only respond with a `BlindSignature`, if they have previously signed the `BlindedMessage`.
+// NUT #09: "outputs": <Array[BlindedMessages]>
 pub struct RestoreRequest {
     /// Blinded messages `B'` to restore (the spec's `outputs` list).
     #[n(0)]
@@ -37,6 +39,7 @@ pub struct RestoreOutput {
 
 /// Response body for `POST /v1/restore` (NUT-09).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #09: The returned arrays `outputs` and `signatures` are of the same length and for every entry `outputs[i]`, there is a corresponding entry `signatures[i]`.
 pub struct RestoreResponse {
     /// Matched outputs with their signatures.
     #[n(0)]

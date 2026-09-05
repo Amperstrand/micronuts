@@ -13,6 +13,11 @@ use minicbor::{Decode, Encode};
 
 /// Mint information response for `GET /v1/info` (NUT-06).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #06: This endpoint returns information about the mint that a wallet can show to the user and use to make decisions on how to interact with the mint.
+// NUT #06: "name": "Bob's Cashu mint",
+// NUT #06: "pubkey": "0283bf290884eed3a7ca2663fc0260de2e2064d6b355ea13f98dec004b7a7ead99",
+// NUT #06: "version": "Nutshell/0.15.0",
+// NUT #06: "description": "The short mint description",
 pub struct MintInfo {
     /// Human-readable mint name.
     #[n(0)]

@@ -22,6 +22,11 @@ pub mod state {
 
 /// Request body for `POST /v1/melt/quote/bolt11` (NUT-05).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #05: Melting tokens is the opposite of minting tokens (see [NUT-04][04]). Like minting tokens, melting is a two-step process: requesting a melt quote and melting tokens. This document describes the general flow that applies to all payment methods, with specifics for each supported payment method provided in dedicated method-specific NUTs.
+// NUT #05: To request a melt quote, the wallet of `Alice` makes a `POST /v1/melt/quote/{method}` request where `method` is the payment method requested (e.g., `bolt11`, `bolt12`, etc.). `method` **MUST** match `[a-z0-9_-]+`.
+// NUT #05: "request": <str>,
+// NUT #05: "unit": <str_enum[UNIT]>,
+// NUT #05: "amount": <int>   // Optional
 pub struct MeltQuoteRequest {
     /// Lightning invoice (bolt11 string) to be paid.
     /// Demo shortcut: accepts any string as a dummy invoice.
@@ -67,6 +72,9 @@ pub struct MeltQuoteResponse {
 
 /// Request body for `POST /v1/melt/bolt11` (NUT-05).
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+// NUT #05: "quote": <str>,
+// NUT #05: "inputs": <Array[Proof]>,
+// NUT #05: "prefer_async": <bool> // optional: false if omitted
 pub struct MeltRequest {
     /// The quote ID referencing a melt quote.
     #[n(0)]
