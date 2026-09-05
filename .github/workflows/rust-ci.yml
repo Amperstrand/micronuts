@@ -191,13 +191,23 @@ jobs:
       - name: Install greatspectations
         run: pip install git+https://github.com/rustyrussell/greatspectations.git
       - name: Clone NUT specs
-        run: git clone --depth=1 https://github.com/cashubtc/nuts.git cashu-core-lite/nuts
+        # Pinned ref (#66): a floating HEAD clone breaks both ways — upstream
+        # doc edits fail CI with no diff baseline (the microfips #180 lesson),
+        # and it can disagree with the gitignored local clone, so a quote
+        # passes locally and fails in CI. Bump deliberately, never track the
+        # branch.
+        run: |
+          git init cashu-core-lite/nuts
+          git -C cashu-core-lite/nuts remote add origin https://github.com/cashubtc/nuts.git
+          git -C cashu-core-lite/nuts fetch --depth=1 origin a845dfc998abae501fc3419592d53dc995d34b12
+          git -C cashu-core-lite/nuts checkout FETCH_HEAD
       - name: Spec-quote drift check
         run: >
           cd cashu-core-lite &&
           FILES=$(find src -name "*.rs" -not -name "*_test.rs") &&
           greatspectate check --config specquotes.toml
-          --comment-start "// " --comment-continue "//" $FILES
+          --comment-start "// " --comment-continue "//"
+          --comment-aside "// Note:" $FILES
 
   cashuts-conformance:
     # Real-wallet conformance (graduation of the 2026-09-04 wire finding):
