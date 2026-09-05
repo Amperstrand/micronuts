@@ -11,8 +11,8 @@
 #   git -C nuts checkout a845dfc998abae501fc3419592d53dc995d34b12
 #   pip install git+https://github.com/rustyrussell/greatspectations.git
 #
-# Run (from cashu-core-lite/):
-#   spectate check --config specquotes.toml --comment-start "//" --comment-continue "//" "src/**/*.rs"
+# Run (from cashu-core-lite/) — same invocation as CI (rust-ci.yml speccheck):
+#   greatspectate check --config specquotes.toml --comment-start "// " --comment-continue "//" --comment-aside "// Note:" $(find src -name "*.rs" -not -name "*_test.rs")
 #   spectate coverage --config specquotes.toml
 
 [sources.NUT]
