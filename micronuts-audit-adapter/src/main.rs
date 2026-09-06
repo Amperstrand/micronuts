@@ -228,7 +228,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/restore", post(post_restore))
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // MICRONUTS_ADAPTER_BIND selects the bind address (default
+    // loopback); 0.0.0.0 exposes the demo mint to the LAN for the rig's
+    // atom wallet — FakeWallet only, never a funded upstream.
+    let ip: std::net::IpAddr = env::var("MICRONUTS_ADAPTER_BIND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or([127, 0, 0, 1].into());
+    let addr = SocketAddr::from((ip, port));
     eprintln!("micronuts-audit-adapter: listening on http://{addr} (mint_server: {mint_bin})");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
