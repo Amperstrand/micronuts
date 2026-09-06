@@ -724,16 +724,29 @@ fn mint_info_to_json(info: &nut06::MintInfo) -> Value {
         .collect();
     let mut nuts = serde_json::Map::new();
     for (id, settings) in &info.nuts {
-        nuts.insert(
-            id.clone(),
-            json!({
-                "methods": settings
-                    .methods
-                    .iter()
-                    .map(|m| json!({ "method": m.method, "unit": m.unit }))
-                    .collect::<Vec<_>>(),
-            }),
-        );
+        let methods: Vec<Value> = settings
+            .methods
+            .iter()
+            .map(|m| json!({ "method": m.method, "unit": m.unit }))
+            .collect();
+        // cdk HEAD deserializes the nuts map into typed per-NUT structs:
+        // nuts.4/5 are method settings (with a required `disabled`), the
+        // simple NUTs are `{"supported": bool}`, and unknown ids are
+        // ignored. Emit shapes its strict parser accepts.
+        let mut nut = serde_json::Map::new();
+        match id.as_str() {
+            "4" | "5" => {
+                nut.insert("methods".into(), Value::Array(methods));
+                nut.insert("disabled".into(), Value::Bool(false));
+            }
+            "7" | "8" | "9" | "10" | "11" | "12" | "14" | "20" => {
+                nut.insert("supported".into(), Value::Bool(true));
+            }
+            _ => {
+                nut.insert("methods".into(), Value::Array(methods));
+            }
+        }
+        nuts.insert(id.clone(), Value::Object(nut));
     }
     json!({
         "name": info.name,
