@@ -70,6 +70,15 @@ jobs:
           cargo build -p cashu-core-lite --no-default-features --features transport-usb-cdc
           cargo build -p cashu-core-lite --no-default-features --features transport-microfips
 
+      - name: Feature-gate compile matrix (cfg-rot guard, #64)
+        # Every feature-flag combination that can be host-built compiles:
+        # bare no_std core, walletport/std (not enabled by any other crate),
+        # so feature-gated code cannot rot uncompiled. micronuts-app's
+        # shipped config compiles via the firmware job (thumb, no-default).
+        run: |
+          cargo build -p cashu-core-lite --no-default-features
+          cargo build -p walletport --features std
+
   clippy:
     # Host-buildable crates. firmware pulls the embassy BSP (cortex-m
     # executor platform) — its lint coverage is the firmware job's
