@@ -10,6 +10,10 @@ cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
 # Upstream cashu crate provides dhke/* crypto; cashu-core-lite stays as the
 # MintService trait seam (see src/type_conversion.rs).
 cashu = "0.18.0"
+# NUT-11 Schnorr witness verification uses the same secp256k1 bindings the
+# upstream cashu crate signs with (differential oracle parity; already in
+# the lockfile via cashu's dependency tree).
+bitcoin = { version = "0.32", default-features = false }
 k256 = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }

@@ -518,6 +518,15 @@ impl DemoMint {
 
         // NUT-05/NUT-08: inputs must cover amount + fee_reserve + input fee.
         let input_sum = self.verify_proofs(&request.inputs)?;
+
+        // NUT-10/11: spending conditions on the inputs must be satisfied
+        // BEFORE any proof is claimed (atomic failure; see spending.rs).
+        crate::spending::verify_spending_conditions(
+            &request.inputs,
+            request.outputs.as_deref(),
+            Some(&request.quote),
+        )?;
+
         let fee = self.input_fee_total(&request.inputs)?;
         let required = amount
             .checked_add(fee_reserve)
@@ -629,6 +638,10 @@ impl DemoMint {
     ) -> Result<nut03::SwapResponse, CashuError> {
         // Verify input proofs (keyset, spent-set, signature)
         let input_sum = self.verify_proofs(&request.inputs)?;
+
+        // NUT-10/11: spending conditions on the inputs must be satisfied
+        // BEFORE any proof is claimed (atomic failure; see spending.rs).
+        crate::spending::verify_spending_conditions(&request.inputs, Some(&request.outputs), None)?;
 
         let output_sum: u64 = request
             .outputs
@@ -1096,6 +1109,10 @@ fn demo_nuts() -> Vec<(String, nut06::NutSettings)> {
         ("6".to_string(), nut06::NutSettings { methods: vec![] }),
         ("7".to_string(), nut06::NutSettings { methods: vec![] }),
         ("9".to_string(), nut06::NutSettings { methods: vec![] }),
+        // NUT-10/11: spending conditions (P2PK + sigflags) are enforced on
+        // swap/melt inputs — advertised since the L1 landing (#51).
+        ("10".to_string(), nut06::NutSettings { methods: vec![] }),
+        ("11".to_string(), nut06::NutSettings { methods: vec![] }),
     ]
 }
 
@@ -1123,7 +1140,7 @@ mod tests {
         let info = mint.get_info().unwrap();
         let nuts = info.nuts;
         let advertised: Vec<&str> = nuts.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(advertised, ["3", "4", "5", "6", "7", "9"]);
+        assert_eq!(advertised, ["3", "4", "5", "6", "7", "9", "10", "11"]);
 
         for (nut, settings) in &nuts {
             match nut.as_str() {

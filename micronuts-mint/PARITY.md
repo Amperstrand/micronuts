@@ -103,12 +103,18 @@ Landed since (backend-driven rework 2026-09-02):
 - **NUT-09** — real session-scoped restore via the B_→signature index.
 - **DLEQ proofs (NUT-12)** — construction IS implemented via
   `cashu::BlindSignature::new` (upstream crypto path).
+- **NUT-10/11 (L1, #51)** — well-known Secret model + P2PK witness
+  verification on swap/melt inputs (SIG_INPUTS/SIG_ALL, multisig via
+  `pubkeys`/`n_sigs`, x-coordinate dedup), enforced before `claim_proofs`;
+  differential tests vs upstream in `tests/p2pk_differential.rs`.
 - **Payment safety** — atomic batch double-spend rejection, keyset binding,
   spend-before-sign ordering.
 
 Still not implemented: multiple keysets/rotation, fee_reserve from a real
 backend, async melt polling (PENDING is resolved within the single
-post_melt call). Durable persistence SHIPPED for the host mint and the
+post_melt call). Spending-condition follow-ups: locktime/refund pathways
+(L2) and HTLC (L3) are parsed but rejected as unspendable. Durable
+persistence SHIPPED for the host mint and the
 upstream reserve (atomic file snapshots, #52/#59); the device NVS leg is
 #60 — see docs/PERSISTENCE-DESIGN.md.
 
@@ -116,9 +122,9 @@ upstream reserve (atomic file snapshots, #52/#59); the device NVS leg is
 
 > **The `MintService` trait (in `cashu-core-lite/src/rpc.rs`) NEVER imports or
 > returns `cashu::*` types.** All `cashu` types are confined to
-> `micronuts-mint/src/mint_core.rs`'s internal helper methods
-> (`sign_outputs`, `verify_proofs`, `mark_spent`), which convert at the
-> boundary via `src/type_conversion.rs`.
+> `micronuts-mint`'s internal helpers (`mint_core.rs`'s `sign_outputs` /
+> `verify_proofs` / `mark_spent` and `spending.rs`'s NUT-11 Schnorr
+> verification), which convert at the boundary via `src/type_conversion.rs`.
 
 This keeps `cashu-core-lite` pure for `no_std` firmware builds (it has `cashu`
 only as a `dev-dependency` for differential testing, never a runtime dep).

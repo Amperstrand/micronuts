@@ -19,6 +19,8 @@ pub mod type_conversion;
 mod mint_core;
 pub use mint_core::DemoMint;
 
+mod spending;
+
 mod direct_transport;
 pub use direct_transport::DirectTransport;
 

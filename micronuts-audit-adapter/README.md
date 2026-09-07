@@ -171,9 +171,10 @@ Response (signatures include NUT-12 DLEQ proofs when the mint produces them):
 Request: `{"inputs": [<proof>...], "outputs": [<blinded message>...]}`
 
 A proof is `{"amount": <u64>, "secret": "<hex>", "C": "<66-hex>", "id":
-"<keyset>"}` (the optional `witness` field is accepted but ignored — the demo
-mint's CBOR `Proof` does not carry it). Response body shape matches
-`POST /v1/mint/bolt11`.
+"<keyset>"}`; the optional `witness` field (stringified JSON, NUT-10/11
+spending conditions such as `{"signatures":["<128-hex>"]}`) is forwarded to
+the mint and verified before the inputs are marked spent. Response body
+shape matches `POST /v1/mint/bolt11`.
 
 ### `POST /v1/melt/quote/bolt11` — NUT-05
 
@@ -273,8 +274,9 @@ status codes. All error responses share the NUT-00 `ErrorResponse` body shape:
 | `AmountMismatch`            | 400  | `AMOUNT_MISMATCH`       | Swap/mint inputs and outputs don't balance (NUT-03).  |
 | `InsufficientInputs`        | 400  | `INSUFFICIENT_INPUTS`   | Melt inputs total less than `amount + fee_reserve`.   |
 | `QuoteNotPaid`              | 400  | `QUOTE_NOT_PAID`        | Mint attempted on a quote that is not `PAID`.         |
-| `QuoteAlreadyIssued`        | 400  | `QUOTE_ALREADY_ISSUED`  | Mint attempted twice on the same quote.               |
-| `Protocol(_)`               | 500  | `PROTOCOL_ERROR`        | Service-side protocol/framing failure.                |
+| `QuoteAlreadyIssued`          | 400  | `QUOTE_ALREADY_ISSUED`  | Mint attempted twice on the same quote.            |
+| `SpendConditionsNotMet`       | 400  | `SPEND_CONDITIONS_NOT_MET` | NUT-10/11 input witness missing/invalid (P2PK, sigflags). |
+| `Protocol(_)`                 | 500  | `PROTOCOL_ERROR`        | Service-side protocol/framing failure.              |
 | `Crypto(_)`                 | 500  | `CRYPTO_ERROR`          | Signature verification / DLEQ failure inside the mint.|
 | `Transport(_)`              | 500  | `TRANSPORT_ERROR`       | Internal transport failure (should not normally fire).|
 | `Unknown(_)`                | 500  | `UNKNOWN`               | Anything not covered above.                           |
