@@ -546,12 +546,16 @@ impl DemoMint {
                     .iter()
                     .try_fold(0u64, |acc, o| acc.checked_add(o.amount))
                     .ok_or(CashuError::InvalidAmount)?;
-                let overpay = input_sum - required;
+                let overpay = input_sum
+                    .checked_sub(required)
+                    .ok_or(CashuError::AmountMismatch)?;
                 let blank_count = outputs.iter().filter(|o| o.amount == 0).count();
-                let remainder = overpay - explicit_sum;
                 // Blanks with zero remainder are tolerated (signed back as
                 // nothing); only explicit change must consume the overpay.
-                if explicit_sum > overpay || (blank_count == 0 && remainder != 0) {
+                let remainder = overpay
+                    .checked_sub(explicit_sum)
+                    .ok_or(CashuError::AmountMismatch)?;
+                if blank_count == 0 && remainder != 0 {
                     return Err(CashuError::AmountMismatch);
                 }
                 self.check_outputs_signable(outputs)?;

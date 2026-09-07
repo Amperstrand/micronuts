@@ -227,6 +227,50 @@ fn double_spend_across_operations_rejected() {
 }
 
 #[test]
+fn melt_change_exceeding_overpay_rejected_without_panic() {
+    // Regression: explicit change outputs summing above the overpay used
+    // to hit a plain `overpay - explicit_sum` subtraction BEFORE its own
+    // guard — a debug-build panic (mint_server DoS) and a wrapped
+    // remainder in release. Must be a clean AmountMismatch with the
+    // quote and proofs untouched, so the same quote succeeds when the
+    // change is corrected.
+    let mut mint = zero_fee_mint();
+    let keyset = mint.public_keyset();
+    let mut rng = StdRng::seed_from_u64(77);
+    let proofs = mint_proofs_direct(&mut mint, 8, &keyset, &mut rng).unwrap();
+    let input_sum: u64 = proofs.iter().map(|p| p.amount).sum();
+    assert_eq!(input_sum, 8);
+
+    let melt_quote = mint
+        .post_melt_quote(nut05::MeltQuoteRequest {
+            request: "lnbcdemo5sat1micronuts".to_string(),
+            unit: "sat".to_string(),
+        })
+        .unwrap();
+
+    // 8 in, 5 required → overpay 3; explicit change of 4 exceeds it.
+    let (greedy, _) = blind_outputs(&[4], mint.keyset_id(), &mut rng).unwrap();
+    let result = mint.post_melt(nut05::MeltRequest {
+        quote: melt_quote.quote.clone(),
+        inputs: proofs.clone(),
+        outputs: Some(greedy),
+    });
+    assert!(matches!(result, Err(CashuError::AmountMismatch)));
+
+    // Nothing was claimed: the same quote with exact change succeeds
+    // (3 = 1 + 2, the power-of-two decomposition of the overpay).
+    let (exact, _) = blind_outputs(&[1, 2], mint.keyset_id(), &mut rng).unwrap();
+    let response = mint
+        .post_melt(nut05::MeltRequest {
+            quote: melt_quote.quote,
+            inputs: proofs,
+            outputs: Some(exact),
+        })
+        .expect("corrected melt succeeds");
+    assert!(response.paid);
+}
+
+#[test]
 fn foreign_keyset_proof_rejected() {
     let mut mint = zero_fee_mint();
     let keyset = mint.public_keyset();
