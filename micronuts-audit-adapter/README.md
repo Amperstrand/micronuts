@@ -131,12 +131,27 @@ Request: `{"amount": <u64>, "unit": "sat"}`
 
 Demo shortcut: the quote auto-transitions to `PAID` (no real Lightning).
 
+The request also accepts an optional NUT-20 `pubkey` (66-hex compressed
+secp256k1 point) that locks the quote; every quote response then echoes it,
+and minting requires a valid BIP-340 `signature` by that key:
+
+```json
+{ "amount": 8, "unit": "sat", "pubkey": "03d56c…" }
+```
+
 ### `GET /v1/mint/quote/bolt11/{quote_id}` — NUT-04
 
 Same body shape as the POST. Returns **404 `QUOTE_NOT_FOUND`** when the id is
 unknown.
 
-### `POST /v1/mint/bolt11` — NUT-04
+### `POST /v1/mint/quote/bolt11/check` — NUT-29
+
+Batch quote state check. Request: `{"quotes": ["<id>", …]}`. The response is
+a JSON array of mint quote objects **in request order**; any unknown id
+rejects the whole request (404 `QUOTE_NOT_FOUND`). More than 50 quotes is
+rejected with **400 `BATCH_TOO_LARGE`**.
+
+### `POST /v1/mint/bolt11` — NUT-04 (NUT-19 cached)
 
 Request:
 
@@ -147,7 +162,8 @@ Request:
     { "amount": 64, "id": "0022e025867793d1", "B_": "<66-hex compressed point>" },
     { "amount": 32, "id": "0022e025867793d1", "B_": "<66-hex compressed point>" },
     { "amount":  4, "id": "0022e025867793d1", "B_": "<66-hex compressed point>" }
-  ]
+  ],
+  "signature": "<128-hex BIP-340 signature, only for NUT-20 locked quotes>"
 }
 ```
 
@@ -166,7 +182,30 @@ Response (signatures include NUT-12 DLEQ proofs when the mint produces them):
 }
 ```
 
-### `POST /v1/swap` — NUT-03
+Minting a quote created with a `pubkey` but without a valid `signature`
+returns **400 `QUOTE_SIGNATURE_INVALID`**.
+
+### `POST /v1/mint/bolt11/batch` — NUT-29
+
+Batch mint. Request:
+
+```json
+{
+  "quotes": ["<quote id>", "<quote id>"],
+  "quote_amounts": [100, 50],
+  "outputs": [<blinded message>…],
+  "signatures": ["<128-hex>", null]
+}
+```
+
+`quote_amounts` and `signatures` are optional (`signatures` required when any
+quote is NUT-20 locked: one entry per quote, `null` for unlocked quotes, each
+signature over the quote id + ALL outputs). Response: `{"signatures":
+[<blind signature>…]}` in outputs order. Over the limits the mint rejects
+with **400 `BATCH_TOO_LARGE`** (>50 quotes) / **400 `TOO_MANY_OUTPUTS`**
+(>1000 outputs); duplicate quote ids get **400 `BATCH_QUOTE_NOT_UNIQUE`**.
+
+### `POST /v1/swap` — NUT-03 (NUT-19 cached)
 
 Request: `{"inputs": [<proof>...], "outputs": [<blinded message>...]}`
 
@@ -275,6 +314,10 @@ status codes. All error responses share the NUT-00 `ErrorResponse` body shape:
 | `InsufficientInputs`        | 400  | `INSUFFICIENT_INPUTS`   | Melt inputs total less than `amount + fee_reserve`.   |
 | `QuoteNotPaid`              | 400  | `QUOTE_NOT_PAID`        | Mint attempted on a quote that is not `PAID`.         |
 | `QuoteAlreadyIssued`          | 400  | `QUOTE_ALREADY_ISSUED`  | Mint attempted twice on the same quote.            |
+| `QuoteSignatureInvalid`       | 400  | `QUOTE_SIGNATURE_INVALID` | NUT-20 locked quote minted without a valid signature. |
+| `BatchTooLarge`               | 400  | `BATCH_TOO_LARGE`       | NUT-29 batch exceeds 50 quotes.                    |
+| `TooManyOutputs`              | 400  | `TOO_MANY_OUTPUTS`      | NUT-29 batch mint exceeds 1000 outputs.            |
+| `BatchQuoteNotUnique`         | 400  | `BATCH_QUOTE_NOT_UNIQUE` | NUT-29 batch contains duplicate quote ids.       |
 | `SpendConditionsNotMet`       | 400  | `SPEND_CONDITIONS_NOT_MET` | NUT-10/11 input witness missing/invalid (P2PK, sigflags). |
 | `Protocol(_)`                 | 500  | `PROTOCOL_ERROR`        | Service-side protocol/framing failure.              |
 | `Crypto(_)`                 | 500  | `CRYPTO_ERROR`          | Signature verification / DLEQ failure inside the mint.|
@@ -301,6 +344,16 @@ Two additional adapter-level responses (not from `CashuError`):
   changed; the safe default is to surface it as a server problem.
 - **503** only when the mint subprocess itself is unavailable — distinct
   from any business-logic error the mint may return.
+
+## NUT-19 cached responses
+
+`POST /v1/mint/bolt11` and `POST /v1/swap` cache every 200 response keyed by
+`method + path + canonical body` and replay it verbatim on an identical
+retry (the wallet recovery path after a lost response — e.g. re-minting a
+fully issued quote returns the original signatures instead of
+`QUOTE_ALREADY_ISSUED`). Only 200 responses are cached; `ttl` is
+indefinite, matching the `cached_endpoints` advertisement in `/v1/info`.
+The cache is in-memory and adapter-lifetime scoped.
 
 ## Architecture
 

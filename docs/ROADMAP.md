@@ -7,8 +7,9 @@ carries the sequencing rationale. Update both together.
 **Current state (all CI-green, 8/8 jobs incl. first-ever Xtensa link):**
 host mint prototype with durable state (mint + reserve), upstream
 settlement verified end-to-end against testnut (fake) and signut (real
-CLN signet, two-cycle restart proof), conformance 88/107 (2026-09-07
-matrix; 69 → 74 with #51 L0+L1, 74 → 88 with #51 L2+L3).
+CLN signet, two-cycle restart proof), conformance 104/107 (2026-09-07
+matrix: 69 → 88 with #51, 88 → 97 with the melt sign-what-fits parity,
+97 → 104 with NUT-20 quote locking + NUT-29 batch + NUT-19 cache).
 
 ## 1. NUT-10/11/14 spending conditions — #51 (mint line) — ARC COMPLETE
 
@@ -25,14 +26,12 @@ pathway, sender/refund pathway after expiry, both SIG_INPUTS and SIG_ALL),
 all clock-gated through the injectable `MintClock` with frozen-clock
 boundary tests; differential tests in `p2pk_differential.rs` +
 `htlc_differential.rs`; 14 more matrix scenarios fixed (88/107). The 4
-melt expiry/HTLC scenarios that still fail do so on the KNOWN runner
-issue (`_change_outputs` over-asks change → our spec-strict
-AmountMismatch is CORRECT; melt amount validation deliberately NOT
-loosened — pending a separate leniency decision). Known non-#51 matrix
-crumbs: melt AMOUNT_MISMATCH path (4, pre-existing), NUT-20/29/19 (~7),
-and one runner no-op tamper (`p2pk_sigall_output_amounts_swapped_fail`
-re-prefixes `0` onto a `02/03` hex key — a no-op; document upstream
-before touching).
+melt expiry/HTLC scenarios and the `amounts_swapped` tamper that later
+failed on the KNOWN runner issue (`_change_outputs` over-asking change)
+all pass since the melt sign-what-fits parity (c814e5d) — melt amount
+validation was NOT loosened. The remaining NUT-20/29/19 crumbs landed
+2026-09-07 (see section 4); the matrix now reads 104/107 with the 3
+skips being runner-side environment skips.
 
 ## 2. Security findings from FIPS gate-2 — #54, #55, #57, #56, #58 (hardware/FIPS line, parallel session's queue)
 
@@ -56,9 +55,13 @@ is a prerequisite for reliable field boots.
 - fee_reserve from a real backend (F9)
 - Async-melt poller — re-resolving parked/ambiguous upstream melts
   (the documented follow-up in upstream.rs)
-- Conformance crumbs: NUT-20 quote locking, NUT-29 batch, NUT-19 cache
-  (~7 scenarios after #51 lands → matrix ≈ 102/109)
 - #44 dependency audit cadence
+
+Conformance crumbs CLOSED 2026-09-07: NUT-20 quote locking (pubkey echo,
+BIP-340 gate on `post_mint`), NUT-29 batch endpoints (quote check +
+batch mint with 50-quote/1000-output limits), and NUT-19 cache
+advertisement (backed by a real HTTP-edge response cache in the adapter)
+— matrix 97 → 104/107 (0 failed, 3 runner-side skips).
 
 ## Done anchor points
 
