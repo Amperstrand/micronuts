@@ -66,6 +66,7 @@ fn test_melt_request_cbor_roundtrip() {
             c: sample_public_key(),
 
             dleq: None,
+            witness: None,
         }],
         outputs: None,
     };
@@ -123,6 +124,7 @@ fn test_melt_request_with_change() {
             c: sample_public_key(),
 
             dleq: None,
+            witness: None,
         }],
         outputs: Some(vec![BlindedMessage {
             amount: 10,
@@ -180,6 +182,7 @@ fn test_melt_multiple_inputs() {
                 c: sample_public_key(),
 
                 dleq: None,
+                witness: None,
             },
             Proof {
                 amount: 32,
@@ -188,6 +191,7 @@ fn test_melt_multiple_inputs() {
                 c: sample_public_key(),
 
                 dleq: None,
+                witness: None,
             },
         ],
         outputs: None,

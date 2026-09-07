@@ -119,6 +119,7 @@ fn unblind_proofs(
                 secret: p.secret.clone(),
                 c,
                 dleq: None,
+                witness: None,
             })
         })
         .collect()

@@ -281,6 +281,7 @@ impl<T: MintClient> Wallet<T> {
                     .dleq
                     .as_ref()
                     .map(|d| ProofDleq::new(d.e.clone(), d.s.clone(), p.blinder.clone())),
+                witness: None,
             });
         }
 

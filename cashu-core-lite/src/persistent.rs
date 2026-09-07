@@ -346,6 +346,7 @@ where
                             pending.blinder.clone(),
                         )
                     }),
+                    witness: None,
                 });
             }
         }
@@ -450,6 +451,7 @@ where
                 dleq: out.signature.dleq.as_ref().map(|d| {
                     crate::nuts::nut12::ProofDleq::new(d.e.clone(), d.s.clone(), blinder.clone())
                 }),
+                witness: None,
             });
             known.insert(secret_hex.clone());
             added += 1;

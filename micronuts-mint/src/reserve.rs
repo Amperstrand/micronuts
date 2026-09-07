@@ -382,6 +382,7 @@ impl ReserveWallet {
                     c: PublicKey::from_bytes(&bytes)
                         .unwrap_or_else(|| panic!("reserve state: bad C point")),
                     dleq: None,
+                    witness: None,
                 }
             })
             .collect();
@@ -495,6 +496,7 @@ impl ReserveWallet {
                 secret: p.secret_hex,
                 c,
                 dleq: None,
+                witness: None,
             });
         }
         if total != expected_change {

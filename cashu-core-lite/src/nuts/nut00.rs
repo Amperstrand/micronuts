@@ -73,6 +73,11 @@ pub struct Proof {
     /// verification via [`crate::nuts::nut12::verify_proof_dleq`].
     #[n(4)]
     pub dleq: Option<ProofDleq>,
+    /// NUT-10/11 witness: stringified-JSON spending-condition data
+    /// (e.g. a P2PK `{"signatures":[…]}`) attached when spending a locked
+    /// proof. Absent on ordinary proofs and on locked proofs before spend.
+    #[n(5)]
+    pub witness: Option<String>,
 }
 
 /// Cashu error response (NUT-00).

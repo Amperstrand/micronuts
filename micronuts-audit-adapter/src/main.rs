@@ -473,6 +473,7 @@ fn cashu_error_to_response(err: &CashuError) -> Response {
         CashuError::QuoteAlreadyIssued => (StatusCode::BAD_REQUEST, "QUOTE_ALREADY_ISSUED"),
         CashuError::TokensAlreadySpent => (StatusCode::BAD_REQUEST, "TOKENS_ALREADY_SPENT"),
         CashuError::MeltAlreadyPaid => (StatusCode::BAD_REQUEST, "MELT_ALREADY_PAID"),
+        CashuError::SpendConditionsNotMet => (StatusCode::BAD_REQUEST, "SPEND_CONDITIONS_NOT_MET"),
         CashuError::PaymentFailed => (StatusCode::INTERNAL_SERVER_ERROR, "PAYMENT_FAILED"),
         CashuError::Protocol(_) => (StatusCode::INTERNAL_SERVER_ERROR, "PROTOCOL_ERROR"),
         CashuError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR"),
@@ -668,14 +669,19 @@ fn parse_proof(value: &Value) -> Result<nut00::Proof, Response> {
         .ok_or_else(|| bad_request("proof.C", "missing or not a string (capital C)"))?;
     let c = parse_public_key_from_hex(c)
         .map_err(|_| bad_request("proof.C", "not a valid 33-byte compressed pubkey hex"))?;
-    // The optional `witness` field is part of the spec but not present in the
-    // demo CBOR Proof; it is ignored here.
+    // NUT-10/11 witness: stringified JSON (`{"signatures":[…]}` for P2PK)
+    // forwarded verbatim for the mint's spending-condition verification.
+    let witness = value
+        .get("witness")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     Ok(nut00::Proof {
         amount,
         id: id.to_string(),
         secret: secret.to_string(),
         c,
         dleq: None,
+        witness,
     })
 }
 

@@ -38,6 +38,7 @@ fn sample_proof(seed: u8) -> nut00::Proof {
         secret: format!("{seed:02x}{seed:02x}"),
         c: sample_public_key(seed.saturating_add(20)),
         dleq: None,
+        witness: None,
     }
 }
 

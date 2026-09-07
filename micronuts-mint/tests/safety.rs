@@ -122,6 +122,7 @@ fn mint_proofs_direct(
             // Proof-level DLEQ (with blinder) is wallet metadata; the mint
             // verifies via the privkey path, so tests omit it.
             dleq: None,
+            witness: None,
         });
     }
     Ok(proofs)

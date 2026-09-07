@@ -25,6 +25,7 @@ fn test_swap_request_cbor_roundtrip() {
             c: sample_public_key(),
 
             dleq: None,
+            witness: None,
         }],
         outputs: vec![BlindedMessage {
             amount: 4,
@@ -70,6 +71,7 @@ fn test_swap_request_multiple_inputs_outputs() {
                 c: sample_public_key(),
 
                 dleq: None,
+                witness: None,
             },
             Proof {
                 amount: 4,
@@ -78,6 +80,7 @@ fn test_swap_request_multiple_inputs_outputs() {
                 c: sample_public_key(),
 
                 dleq: None,
+                witness: None,
             },
         ],
         outputs: vec![BlindedMessage {
@@ -137,6 +140,7 @@ fn test_swap_preserves_keyset_id() {
             c: sample_public_key(),
 
             dleq: None,
+            witness: None,
         }],
         outputs: vec![BlindedMessage {
             amount: 1,

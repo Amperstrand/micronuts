@@ -88,6 +88,7 @@ fn test_proof_cbor_roundtrip() {
         secret: "test_secret_hex".to_string(),
         c: sample_public_key(),
         dleq: None,
+        witness: None,
     };
 
     let mut buf = vec![];
@@ -159,6 +160,7 @@ fn test_proof_different_amounts_different_cbor() {
         secret: "s".to_string(),
         c: sample_public_key(),
         dleq: None,
+        witness: None,
     };
     let p2 = Proof {
         amount: 2,
@@ -166,6 +168,7 @@ fn test_proof_different_amounts_different_cbor() {
         secret: "s".to_string(),
         c: sample_public_key(),
         dleq: None,
+        witness: None,
     };
 
     let mut buf1 = vec![];

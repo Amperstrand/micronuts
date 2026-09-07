@@ -57,6 +57,10 @@ pub enum CashuError {
     /// The underlying payment backend failed to pay the invoice.
     #[n(15)]
     PaymentFailed,
+    /// A NUT-10/11 spending condition on a swap/melt input was not met
+    /// (missing/invalid witness, sigflag violation, malformed condition).
+    #[n(16)]
+    SpendConditionsNotMet,
 }
 
 impl fmt::Display for CashuError {
@@ -78,6 +82,7 @@ impl fmt::Display for CashuError {
             Self::TokensAlreadySpent => write!(f, "tokens already spent"),
             Self::MeltAlreadyPaid => write!(f, "melt already paid"),
             Self::PaymentFailed => write!(f, "payment failed"),
+            Self::SpendConditionsNotMet => write!(f, "spend conditions are not met"),
         }
     }
 }
