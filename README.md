@@ -42,6 +42,22 @@ The firmware builds, flashes, and runs on real hardware. All core Cashu operatio
 
 *Retro tiled Cashu nut logo grid with alternating row scrolling. See [docs/BOOT-SPLASH.md](docs/BOOT-SPLASH.md) for details.*
 
+### App Screen Previews
+
+Every wallet screen renders headless to PNG — no SDL2, X11, or hardware
+needed. Use it for UI review loops (vision-model critique or
+[scripts/visual_qa.py](scripts/visual_qa.py) pixel checks):
+
+```bash
+cargo run -p micronuts-app --example shotui --features std  # → target/shots/*.png
+python3 scripts/visual_qa.py target/shots                   # edge-bleed / ink / QR checks
+```
+
+![App Screens](micronuts-app/assets/preview/app-screens-contact-sheet.png)
+
+*All 11 screens: home, scanning (+progress/retry), scan result, token
+info, QR mirror/export, waiting, error, status.*
+
 ## What Works
 
 - **Native simulator** — SDL2 window renders the 800x480 display on your PC, mouse clicks map to touch input. Develop without flashing.
@@ -120,7 +136,8 @@ micronuts/
 │   │   ├── qr/             — GM65 scanner + decoder
 │   │   └── util.rs         — Hex codec, demo key derivation
 │   └── examples/
-│       └── native_sim.rs   — SDL2 window simulator with mock hardware
+│       ├── native_sim.rs   — SDL2 window simulator with mock hardware
+│       └── shotui.rs       — headless screen-capture → PNG (UI review loop)
 ├── firmware/               # Embedded app for STM32F469I-Discovery
 │   ├── Cargo.toml
 │   ├── build.rs            # Copies memory.x to OUT_DIR for linker

@@ -13,7 +13,10 @@ cargo test -p micronuts-app
 
 # Build the native SDL2 simulator
 # Requires: sudo apt install libsdl2-dev libsdl2-gfx-dev
-cargo run -p micronuts-app --example native_sim --features std
+cargo run -p micronuts-app --example native_sim --features native-sim
+
+# Headless screen captures (no SDL2/X11 needed) — UI review loop
+cargo run -p micronuts-app --example shotui --features std
 ```
 
 ## Architecture
@@ -36,14 +39,15 @@ src/
 └── util.rs              — decode_hex, encode_hex, derive_demo_mint_key
 
 examples/
-└── native_sim.rs       — SDL2 window simulator with async mock hardware (embassy_executor std backend)
+├── native_sim.rs       — SDL2 window simulator with async mock hardware (embassy_executor std backend)
+└── shotui.rs           — Headless PNG captures of every screen (std + png dev-dep)
 ```
 
 ## MicronutsHardware Trait
 
 Defined in `hardware.rs`. All methods use `impl Future` RPITIT syntax (async trait):
 
-- `Display` — `embedded-graphics::DrawTarget<Color = Rgb565>` (480x800 portrait)
+- `Display` — `embedded-graphics::DrawTarget<Color = Rgb888>` (480x800 portrait)
 - `RNG` — `fn rng_fill_bytes(&mut [u8])`
 - `Scanner` — async trigger, read_scan, stop, is_connected, set_aim
 - `Transport` — async poll for incoming frames, async send responses
