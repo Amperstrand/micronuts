@@ -37,6 +37,7 @@ fn loopback_transport_returns_serialized_errors() {
         method: MintRpcMethod::MintQuote(nut04::MintQuoteRequest {
             amount: 0,
             unit: "sat".to_string(),
+            pubkey: None,
         }),
     };
 

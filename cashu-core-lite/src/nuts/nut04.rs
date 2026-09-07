@@ -28,6 +28,12 @@ pub struct MintQuoteRequest {
     /// Unit (e.g. "sat").
     #[n(1)]
     pub unit: String,
+    /// NUT-20 quote-locking public key (compressed secp256k1 point, hex).
+    /// When present, the mint requires a valid BIP-340 signature by the
+    /// matching secret key on the subsequent mint request.
+    #[n(2)]
+    // NUT #20: "pubkey": <str|null> // Optional <-- New
+    pub pubkey: Option<String>,
 }
 
 /// Response body for mint quote endpoints (NUT-04).
@@ -69,6 +75,11 @@ pub struct MintQuoteResponse {
     /// Payment method of the quote (NUT-04: response MUST carry it).
     #[n(10)]
     pub method: String,
+    /// NUT-20 quote-locking public key echoed from the mint quote request
+    /// (`None` when the quote is unlocked).
+    #[n(11)]
+    // NUT #20: "pubkey": <str|null> // Optional <-- New
+    pub pubkey: Option<String>,
 }
 
 /// Request body for `POST /v1/mint/bolt11` (NUT-04).
@@ -82,6 +93,11 @@ pub struct MintRequest {
     /// Blinded messages (outputs) to be signed by the mint.
     #[n(1)]
     pub outputs: Vec<BlindedMessage>,
+    /// NUT-20 signature over [`nut20::quote_sig_message`] of this quote and
+    /// its outputs; required when the quote was created with a `pubkey`.
+    #[n(2)]
+    // NUT #20: "signature": <str|null> <-- New
+    pub signature: Option<String>,
 }
 
 /// Response body for `POST /v1/mint/bolt11` (NUT-04).

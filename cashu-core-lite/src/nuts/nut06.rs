@@ -52,12 +52,27 @@ pub struct ContactInfo {
 }
 
 /// Per-NUT settings object (NUT-06 `nuts` map value). An empty `methods`
-/// list means the NUT is supported with no method-specific settings.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+/// list means the NUT is supported with no method-specific settings. The
+/// optional fields carry the per-NUT extension settings the mint actually
+/// implements (NUT-19 cache, NUT-20 supported flag, NUT-29 batch limits);
+/// JSON adapters emit each field only when set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Encode, Decode)]
 pub struct NutSettings {
     /// Payment methods this NUT supports (empty for non-payment NUTs).
     #[n(0)]
     pub methods: Vec<PaymentMethod>,
+    /// `{"supported": bool}` flag (NUT-20 style).
+    #[n(1)]
+    pub supported: Option<bool>,
+    /// NUT-19: cache TTL in seconds (`None` = cached indefinitely).
+    #[n(2)]
+    pub ttl: Option<u64>,
+    /// NUT-19: endpoints whose successful responses are cached.
+    #[n(3)]
+    pub cached_endpoints: Vec<super::nut19::CachedEndpoint>,
+    /// NUT-29: maximum number of quotes in one batch request.
+    #[n(4)]
+    pub max_batch_size: Option<u64>,
 }
 
 /// A payment method entry (e.g. `bolt11` in unit `sat`) inside a

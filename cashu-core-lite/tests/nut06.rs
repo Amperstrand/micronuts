@@ -13,7 +13,7 @@ fn sample_contact() -> ContactInfo {
 
 fn sample_nuts() -> Vec<(String, NutSettings)> {
     vec![
-        ("3".to_string(), NutSettings { methods: vec![] }),
+        ("3".to_string(), NutSettings::default()),
         (
             "4".to_string(),
             NutSettings {
@@ -21,9 +21,10 @@ fn sample_nuts() -> Vec<(String, NutSettings)> {
                     method: "bolt11".to_string(),
                     unit: "sat".to_string(),
                 }],
+                ..Default::default()
             },
         ),
-        ("7".to_string(), NutSettings { methods: vec![] }),
+        ("7".to_string(), NutSettings::default()),
     ]
 }
 
@@ -111,6 +112,7 @@ fn test_nut_settings_cbor_roundtrip() {
                 unit: "usd".to_string(),
             },
         ],
+        ..Default::default()
     };
 
     let mut buf = vec![];

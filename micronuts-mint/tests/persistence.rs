@@ -136,6 +136,7 @@ fn mint_with_pending(
     let quote = mint.post_mint_quote(nut04::MintQuoteRequest {
         amount: sats,
         unit: "sat".to_string(),
+        pubkey: None,
     })?;
     let settled = mint.get_mint_quote(&quote.quote)?;
     assert_eq!(settled.state, "PAID", "FakeWallet settles on first poll");
@@ -145,6 +146,7 @@ fn mint_with_pending(
     let response = mint.post_mint(nut04::MintRequest {
         quote: quote.quote.clone(),
         outputs: messages,
+        signature: None,
     })?;
     let proofs = unblind_proofs(&pending, &response.signatures, keyset)?;
     Ok((quote.quote, proofs, pending))
@@ -244,6 +246,7 @@ fn restart_preserves_quote_state_and_accounting() {
         .post_mint(nut04::MintRequest {
             quote: quote_id,
             outputs: messages,
+            signature: None,
         })
         .expect_err("re-mint of ISSUED quote must fail");
     assert!(matches!(err, CashuError::QuoteAlreadyIssued), "{err:?}");
@@ -490,6 +493,7 @@ fn matrix_issued_quote_accounting_survives(make_store: &dyn Fn() -> Box<dyn Stat
         .post_mint(nut04::MintRequest {
             quote: quote_id,
             outputs: messages,
+            signature: None,
         })
         .expect_err("re-mint of ISSUED quote must fail");
     assert!(matches!(err, CashuError::QuoteAlreadyIssued), "{err:?}");

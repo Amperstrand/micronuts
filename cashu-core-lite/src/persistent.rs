@@ -224,6 +224,7 @@ where
         let response = self.inner.transport.post_mint(nut04::MintRequest {
             quote: String::from(quote_id),
             outputs,
+            signature: None,
         })?;
 
         let proofs = self

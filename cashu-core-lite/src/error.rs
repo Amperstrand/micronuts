@@ -61,6 +61,19 @@ pub enum CashuError {
     /// (missing/invalid witness, sigflag violation, malformed condition).
     #[n(16)]
     SpendConditionsNotMet,
+    /// A NUT-20 locked mint quote was minted without a valid signature by
+    /// its locking public key (missing or invalid signature).
+    #[n(17)]
+    QuoteSignatureInvalid,
+    /// A NUT-29 batch request exceeded the maximum number of quotes.
+    #[n(18)]
+    BatchTooLarge,
+    /// A NUT-29 batch mint request exceeded the maximum number of outputs.
+    #[n(19)]
+    TooManyOutputs,
+    /// A NUT-29 batch request contained duplicate quote IDs.
+    #[n(20)]
+    BatchQuoteNotUnique,
 }
 
 impl fmt::Display for CashuError {
@@ -83,6 +96,10 @@ impl fmt::Display for CashuError {
             Self::MeltAlreadyPaid => write!(f, "melt already paid"),
             Self::PaymentFailed => write!(f, "payment failed"),
             Self::SpendConditionsNotMet => write!(f, "spend conditions are not met"),
+            Self::QuoteSignatureInvalid => write!(f, "mint quote signature missing or invalid"),
+            Self::BatchTooLarge => write!(f, "batch too large"),
+            Self::TooManyOutputs => write!(f, "too many outputs"),
+            Self::BatchQuoteNotUnique => write!(f, "batch contains duplicate quote ids"),
         }
     }
 }

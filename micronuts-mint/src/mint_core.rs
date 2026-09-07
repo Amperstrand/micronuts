@@ -16,12 +16,15 @@ use std::str::FromStr;
 
 // Crypto primitives delegate to the upstream `cashu` crate; conversions to
 // `cashu-core-lite` types (the MintService seam) happen at the call sites.
+use bitcoin::secp256k1::schnorr::Signature;
 use cashu::dhke::{
     hash_to_curve as cashu_hash_to_curve, sign_message as cashu_sign_message,
     verify_message as cashu_verify_message,
 };
 use cashu_core_lite::error::CashuError;
-use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use cashu_core_lite::nuts::{
+    nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09, nut19, nut20, nut29,
+};
 
 use crate::keyset::DemoKeyset;
 use crate::ln::{FakeWallet, LightningBackend, MintClock, SystemClock};
@@ -47,6 +50,9 @@ struct MintQuoteEntry {
     pub amount_paid: u64,
     pub amount_issued: u64,
     pub updated_at: u64,
+    /// NUT-20 quote-locking public key (compressed point hex); the quote
+    /// mints only against a valid signature by this key.
+    pub pubkey: Option<String>,
 }
 
 /// In-memory melt quote state.
@@ -259,6 +265,7 @@ impl DemoMint {
         let expiry = self.quote_expiry()?;
         let now = self.clock.now_secs();
         let unit = request.unit;
+        let pubkey = request.pubkey;
 
         let entry = MintQuoteEntry {
             amount: request.amount,
@@ -269,6 +276,7 @@ impl DemoMint {
             amount_issued: 0,
             updated_at: now,
             unit: unit.clone(),
+            pubkey: pubkey.clone(),
         };
         self.mint_quotes.insert(quote_id.clone(), entry);
         self.persist();
@@ -285,6 +293,7 @@ impl DemoMint {
             amount_issued: 0,
             updated_at: now,
             method: "bolt11".to_string(),
+            pubkey,
         })
     }
 
@@ -313,6 +322,7 @@ impl DemoMint {
             amount_issued: entry.amount_issued,
             updated_at: entry.updated_at,
             method: "bolt11".to_string(),
+            pubkey: entry.pubkey.clone(),
         })
     }
 
@@ -354,6 +364,8 @@ impl DemoMint {
     ///
     /// Verifies:
     ///   - Quote exists and is PAID (settling it first if the backend paid)
+    ///   - NUT-20: a quote created with a `pubkey` only mints against a
+    ///     valid BIP-340 signature by that key over the quote id + outputs
     ///   - Output amounts sum to the quoted amount
     ///   - Each denomination has a known key
     pub fn post_mint(
@@ -362,12 +374,17 @@ impl DemoMint {
     ) -> Result<nut04::MintResponse, CashuError> {
         self.refresh_mint_quote_state(&request.quote)?;
 
-        let (amount_paid, amount_issued, current_state) = {
+        let (amount_paid, amount_issued, current_state, lock_pubkey) = {
             let entry = self
                 .mint_quotes
                 .get(&request.quote)
                 .ok_or(CashuError::QuoteNotFound)?;
-            (entry.amount_paid, entry.amount_issued, entry.state.clone())
+            (
+                entry.amount_paid,
+                entry.amount_issued,
+                entry.state.clone(),
+                entry.pubkey.clone(),
+            )
         };
 
         if current_state != nut04::state::PAID {
@@ -376,6 +393,17 @@ impl DemoMint {
             }
             // UNPAID: either not settled yet, or expired (see refresh).
             return Err(CashuError::QuoteNotPaid);
+        }
+
+        // NUT-20: locked quotes mint only with a valid signature; an
+        // unlocked quote ignores any stray signature (upstream behavior).
+        if let Some(pubkey_hex) = &lock_pubkey {
+            verify_quote_signature(
+                pubkey_hex,
+                &request.quote,
+                &request.outputs,
+                request.signature.as_deref(),
+            )?;
         }
 
         // NUT-04: outputs MUST NOT exceed the currently mintable amount
@@ -410,6 +438,153 @@ impl DemoMint {
             if entry.amount_issued == entry.amount_paid {
                 entry.state = nut04::state::ISSUED.to_string();
             }
+            entry.updated_at = now.max(entry.updated_at + 1);
+        }
+        self.persist();
+
+        Ok(nut04::MintResponse { signatures })
+    }
+
+    // ---- NUT-29: Batch quote check + batch mint ----
+
+    /// NUT-29: Look up multiple mint quotes, settling each lazily first.
+    /// All-or-nothing: any unknown quote id rejects the whole request.
+    /// The response order MUST match the request order.
+    // NUT #29: POST https://mint.host:3338/v1/mint/quote/{method}/check
+    // NUT #29: The mint returns a JSON array of mint quote objects as defined by the payment method's NUT specification. The quotes in this array MUST be in the same order as in the request.
+    pub fn batch_check_mint_quotes(
+        &mut self,
+        request: nut29::BatchCheckMintQuoteRequest,
+    ) -> Result<Vec<nut04::MintQuoteResponse>, CashuError> {
+        if request.quotes.len() > nut29::MAX_BATCH_QUOTES {
+            return Err(CashuError::BatchTooLarge);
+        }
+        let mut responses = Vec::with_capacity(request.quotes.len());
+        for quote_id in &request.quotes {
+            responses.push(self.get_mint_quote(quote_id)?);
+        }
+        Ok(responses)
+    }
+
+    /// NUT-29: Mint multiple quotes in one atomic request.
+    ///
+    /// Validation follows the spec's ordered list: non-empty, unique,
+    /// existing, same method/unit (bolt11/sat only here), PAID, balanced
+    /// amounts (`Σ outputs == Σ quote amounts` for bolt11), and NUT-20
+    /// signatures (`signatures[i]` ↔ `quotes[i]`, over ALL outputs).
+    /// Any failure leaves every quote untouched.
+    // NUT #29: POST https://mint.host:3338/v1/mint/{method}/batch
+    pub fn batch_mint(
+        &mut self,
+        request: nut29::BatchMintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
+        if request.outputs.len() > nut29::MAX_BATCH_OUTPUTS {
+            return Err(CashuError::TooManyOutputs);
+        }
+        if request.quotes.is_empty() {
+            return Err(CashuError::Protocol(
+                "batch mint requires at least one quote".to_string(),
+            ));
+        }
+        if request.quotes.len() > nut29::MAX_BATCH_QUOTES {
+            return Err(CashuError::BatchTooLarge);
+        }
+
+        // NUT #29: 2. **Unique quotes**: All quote IDs in the `quotes` array MUST be unique (no duplicates) — error code `11016`
+        let mut seen = HashSet::with_capacity(request.quotes.len());
+        for quote_id in &request.quotes {
+            if !seen.insert(quote_id.clone()) {
+                return Err(CashuError::BatchQuoteNotUnique);
+            }
+        }
+
+        if let Some(amounts) = &request.quote_amounts {
+            if amounts.len() != request.quotes.len() {
+                return Err(CashuError::AmountMismatch);
+            }
+        }
+
+        // Refresh + load every quote before touching any state.
+        let mut total_amount = 0u64;
+        let mut entries: Vec<(String, u64, Option<String>)> =
+            Vec::with_capacity(request.quotes.len());
+        for (i, quote_id) in request.quotes.iter().enumerate() {
+            self.refresh_mint_quote_state(quote_id)?;
+            let entry = self
+                .mint_quotes
+                .get(quote_id)
+                .ok_or(CashuError::QuoteNotFound)?;
+            if entry.state != nut04::state::PAID {
+                if entry.state == nut04::state::ISSUED {
+                    return Err(CashuError::QuoteAlreadyIssued);
+                }
+                return Err(CashuError::QuoteNotPaid);
+            }
+            if entry.unit != "sat" || entry.amount == 0 {
+                return Err(CashuError::AmountMismatch);
+            }
+            if let Some(amounts) = &request.quote_amounts {
+                if amounts[i] != entry.amount {
+                    return Err(CashuError::AmountMismatch);
+                }
+            }
+            total_amount = total_amount
+                .checked_add(entry.amount)
+                .ok_or(CashuError::InvalidAmount)?;
+            entries.push((quote_id.clone(), entry.amount, entry.pubkey.clone()));
+        }
+
+        // NUT-20 within a batch: one signature per quote over ALL outputs.
+        // A locked batch REQUIRES the array; any provided array is
+        // validated per-entry (nulls only on unlocked quotes).
+        let any_locked = entries.iter().any(|(_, _, pubkey)| pubkey.is_some());
+        let signatures = match &request.signatures {
+            Some(signatures) => Some(signatures),
+            None if any_locked => return Err(CashuError::QuoteSignatureInvalid),
+            None => None,
+        };
+        if let Some(signatures) = signatures {
+            if signatures.len() != request.quotes.len() {
+                return Err(CashuError::QuoteSignatureInvalid);
+            }
+            for ((quote_id, _, pubkey), signature) in entries.iter().zip(signatures.iter()) {
+                match (pubkey.as_deref(), signature.as_deref()) {
+                    (Some(pubkey_hex), Some(signature_hex)) => verify_quote_signature(
+                        pubkey_hex,
+                        quote_id,
+                        &request.outputs,
+                        Some(signature_hex),
+                    )?,
+                    (Some(_), None) => return Err(CashuError::QuoteSignatureInvalid),
+                    // NUT #29: 8. **Signature validation (NUT-20)**: The `signatures` array length MUST match the `quotes` array length; locked quotes MUST include a valid signature; unlocked quotes MUST NOT include one
+                    (None, Some(_)) => return Err(CashuError::QuoteSignatureInvalid),
+                    (None, None) => {}
+                }
+            }
+        }
+
+        let output_sum: u64 = request
+            .outputs
+            .iter()
+            .try_fold(0u64, |acc, o| acc.checked_add(o.amount))
+            .ok_or(CashuError::InvalidAmount)?;
+        // NUT #29: 7. **Amount balance**: The sum of amounts contained in the `outputs` MUST equal the sum of `quote_amounts` (bolt11) or MUST NOT exceed it (bolt12)
+        if output_sum != total_amount {
+            return Err(CashuError::AmountMismatch);
+        }
+
+        self.check_outputs_signable(&request.outputs)?;
+
+        // Atomic commit: sign, then flip every quote to ISSUED.
+        let signatures = self.sign_outputs(&request.outputs)?;
+        let now = self.clock.now_secs();
+        for (quote_id, amount, _) in &entries {
+            let entry = self
+                .mint_quotes
+                .get_mut(quote_id)
+                .ok_or(CashuError::QuoteNotFound)?;
+            entry.amount_issued = *amount;
+            entry.state = nut04::state::ISSUED.to_string();
             entry.updated_at = now.max(entry.updated_at + 1);
         }
         self.persist();
@@ -773,6 +948,7 @@ impl DemoMint {
                             amount_paid: e.amount_paid,
                             amount_issued: e.amount_issued,
                             updated_at: e.updated_at,
+                            pubkey: e.pubkey.clone(),
                         },
                     )
                 })
@@ -849,6 +1025,7 @@ impl DemoMint {
                         amount_paid: e.amount_paid,
                         amount_issued: e.amount_issued,
                         updated_at: e.updated_at,
+                        pubkey: e.pubkey,
                     },
                 )
             })
@@ -1098,6 +1275,35 @@ fn proof_y_hex(secret: &str) -> Result<String, CashuError> {
     Ok(hex::encode(y.to_encoded_point(true).as_bytes()))
 }
 
+/// NUT-20: verify the BIP-340 signature a wallet provides when minting a
+/// locked quote. The signed message is the domain-separated quote-id +
+/// outputs aggregation ([`nut20::quote_sig_message`]); verification hashes
+/// it internally (`cashu::PublicKey::verify`, SHA-256 + schnorr) — the same
+/// primitives `spending.rs` uses for NUT-11 witnesses.
+fn verify_quote_signature(
+    pubkey_hex: &str,
+    quote_id: &str,
+    outputs: &[nut00::BlindedMessage],
+    signature_hex: Option<&str>,
+) -> Result<(), CashuError> {
+    let signature_hex = signature_hex.ok_or(CashuError::QuoteSignatureInvalid)?;
+    let signature =
+        Signature::from_str(signature_hex).map_err(|_| CashuError::QuoteSignatureInvalid)?;
+
+    let pubkey_bytes: [u8; 33] = hex::decode(pubkey_hex)
+        .map_err(|_| CashuError::QuoteSignatureInvalid)?
+        .try_into()
+        .map_err(|_: Vec<u8>| CashuError::QuoteSignatureInvalid)?;
+    let lite_pubkey = cashu_core_lite::keypair::PublicKey::from_bytes(&pubkey_bytes)
+        .ok_or(CashuError::QuoteSignatureInvalid)?;
+
+    let message = nut20::quote_sig_message(quote_id, outputs);
+    let cashu_pubkey = lite_pk_to_cashu(&lite_pubkey);
+    cashu_pubkey
+        .verify(&message, &signature)
+        .map_err(|_| CashuError::QuoteSignatureInvalid)
+}
+
 /// NUT-06 advertisement: which NUTs this mint supports and their settings.
 /// NUTs 4 and 5 accept bolt11 invoices in sat; the others need no settings.
 fn demo_nuts() -> Vec<(String, nut06::NutSettings)> {
@@ -1108,26 +1314,65 @@ fn demo_nuts() -> Vec<(String, nut06::NutSettings)> {
         }]
     };
     vec![
-        ("3".to_string(), nut06::NutSettings { methods: vec![] }),
+        ("3".to_string(), nut06::NutSettings::default()),
         (
             "4".to_string(),
             nut06::NutSettings {
                 methods: bolt11_sat(),
+                ..nut06::NutSettings::default()
             },
         ),
         (
             "5".to_string(),
             nut06::NutSettings {
                 methods: bolt11_sat(),
+                ..nut06::NutSettings::default()
             },
         ),
-        ("6".to_string(), nut06::NutSettings { methods: vec![] }),
-        ("7".to_string(), nut06::NutSettings { methods: vec![] }),
-        ("9".to_string(), nut06::NutSettings { methods: vec![] }),
+        ("6".to_string(), nut06::NutSettings::default()),
+        ("7".to_string(), nut06::NutSettings::default()),
+        ("9".to_string(), nut06::NutSettings::default()),
         // NUT-10/11: spending conditions (P2PK + sigflags) are enforced on
         // swap/melt inputs — advertised since the L1 landing (#51).
-        ("10".to_string(), nut06::NutSettings { methods: vec![] }),
-        ("11".to_string(), nut06::NutSettings { methods: vec![] }),
+        ("10".to_string(), nut06::NutSettings::default()),
+        ("11".to_string(), nut06::NutSettings::default()),
+        // NUT-19: successful responses on the cached endpoints are cached
+        // indefinitely at the HTTP edge (micronuts-audit-adapter).
+        (
+            "19".to_string(),
+            nut06::NutSettings {
+                ttl: None,
+                cached_endpoints: vec![
+                    nut19::CachedEndpoint {
+                        method: "POST".to_string(),
+                        path: "/v1/mint/bolt11".to_string(),
+                    },
+                    nut19::CachedEndpoint {
+                        method: "POST".to_string(),
+                        path: "/v1/swap".to_string(),
+                    },
+                ],
+                ..nut06::NutSettings::default()
+            },
+        ),
+        // NUT-20: quotes can be locked to a pubkey; the mint enforces the
+        // signature before minting.
+        (
+            "20".to_string(),
+            nut06::NutSettings {
+                supported: Some(true),
+                ..nut06::NutSettings::default()
+            },
+        ),
+        // NUT-29: batch check + batch mint, bolt11 only.
+        (
+            "29".to_string(),
+            nut06::NutSettings {
+                methods: bolt11_sat(),
+                max_batch_size: Some(nut29::MAX_BATCH_QUOTES as u64),
+                ..nut06::NutSettings::default()
+            },
+        ),
     ]
 }
 
@@ -1155,11 +1400,14 @@ mod tests {
         let info = mint.get_info().unwrap();
         let nuts = info.nuts;
         let advertised: Vec<&str> = nuts.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(advertised, ["3", "4", "5", "6", "7", "9", "10", "11"]);
+        assert_eq!(
+            advertised,
+            ["3", "4", "5", "6", "7", "9", "10", "11", "19", "20", "29"]
+        );
 
         for (nut, settings) in &nuts {
             match nut.as_str() {
-                "4" | "5" => {
+                "4" | "5" | "29" => {
                     assert_eq!(settings.methods.len(), 1, "nut {nut} advertises bolt11");
                     assert_eq!(settings.methods[0].method, "bolt11");
                     assert_eq!(settings.methods[0].unit, "sat");
@@ -1170,6 +1418,32 @@ mod tests {
                 ),
             }
         }
+
+        let nut19 = nuts
+            .iter()
+            .find(|(n, _)| n == "19")
+            .expect("nut 19 advertised");
+        assert_eq!(
+            nut19
+                .1
+                .cached_endpoints
+                .iter()
+                .map(|e| e.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["/v1/mint/bolt11", "/v1/swap"]
+        );
+
+        let nut20 = nuts
+            .iter()
+            .find(|(n, _)| n == "20")
+            .expect("nut 20 advertised");
+        assert_eq!(nut20.1.supported, Some(true));
+
+        let nut29 = nuts
+            .iter()
+            .find(|(n, _)| n == "29")
+            .expect("nut 29 advertised");
+        assert_eq!(nut29.1.max_batch_size, Some(nut29::MAX_BATCH_QUOTES as u64));
     }
 
     #[test]
@@ -1205,6 +1479,7 @@ mod tests {
             .post_mint_quote(nut04::MintQuoteRequest {
                 amount: 100,
                 unit: "sat".to_string(),
+                pubkey: None,
             })
             .unwrap();
         assert!(!resp.paid);

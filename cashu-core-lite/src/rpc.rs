@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use minicbor::{Decode, Encode};
 
 use crate::error::CashuError;
-use crate::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use crate::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09, nut29};
 use crate::transport::MintClient;
 
 /// NUT-04 quote lookup by quote id for the RPC layer.
@@ -94,6 +94,12 @@ pub enum MintRpcMethod {
     /// NUT-09: `POST /v1/restore`
     #[n(11)]
     Restore(#[n(0)] nut09::RestoreRequest),
+    /// NUT-29: `POST /v1/mint/quote/{method}/check`
+    #[n(12)]
+    BatchCheckMintQuotes(#[n(0)] nut29::BatchCheckMintQuoteRequest),
+    /// NUT-29: `POST /v1/mint/{method}/batch`
+    #[n(13)]
+    BatchMint(#[n(0)] nut29::BatchMintRequest),
 }
 
 /// RPC response payload.
@@ -146,6 +152,12 @@ pub enum MintRpcResult {
     /// NUT-09: restore.
     #[n(11)]
     Restore(#[n(0)] nut09::RestoreResponse),
+    /// NUT-29: batch mint quote lookups, in request order.
+    #[n(12)]
+    BatchCheckMintQuotes(#[n(0)] Vec<nut04::MintQuoteResponse>),
+    /// NUT-29: batch mint signatures.
+    #[n(13)]
+    BatchMint(#[n(0)] nut04::MintResponse),
 }
 
 /// Minimal service trait for mint-side RPC handling.
@@ -191,6 +203,16 @@ pub trait MintService {
         &mut self,
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError>;
+    /// NUT-29: batch mint quote state check (response order = request order).
+    fn batch_check_mint_quotes(
+        &mut self,
+        request: nut29::BatchCheckMintQuoteRequest,
+    ) -> Result<Vec<nut04::MintQuoteResponse>, CashuError>;
+    /// NUT-29: mint multiple quotes in one atomic operation.
+    fn batch_mint(
+        &mut self,
+        request: nut29::BatchMintRequest,
+    ) -> Result<nut04::MintResponse, CashuError>;
 }
 
 /// Encodes/decodes RPC envelopes and dispatches them to a mint service.
@@ -253,6 +275,13 @@ impl<S: MintService> MintRpcHandler<S> {
             ),
             MintRpcMethod::Restore(body) => {
                 rpc_success(self.service.post_restore(body), MintRpcResult::Restore)
+            }
+            MintRpcMethod::BatchCheckMintQuotes(body) => rpc_success(
+                self.service.batch_check_mint_quotes(body),
+                MintRpcResult::BatchCheckMintQuotes,
+            ),
+            MintRpcMethod::BatchMint(body) => {
+                rpc_success(self.service.batch_mint(body), MintRpcResult::BatchMint)
             }
         };
 

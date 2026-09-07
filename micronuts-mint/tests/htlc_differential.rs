@@ -96,6 +96,7 @@ fn mint_with_secrets(secret_amounts: &[(String, u64)]) -> (DemoMint, Vec<nut00::
         .post_mint_quote(nut04::MintQuoteRequest {
             amount: total,
             unit: "sat".to_string(),
+            pubkey: None,
         })
         .expect("mint quote");
     mint.get_mint_quote(&quote.quote)
@@ -116,6 +117,7 @@ fn mint_with_secrets(secret_amounts: &[(String, u64)]) -> (DemoMint, Vec<nut00::
         .post_mint(nut04::MintRequest {
             quote: quote.quote,
             outputs,
+            signature: None,
         })
         .expect("mint outputs");
 

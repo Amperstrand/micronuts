@@ -4,7 +4,7 @@
 //! framing can call after decoding a request frame.
 
 use cashu_core_lite::error::CashuError;
-use cashu_core_lite::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use cashu_core_lite::nuts::{nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09, nut29};
 use cashu_core_lite::rpc::MintService;
 
 use crate::DemoMint;
@@ -88,5 +88,21 @@ impl MintService for DemoMint {
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError> {
         DemoMint::post_restore(self, request)
+    }
+
+    /// NUT-29: forward batch quote checks to the demo mint core.
+    fn batch_check_mint_quotes(
+        &mut self,
+        request: nut29::BatchCheckMintQuoteRequest,
+    ) -> Result<Vec<nut04::MintQuoteResponse>, CashuError> {
+        DemoMint::batch_check_mint_quotes(self, request)
+    }
+
+    /// NUT-29: forward batch mint requests to the demo mint core.
+    fn batch_mint(
+        &mut self,
+        request: nut29::BatchMintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
+        DemoMint::batch_mint(self, request)
     }
 }

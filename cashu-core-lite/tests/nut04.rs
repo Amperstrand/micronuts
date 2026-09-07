@@ -22,6 +22,7 @@ fn test_mint_quote_request_cbor_roundtrip() {
     let request = MintQuoteRequest {
         amount: 1000,
         unit: "sat".to_string(),
+        pubkey: None,
     };
 
     let mut buf = vec![];
@@ -46,6 +47,7 @@ fn test_mint_quote_response_cbor_roundtrip() {
         amount_issued: 0,
         updated_at: 0,
         method: "bolt11".to_string(),
+        pubkey: None,
     };
 
     let mut buf = vec![];
@@ -66,6 +68,7 @@ fn test_mint_request_cbor_roundtrip() {
             id: "009a1f293253e41e".to_string(),
             b: sample_public_key(),
         }],
+        signature: None,
     };
 
     let mut buf = vec![];
@@ -108,11 +111,13 @@ fn test_mint_quote_different_units() {
     let sat_request = MintQuoteRequest {
         amount: 1000,
         unit: "sat".to_string(),
+        pubkey: None,
     };
 
     let msat_request = MintQuoteRequest {
         amount: 1000000,
         unit: "msat".to_string(),
+        pubkey: None,
     };
 
     assert_ne!(sat_request.unit, msat_request.unit);
@@ -132,6 +137,7 @@ fn test_mint_quote_state_transitions() {
         amount_issued: 0,
         updated_at: 0,
         method: "bolt11".to_string(),
+        pubkey: None,
     };
 
     let paid = MintQuoteResponse {
@@ -146,6 +152,7 @@ fn test_mint_quote_state_transitions() {
         amount_issued: 0,
         updated_at: 41,
         method: "bolt11".to_string(),
+        pubkey: None,
     };
 
     let issued = MintQuoteResponse {
@@ -160,6 +167,7 @@ fn test_mint_quote_state_transitions() {
         amount_issued: 100,
         updated_at: 42,
         method: "bolt11".to_string(),
+        pubkey: None,
     };
 
     assert!(!unpaid.paid);
@@ -188,6 +196,7 @@ fn test_mint_request_multiple_outputs() {
                 b: sample_public_key(),
             },
         ],
+        signature: None,
     };
 
     let mut buf = vec![];

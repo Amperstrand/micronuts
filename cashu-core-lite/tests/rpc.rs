@@ -62,6 +62,7 @@ fn rpc_request_roundtrip_covers_all_demo_methods() {
             method: MintRpcMethod::MintQuote(nut04::MintQuoteRequest {
                 amount: 100,
                 unit: "sat".to_string(),
+                pubkey: None,
             }),
         },
         MintRpcRequest {
@@ -75,6 +76,7 @@ fn rpc_request_roundtrip_covers_all_demo_methods() {
             method: MintRpcMethod::Mint(nut04::MintRequest {
                 quote: "mint-quote-1".to_string(),
                 outputs: vec![sample_blinded_message(4), sample_blinded_message(8)],
+                signature: None,
             }),
         },
         MintRpcRequest {
@@ -137,6 +139,7 @@ fn rpc_response_roundtrip_success() {
                         method: "bolt11".to_string(),
                         unit: "sat".to_string(),
                     }],
+                    ..Default::default()
                 },
             )],
         })),

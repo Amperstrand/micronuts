@@ -75,6 +75,7 @@ impl<T: MintClient> Wallet<T> {
         self.transport.post_mint_quote(nut04::MintQuoteRequest {
             amount,
             unit: String::from(unit),
+            pubkey: None,
         })
     }
 
@@ -111,6 +112,7 @@ impl<T: MintClient> Wallet<T> {
         let response = self.transport.post_mint(nut04::MintRequest {
             quote: String::from(quote_id),
             outputs: blinded_messages,
+            signature: None,
         })?;
 
         // Unblind signatures into proofs

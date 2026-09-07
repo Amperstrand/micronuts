@@ -67,6 +67,7 @@ fn mint_proofs_direct(
     let quote = mint.post_mint_quote(nut04::MintQuoteRequest {
         amount: sats,
         unit: "sat".to_string(),
+        pubkey: None,
     })?;
     mint.get_mint_quote(&quote.quote)?; // FakeWallet settles on first poll
 
@@ -102,6 +103,7 @@ fn mint_proofs_direct(
     let response = mint.post_mint(nut04::MintRequest {
         quote: quote.quote,
         outputs: messages,
+        signature: None,
     })?;
 
     let mut proofs = Vec::with_capacity(pending.len());
@@ -480,6 +482,7 @@ fn restore_returns_previously_signed_signatures() {
         .post_mint_quote(nut04::MintQuoteRequest {
             amount: 3,
             unit: "sat".to_string(),
+            pubkey: None,
         })
         .unwrap();
     mint.get_mint_quote(&quote.quote).unwrap();
@@ -489,6 +492,7 @@ fn restore_returns_previously_signed_signatures() {
         .post_mint(nut04::MintRequest {
             quote: quote.quote,
             outputs: outputs.clone(),
+            signature: None,
         })
         .unwrap();
 

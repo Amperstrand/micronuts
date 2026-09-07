@@ -38,6 +38,7 @@ fn mint_role_hex_handler_roundtrips_serialized_error() {
         method: MintRpcMethod::MintQuote(nut04::MintQuoteRequest {
             amount: 0,
             unit: "sat".to_string(),
+            pubkey: None,
         }),
     };
     let request_hex = hex::encode(encode_rpc_request(&request).expect("encode request"));

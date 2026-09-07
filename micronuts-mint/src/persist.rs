@@ -32,6 +32,9 @@ pub struct MintQuoteSnap {
     pub amount_paid: u64,
     pub amount_issued: u64,
     pub updated_at: u64,
+    /// NUT-20 quote-locking pubkey (absent in pre-NUT-20 snapshots).
+    #[serde(default)]
+    pub pubkey: Option<String>,
 }
 
 /// Serialized form of one NUT-05 melt quote.

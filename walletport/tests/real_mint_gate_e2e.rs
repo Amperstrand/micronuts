@@ -170,6 +170,7 @@ fn parse_quote(v: &serde_json::Value) -> nut04::MintQuoteResponse {
         amount_issued: v["amount_issued"].as_u64().unwrap_or_default(),
         updated_at: v["updated_at"].as_u64().unwrap_or_default(),
         method: v["method"].as_str().unwrap_or("bolt11").to_string(),
+        pubkey: None,
     }
 }
 
@@ -192,6 +193,7 @@ fn real_mint_through_offline_gate() {
         .post_mint_quote(nut04::MintQuoteRequest {
             amount: 8,
             unit: "sat".into(),
+            pubkey: None,
         })
         .expect("quote");
     eprintln!(

@@ -1,7 +1,7 @@
-# PARITY — `micronuts-mint` ↔ upstream `cashu` crate (v0.17.3)
+# PARITY — `micronuts-mint` ↔ upstream `cashu` crate (v0.18.0)
 
 `micronuts-mint` implements the Cashu mint role for the Micronuts demo using
-the upstream [`cashu`](https://crates.io/crates/cashu) crate (v0.17.3) for all
+the upstream [`cashu`](https://crates.io/crates/cashu) crate (v0.18.0) for all
 Diffie-Hellman / blind-signature crypto, while still exposing the stable
 `MintService` trait (defined in `cashu-core-lite/src/rpc.rs`) that returns
 `cashu-core-lite` types. A small conversion layer in `src/type_conversion.rs`
@@ -56,9 +56,11 @@ these types** — the trait boundary stays pure `cashu-core-lite`.
 | Proof | `nut00::Proof { amount: u64, id: String, secret: String, c: PublicKey }` | `cashu::nuts::nut00::Proof { amount: Amount, keyset_id: Id, secret: Secret, c: PublicKey, witness, dleq, p2pk_e }` |
 | Public keyset | `nut01::KeySet { id: String, unit: String, keys: Vec<KeyPair> }` | `cashu::nuts::nut01::KeysResponse { keysets: Vec<KeySet> }` (wrapping `nut02::KeySet`) |
 | Keyset metadata | `nut02::KeysetInfo { id: String, unit: String, active: bool, input_fee_ppk: u64 }` | `cashu::nuts::nut02::KeySetInfo { id: Id, unit: CurrencyUnit, active: bool, input_fee_ppk: u64, final_expiry: Option<u64> }` |
-| Mint quote req | `nut04::MintQuoteRequest { amount: u64, unit: String }` | `cashu::nuts::nut04::MintQuoteBolt11Request { amount: Amount, unit: CurrencyUnit }` |
-| Mint quote resp | `nut04::MintQuoteResponse { quote, request, paid, state, expiry }` | `cashu::nuts::nut04::MintQuoteBolt11Response { quote, request, paid, state, expiry }` |
-| Mint request | `nut04::MintRequest { quote, outputs }` | `cashu::nuts::nut04::MintBolt11Request { quote, outputs }` |
+| Mint quote req | `nut04::MintQuoteRequest { amount: u64, unit: String, pubkey: Option<String> }` | `cashu::nuts::nut04::MintQuoteBolt11Request { amount, unit, pubkey: Option<PublicKey> }` | NUT-20 quote-locking pubkey (lite carries the point as validated lowercase hex) |
+| Mint quote resp | `nut04::MintQuoteResponse { quote, request, paid, state, expiry, pubkey: Option<String> }` | `cashu::nuts::nut04::MintQuoteBolt11Response { …, pubkey: Option<PublicKey> }` | NUT-20: the response echoes the request pubkey |
+| Mint request | `nut04::MintRequest { quote, outputs, signature: Option<String> }` | `cashu::nuts::nut04::MintRequest<Q> { quote, outputs, signature: Option<String> }` | NUT-20 BIP-340 signature over `nut20::quote_sig_message` |
+| Batch check req | `nut29::BatchCheckMintQuoteRequest { quotes: Vec<String> }` | `cashu::nuts::nut29::BatchCheckMintQuoteRequest<Q> { quotes: Vec<Q> }` | NUT-29 |
+| Batch mint req | `nut29::BatchMintRequest { quotes, quote_amounts, outputs, signatures }` | `cashu::nuts::nut29::BatchMintRequest<Q>` | NUT-29; `signatures: Option<Vec<Option<String>>>` (null per unlocked quote) |
 | Mint response | `nut04::MintResponse { signatures }` | `cashu::nuts::nut04::MintBolt11Response { signatures }` |
 | Melt quote req | `nut05::MeltQuoteRequest { request, unit }` | `cashu::nuts::nut05::MeltQuoteBolt11Request { request, unit }` |
 | Melt quote resp | `nut05::MeltQuoteResponse { quote, amount, fee_reserve, paid, state, expiry }` | `cashu::nuts::nut05::MeltQuoteBolt11Response { quote, amount, fee_reserve, paid, state, expiry, payment_preimage }` |
@@ -122,6 +124,29 @@ Landed since (backend-driven rework 2026-09-02):
   enum rejects in SIG_INPUTS mode.
 - **Payment safety** — atomic batch double-spend rejection, keyset binding,
   spend-before-sign ordering.
+
+- **NUT-20 (quote locking, 2026-09-07)** — mint quotes accept `pubkey`
+  (stored on the quote, echoed in every quote response); `post_mint`
+  rejects a locked quote without a valid BIP-340 signature by that key.
+  The signed message is `cashu_core_lite::nuts::nut20::quote_sig_message`
+  (domain-separated, length-prefixed, minimal-BE amounts) — byte-identical
+  to upstream `MintRequest::msg_to_sign`; verification via
+  `cashu::PublicKey::verify` (SHA-256 internal), differential tests in
+  `tests/nut20_nut29_differential.rs`. Unlocked quotes ignore a stray
+  signature (upstream behavior).
+- **NUT-29 (batch minting, 2026-09-07)** — `POST /v1/mint/quote/bolt11/check`
+  (order-preserving, all-or-nothing) and `POST /v1/mint/bolt11/batch`
+  (spec-ordered validation: non-empty, unique, existing, same unit,
+  PAID, `Σ outputs == Σ quote amounts`, per-quote NUT-20 signatures over
+  ALL outputs). Limits `nut29::MAX_BATCH_QUOTES = 50` (advertised as
+  `max_batch_size`) and `nut29::MAX_BATCH_OUTPUTS = 1000`; batch-mint
+  success responses carry `BlindSignature` objects per the normative text
+  (the spec's string-array example is stale — documented divergence).
+- **NUT-19 (cache advertisement, 2026-09-07)** — the mint advertises
+  `{"19": {ttl: null, cached_endpoints: [POST /v1/mint/bolt11, POST
+  /v1/swap]}}`; the actual response cache lives at the HTTP edge
+  (micronuts-audit-adapter: method+path+payload keyed, 200 responses
+  replayed verbatim).
 
 Still not implemented: multiple keysets/rotation, fee_reserve from a real
 backend, async melt polling (PENDING is resolved within the single
