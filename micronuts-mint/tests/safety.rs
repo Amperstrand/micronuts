@@ -227,19 +227,17 @@ fn double_spend_across_operations_rejected() {
 }
 
 #[test]
-fn melt_change_exceeding_overpay_rejected_without_panic() {
-    // Regression: explicit change outputs summing above the overpay used
-    // to hit a plain `overpay - explicit_sum` subtraction BEFORE its own
-    // guard — a debug-build panic (mint_server DoS) and a wrapped
-    // remainder in release. Must be a clean AmountMismatch with the
-    // quote and proofs untouched, so the same quote succeeds when the
-    // change is corrected.
+fn melt_change_overask_signs_only_what_fits() {
+    // cdk parity (verified against a production cdk mint): 8 in,
+    // 5 required → overpay 3; a change request of [4,2] over-asks by
+    // 3. The melt still pays, signing only the fitting [2] and
+    // skipping the 4 — the mint never signs more than the inputs
+    // cover. Also the regression guard for the debug-build underflow
+    // that an earlier strict variant had here.
     let mut mint = zero_fee_mint();
     let keyset = mint.public_keyset();
     let mut rng = StdRng::seed_from_u64(77);
     let proofs = mint_proofs_direct(&mut mint, 8, &keyset, &mut rng).unwrap();
-    let input_sum: u64 = proofs.iter().map(|p| p.amount).sum();
-    assert_eq!(input_sum, 8);
 
     let melt_quote = mint
         .post_melt_quote(nut05::MeltQuoteRequest {
@@ -248,26 +246,22 @@ fn melt_change_exceeding_overpay_rejected_without_panic() {
         })
         .unwrap();
 
-    // 8 in, 5 required → overpay 3; explicit change of 4 exceeds it.
-    let (greedy, _) = blind_outputs(&[4], mint.keyset_id(), &mut rng).unwrap();
-    let result = mint.post_melt(nut05::MeltRequest {
-        quote: melt_quote.quote.clone(),
-        inputs: proofs.clone(),
-        outputs: Some(greedy),
-    });
-    assert!(matches!(result, Err(CashuError::AmountMismatch)));
-
-    // Nothing was claimed: the same quote with exact change succeeds
-    // (3 = 1 + 2, the power-of-two decomposition of the overpay).
-    let (exact, _) = blind_outputs(&[1, 2], mint.keyset_id(), &mut rng).unwrap();
+    let (overask, _) = blind_outputs(&[4, 2], mint.keyset_id(), &mut rng).unwrap();
     let response = mint
         .post_melt(nut05::MeltRequest {
             quote: melt_quote.quote,
             inputs: proofs,
-            outputs: Some(exact),
+            outputs: Some(overask),
         })
-        .expect("corrected melt succeeds");
+        .expect("over-asked melt pays with fitting change");
     assert!(response.paid);
+    let amounts: Vec<u64> = response
+        .change
+        .unwrap_or_default()
+        .iter()
+        .map(|s| s.amount)
+        .collect();
+    assert_eq!(amounts, vec![2]);
 }
 
 #[test]
@@ -317,13 +311,16 @@ fn swap_charges_nut08_input_fee_exactly() {
 }
 
 #[test]
-fn melt_change_must_equal_overpay_minus_fees() {
-    // ppk=20, one input (64) → fee = ceil(20/1000) = 1; melt 10 → change 53.
+fn melt_change_signs_what_fits_under_fee_accounting() {
+    // ppk=20, one input (64) → fee = ceil(20/1000) = 1; melt 10 →
+    // overpay 53. cdk parity: an under-asking change (52) is signed
+    // as-is (1 sat burned); exact change (53) comes back in full.
     let mut mint = fee_mint(20);
     let keyset = mint.public_keyset();
     let mut rng = StdRng::seed_from_u64(5);
-    let proofs = mint_proofs_direct(&mut mint, 64, &keyset, &mut rng).unwrap();
 
+    // Under-ask: 52 of 53 (32+16+4) — paid, 52 signed, 1 burned.
+    let proofs = mint_proofs_direct(&mut mint, 64, &keyset, &mut rng).unwrap();
     let melt_quote = mint
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo10sat1micronuts".to_string(),
@@ -331,17 +328,31 @@ fn melt_change_must_equal_overpay_minus_fees() {
         })
         .unwrap();
     assert_eq!(melt_quote.amount, 10);
+    let (outputs, _) = blind_outputs(&[32, 16, 4], mint.keyset_id(), &mut rng).unwrap();
+    let response = mint
+        .post_melt(nut05::MeltRequest {
+            quote: melt_quote.quote,
+            inputs: proofs,
+            outputs: Some(outputs),
+        })
+        .expect("under-asking melt pays");
+    assert!(response.paid);
+    let total: u64 = response
+        .change
+        .unwrap_or_default()
+        .iter()
+        .map(|s| s.amount)
+        .sum();
+    assert_eq!(total, 52);
 
-    // Wrong change (52 ≠ 53): rejected.
-    let (outputs, _) = blind_outputs(&[52], mint.keyset_id(), &mut rng).unwrap();
-    let result = mint.post_melt(nut05::MeltRequest {
-        quote: melt_quote.quote.clone(),
-        inputs: proofs.clone(),
-        outputs: Some(outputs),
-    });
-    assert!(matches!(result, Err(CashuError::AmountMismatch)));
-
-    // Exact change (53): accepted with signed change outputs.
+    // Exact: fresh proofs, 53 back in full.
+    let proofs = mint_proofs_direct(&mut mint, 64, &keyset, &mut rng).unwrap();
+    let melt_quote = mint
+        .post_melt_quote(nut05::MeltQuoteRequest {
+            request: "lnbcdemo10sat1micronuts".to_string(),
+            unit: "sat".to_string(),
+        })
+        .unwrap();
     let (outputs, _) = blind_outputs(&[32, 16, 4, 1], mint.keyset_id(), &mut rng).unwrap();
     let response = mint
         .post_melt(nut05::MeltRequest {

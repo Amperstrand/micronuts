@@ -541,28 +541,33 @@ impl DemoMint {
         // sum must equal the overpay exactly, or as blank outputs (amount 0)
         // onto which the mint imprints a power-of-two decomposition of the
         // overpay. Without outputs, the overpay is burned.
+        // NUT-05 + cdk parity: wallets may over-ask change (their fee
+        // estimate vs the mint's); the mint signs only outputs that
+        // fit within the overpay, in request order, skipping the
+        // excess — never signing more than the inputs cover. Verified
+        // against a production cdk mint (testnut): 8-sat input, 4+1
+        // required, change request [4,2] → signatures for [2] only,
+        // state PAID.
         let change_outputs: Option<Vec<nut00::BlindedMessage>> = match &request.outputs {
             Some(outputs) => {
-                let explicit_sum: u64 = outputs
-                    .iter()
-                    .try_fold(0u64, |acc, o| acc.checked_add(o.amount))
-                    .ok_or(CashuError::InvalidAmount)?;
                 let overpay = input_sum
                     .checked_sub(required)
                     .ok_or(CashuError::AmountMismatch)?;
-                let blank_count = outputs.iter().filter(|o| o.amount == 0).count();
-                // Blanks with zero remainder are tolerated (signed back as
-                // nothing); only explicit change must consume the overpay.
-                let remainder = overpay
-                    .checked_sub(explicit_sum)
-                    .ok_or(CashuError::AmountMismatch)?;
-                if blank_count == 0 && remainder != 0 {
-                    return Err(CashuError::AmountMismatch);
+                let mut filled: Vec<nut00::BlindedMessage> = Vec::with_capacity(outputs.len());
+                let mut budget = overpay;
+                let mut blank_count = 0;
+                for o in outputs {
+                    if o.amount == 0 {
+                        blank_count += 1;
+                        filled.push(o.clone());
+                    } else if o.amount <= budget {
+                        budget -= o.amount;
+                        filled.push(o.clone());
+                    }
                 }
-                self.check_outputs_signable(outputs)?;
-                let mut filled = outputs.clone();
+                self.check_outputs_signable(&filled)?;
                 if blank_count > 0 {
-                    self.imprint_blank_outputs(&mut filled, remainder, blank_count)?;
+                    self.imprint_blank_outputs(&mut filled, budget, blank_count)?;
                 }
                 Some(filled)
             }
