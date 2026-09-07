@@ -1,0 +1,12 @@
+# Gitleaks allowlist — every entry justified.
+title = "micronuts gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Official Cashu NUT-13 spec test vectors (cashubtc/nuts tests/13-tests.md, published by the spec) and the canonical cross-implementation vectors (cashu-cross-vectors.json lineage) — byte-exact test material by design"
+paths = [
+  '''cashu-core-lite/src/nuts/nut13\.rs''',
+  '''cashu-core-lite/tests/cross_vectors\.rs''',
+]
