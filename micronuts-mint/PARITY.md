@@ -103,17 +103,29 @@ Landed since (backend-driven rework 2026-09-02):
 - **NUT-09** — real session-scoped restore via the B_→signature index.
 - **DLEQ proofs (NUT-12)** — construction IS implemented via
   `cashu::BlindSignature::new` (upstream crypto path).
-- **NUT-10/11 (L1, #51)** — well-known Secret model + P2PK witness
+- **NUT-10/11 (L1+L2, #51)** — well-known Secret model + P2PK witness
   verification on swap/melt inputs (SIG_INPUTS/SIG_ALL, multisig via
   `pubkeys`/`n_sigs`, x-coordinate dedup), enforced before `claim_proofs`;
-  differential tests vs upstream in `tests/p2pk_differential.rs`.
+  locktime pathways gated by the injectable `MintClock`: pre-expiry the
+  primary pathway only, post-expiry the refund pathway opens additionally
+  (refund keys, `n_sigs_refund`; expired + no refund keys =
+  anyone-can-spend), boundary `locktime < now` strict as upstream;
+  differential tests vs upstream in `tests/p2pk_differential.rs` including
+  frozen-clock boundary tests (MockClock).
+- **NUT-14 (L3, #51)** — HTLC locks (hash lock in `data`, receiver
+  pathway = preimage + optional `pubkeys` signatures, always available;
+  sender pathway = refund keys after `locktime`; expired + no refund keys
+  = anyone-can-spend) enforced on both SIG_INPUTS and SIG_ALL message
+  paths; differential tests vs upstream in `tests/htlc_differential.rs`.
+  Spec-wins divergence (documented in `spending.rs`): a signatures-only
+  witness may spend the sender pathway, which upstream's untagged witness
+  enum rejects in SIG_INPUTS mode.
 - **Payment safety** — atomic batch double-spend rejection, keyset binding,
   spend-before-sign ordering.
 
 Still not implemented: multiple keysets/rotation, fee_reserve from a real
 backend, async melt polling (PENDING is resolved within the single
-post_melt call). Spending-condition follow-ups: locktime/refund pathways
-(L2) and HTLC (L3) are parsed but rejected as unspendable. Durable
+post_melt call). The #51 spending-conditions arc is complete (L0-L3). Durable
 persistence SHIPPED for the host mint and the
 upstream reserve (atomic file snapshots, #52/#59); the device NVS leg is
 #60 — see docs/PERSISTENCE-DESIGN.md.
