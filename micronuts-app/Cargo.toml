@@ -30,7 +30,11 @@ native-sim = ["std", "dep:sdl2", "dep:libc", "dep:embassy-executor"]
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
 rand = "0.8"
-
+png = "0.17"
 [[example]]
 name = "native_sim"
 required-features = ["native-sim"]
+
+[[example]]
+name = "shotui"
+required-features = ["std"]
