@@ -113,6 +113,15 @@ impl ProofDleq {
     }
 }
 
+// Note: CDK's CBOR serialization of ProofDleq scalars (e/s/r) uses
+// secp256k1's serde binary path, which emits a 32-element array of
+// small integers (tuple form) instead of the spec's byte string.
+// cashu-core-lite encodes/decodes byte strings per nuts/00.md V4
+// ("e": bytes, "s": bytes, "r": bytes). CDK-written raw CBOR tokens
+// with DLEQ will fail our decode (d.bytes()? on a tuple). This is
+// documented as an interop caveat — the walletport CDK interop test
+// re-encodes with our own encoder, so the raw-bytes path is untested.
+// Upstream issue to file after human review per AGENTS.md policy.
 impl<C> minicbor::Encode<C> for ProofDleq {
     fn encode<W: minicbor::encode::Write>(
         &self,
