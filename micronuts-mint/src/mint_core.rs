@@ -525,6 +525,7 @@ impl DemoMint {
             &request.inputs,
             request.outputs.as_deref(),
             Some(&request.quote),
+            self.clock.now_secs(),
         )?;
 
         let fee = self.input_fee_total(&request.inputs)?;
@@ -645,7 +646,12 @@ impl DemoMint {
 
         // NUT-10/11: spending conditions on the inputs must be satisfied
         // BEFORE any proof is claimed (atomic failure; see spending.rs).
-        crate::spending::verify_spending_conditions(&request.inputs, Some(&request.outputs), None)?;
+        crate::spending::verify_spending_conditions(
+            &request.inputs,
+            Some(&request.outputs),
+            None,
+            self.clock.now_secs(),
+        )?;
 
         let output_sum: u64 = request
             .outputs

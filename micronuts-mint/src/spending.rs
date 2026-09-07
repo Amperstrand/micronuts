@@ -1,23 +1,32 @@
-//! NUT-10/11 spending-condition enforcement for swap and melt inputs.
+//! NUT-10/11/14 spending-condition enforcement for swap and melt inputs.
 //!
 //! Sequencing rule (roadmap #51): [`verify_spending_conditions`] runs on
 //! the RAW inputs BEFORE [`crate::DemoMint`] calls `claim_proofs`, so a
 //! failed witness leaves the proofs unspent and the whole request atomic.
 //!
 //! Semantics mirror the upstream `cashu` crate 0.18 (the differential
-//! oracle; see tests/p2pk_differential.rs):
+//! oracle; see tests/p2pk_differential.rs and tests/htlc_differential.rs):
 //! - Non-condition secrets are skipped (anyone-can-spend, NUT-10 Caution).
 //! - A proof carrying a witness whose secret is NOT a condition is
 //!   rejected (upstream `IncorrectWitnessKind`).
-//! - HTLC-kind secrets are rejected as unsupported until L3.
 //! - SIG_INPUTS (default): every locked input needs its own witness
 //!   signing its own `secret` string.
-//! - SIG_ALL: every input must carry the SAME P2PK SIG_ALL condition; only
-//!   the FIRST input's witness is read, signing the aggregated
+//! - SIG_ALL: every input must carry the SAME condition (kind, data and
+//!   tags); only the FIRST input's witness is read, signing the aggregated
 //!   secret‖C‖amount‖B_‖(quote) message.
+//! - P2PK locktime (L2): before expiry only the primary pathway can spend;
+//!   after expiry the refund pathway opens (refund keys, `n_sigs_refund`
+//!   with x-dedup) while the primary pathway REMAINS available — the
+//!   refund path is additional (NUT-11 §Refund Multisig). Expired with no
+//!   refund keys is anyone-can-spend.
+//! - HTLC (L3): the receiver pathway (valid preimage + `pubkeys`
+//!   signatures) is always available; after expiry the sender pathway
+//!   (refund keys, no preimage needed) opens; expired with no refund keys
+//!   is anyone-can-spend.
 //!
-//! L1 scope: the locktime/refund pathway is parsed but not enforced — the
-//! lock is treated as permanent, so refund keys can never spend here (L2).
+//! Time comes in as `now` (unix seconds) from the mint's injectable
+//! [`crate::ln::MintClock`] — tests freeze time with `MockClock`, never by
+//! sleeping.
 
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -27,26 +36,64 @@ use cashu_core_lite::error::CashuError;
 use cashu_core_lite::keypair::PublicKey as LitePublicKey;
 use cashu_core_lite::nuts::nut00::{BlindedMessage, Proof};
 use cashu_core_lite::nuts::nut10::{self, SecretKind};
-use cashu_core_lite::nuts::nut11::{P2pkConditions, P2pkWitness, SigFlag};
+use cashu_core_lite::nuts::nut11::{P2pkConditions, P2pkWitness, SigFlag, SpendingRequirements};
+use cashu_core_lite::nuts::nut14::{HtlcConditions, HtlcWitness};
 
 use crate::type_conversion::lite_pk_to_cashu;
 
-/// A swap/melt input whose secret parsed as a P2PK spending condition.
-struct InputLock<'a> {
-    proof: &'a Proof,
-    secret: nut10::Secret,
-    conditions: P2pkConditions,
+/// A swap/melt input whose secret parsed as a spending condition.
+enum InputLock<'a> {
+    P2pk {
+        proof: &'a Proof,
+        secret: nut10::Secret,
+        conditions: P2pkConditions,
+    },
+    Htlc {
+        proof: &'a Proof,
+        secret: nut10::Secret,
+        conditions: HtlcConditions,
+    },
+}
+
+impl InputLock<'_> {
+    fn proof(&self) -> &Proof {
+        match self {
+            InputLock::P2pk { proof, .. } | InputLock::Htlc { proof, .. } => proof,
+        }
+    }
+
+    fn secret(&self) -> &nut10::Secret {
+        match self {
+            InputLock::P2pk { secret, .. } | InputLock::Htlc { secret, .. } => secret,
+        }
+    }
+
+    fn sigflag(&self) -> SigFlag {
+        match self {
+            InputLock::P2pk { conditions, .. } => conditions.sigflag,
+            InputLock::Htlc { conditions, .. } => conditions.sigflag,
+        }
+    }
+
+    fn requirements_at(&self, now: u64) -> SpendingRequirements {
+        match self {
+            InputLock::P2pk { conditions, .. } => conditions.requirements_at(now),
+            InputLock::Htlc { conditions, .. } => conditions.requirements_at(now),
+        }
+    }
 }
 
 // NUT #11: Spending conditions are defined for each individual `Proof` and not on a transaction level that can consist of multiple `Proofs`. Similarly, spending conditions must be satisfied by providing signatures or additional witness data for each `Proof` separately. For a transaction to be valid, all `Proofs` in that transaction must be unlocked successfully.
 //
 /// Verify every spending condition on a transaction's inputs. `outputs` is
 /// the request's blinded messages (as sent) and `quote_id` the melt quote —
-/// both only feed the SIG_ALL aggregated message.
+/// both only feed the SIG_ALL aggregated message. `now` is the mint's clock
+/// (unix seconds) and gates every locktime pathway.
 pub(crate) fn verify_spending_conditions(
     inputs: &[Proof],
     outputs: Option<&[BlindedMessage]>,
     quote_id: Option<&str>,
+    now: u64,
 ) -> Result<(), CashuError> {
     let mut locks: Vec<InputLock<'_>> = Vec::new();
     let mut saw_sig_all = false;
@@ -62,19 +109,21 @@ pub(crate) fn verify_spending_conditions(
                 }
             }
             Some(secret) => match secret.kind {
-                SecretKind::Htlc => {
-                    // HTLC enforcement is L3 (roadmap #51): reject as
-                    // unspendable rather than treating it anyone-can-spend,
-                    // which is the closest safe approximation of upstream
-                    // (whose HTLC verification also fails without a
-                    // preimage witness).
-                    return Err(CashuError::SpendConditionsNotMet);
-                }
                 SecretKind::P2PK => {
                     let conditions = P2pkConditions::from_secret(&secret)
                         .map_err(|_| CashuError::SpendConditionsNotMet)?;
                     saw_sig_all |= conditions.sigflag == SigFlag::SigAll;
-                    locks.push(InputLock {
+                    locks.push(InputLock::P2pk {
+                        proof,
+                        secret,
+                        conditions,
+                    });
+                }
+                SecretKind::Htlc => {
+                    let conditions = HtlcConditions::from_secret(&secret)
+                        .map_err(|_| CashuError::SpendConditionsNotMet)?;
+                    saw_sig_all |= conditions.sigflag == SigFlag::SigAll;
+                    locks.push(InputLock::Htlc {
                         proof,
                         secret,
                         conditions,
@@ -85,9 +134,9 @@ pub(crate) fn verify_spending_conditions(
     }
 
     if saw_sig_all {
-        verify_sig_all(inputs, &locks, outputs, quote_id)
+        verify_sig_all(inputs, &locks, outputs, quote_id, now)
     } else {
-        verify_inputs_individually(&locks)
+        verify_inputs_individually(&locks, now)
     }
 }
 
@@ -95,26 +144,126 @@ pub(crate) fn verify_spending_conditions(
 /// independently against its own secret string.
 // NUT #11: `SIG_INPUTS` requires valid signatures on all inputs independently. It is the default signature flag and will be applied if the `sigflag` tag is absent.
 // NUT #11: `SIG_INPUTS` means that each `Proof` (input) requires its own signature. The signature is provided in the `Proof.witness` field of each input separately.
-fn verify_inputs_individually(locks: &[InputLock<'_>]) -> Result<(), CashuError> {
+fn verify_inputs_individually(locks: &[InputLock<'_>], now: u64) -> Result<(), CashuError> {
     for lock in locks {
         // NUT #11: The `secret` field is **signed as a string**.
-        let witness = lock
-            .proof
-            .witness
-            .as_deref()
-            .and_then(P2pkWitness::from_json)
-            .ok_or(CashuError::SpendConditionsNotMet)?;
-        verify_witness_signatures(
-            lock.proof.secret.as_bytes(),
-            &lock.conditions.signing_pubkeys(),
-            &witness.signatures,
-            lock.conditions.required_sigs(),
-        )?;
+        let message = lock.proof().secret.as_bytes();
+        let requirements = lock.requirements_at(now);
+        match lock {
+            InputLock::P2pk { proof, .. } => {
+                let anyone_can_spend = requirements
+                    .refund_path
+                    .as_ref()
+                    .is_some_and(|refund| refund.is_anyone_can_spend());
+                if !anyone_can_spend {
+                    let witness = proof
+                        .witness
+                        .as_deref()
+                        .and_then(P2pkWitness::from_json)
+                        .ok_or(CashuError::SpendConditionsNotMet)?;
+                    verify_p2pk_pathways(message, &requirements, &witness.signatures)?;
+                }
+            }
+            InputLock::Htlc {
+                proof, conditions, ..
+            } => {
+                let witness = proof.witness.as_deref().and_then(HtlcWitness::from_json);
+                let preimage_valid = witness
+                    .as_ref()
+                    .map(|w| {
+                        w.preimage
+                            .as_deref()
+                            .is_some_and(|preimage| conditions.matches_preimage(preimage))
+                    })
+                    .unwrap_or(false);
+                verify_htlc_pathways(message, &requirements, witness.as_ref(), preimage_valid)?;
+            }
+        }
     }
     Ok(())
 }
 
-/// SIG_ALL: all inputs must share one P2PK SIG_ALL condition, and only the
+/// P2PK: the primary pathway is tried first and, when the lock has expired,
+/// the refund pathway additionally (count-based, mirroring upstream's
+/// try-primary-then-refund — a failed primary must not block a valid
+/// refund signature).
+fn verify_p2pk_pathways(
+    message: &[u8],
+    requirements: &SpendingRequirements,
+    signature_hexes: &[String],
+) -> Result<(), CashuError> {
+    if let Some(primary) = count_valid_signatures(message, &requirements.pubkeys, signature_hexes) {
+        if primary >= requirements.required_sigs {
+            return Ok(());
+        }
+    }
+    if let Some(refund) = &requirements.refund_path {
+        if let Some(refund_count) =
+            count_valid_signatures(message, &refund.pubkeys, signature_hexes)
+        {
+            if refund_count >= refund.required_sigs {
+                return Ok(());
+            }
+        }
+    }
+    Err(CashuError::SpendConditionsNotMet)
+}
+
+/// HTLC: receiver pathway (valid preimage + `pubkeys` signatures) is always
+/// available; otherwise the sender/refund pathway after expiry. Signature
+/// failures here are terminal (upstream propagates them with `?` instead of
+/// falling through to the refund pathway).
+// NUT #14: The receiver(s) listed in the `pubkeys` tag can spend the proof by providing **BOTH** of the following:
+// NUT #14: The sender(s) listed in the `refund` tag can spend the proof once the `locktime` lock has "expired" by providing signature(s) as per the [NUT-11][11] rules for **Refund MultiSig**.
+// Note: upstream divergence — cashu 0.18.0's untagged witness enum parses a
+// Note: signatures-only witness as P2PKWitness, so its `verify_htlc`
+// Note: rejects the sender pathway spent with `{"signatures":[…]}` (no
+// Note: preimage key) unless the lock is anyone-can-spend; only a witness
+// Note: carrying a (possibly wrong) preimage key reaches the refund check.
+// Note: NUT-14 defines the sender pathway as "providing signature(s) as per
+// Note: the NUT-11 rules", whose witness is the signatures array — the
+// Note: local spec files win: a signatures-only witness may spend an
+// Note: expired HTLC via the refund keys.
+fn verify_htlc_pathways(
+    message: &[u8],
+    requirements: &SpendingRequirements,
+    witness: Option<&HtlcWitness>,
+    preimage_valid: bool,
+) -> Result<(), CashuError> {
+    if !preimage_valid {
+        if let Some(refund) = &requirements.refund_path {
+            if refund.is_anyone_can_spend() {
+                // Preimage absent/invalid, lock expired, no refund keys.
+                return Ok(());
+            }
+        }
+    }
+    if preimage_valid {
+        // Receiver pathway: an absent pubkeys tag means the preimage alone
+        // spends (required_sigs == 0 in that case).
+        if requirements.required_sigs == 0 {
+            return Ok(());
+        }
+        let signatures = witness
+            .and_then(|w| w.signatures.as_deref())
+            .ok_or(CashuError::SpendConditionsNotMet)?;
+        verify_witness_signatures(
+            message,
+            &requirements.pubkeys,
+            signatures,
+            requirements.required_sigs,
+        )
+    } else if let Some(refund) = &requirements.refund_path {
+        let signatures = witness
+            .and_then(|w| w.signatures.as_deref())
+            .ok_or(CashuError::SpendConditionsNotMet)?;
+        verify_witness_signatures(message, &refund.pubkeys, signatures, refund.required_sigs)
+    } else {
+        Err(CashuError::SpendConditionsNotMet)
+    }
+}
+
+/// SIG_ALL: all inputs must share one condition (any kind), and only the
 /// first input's witness is checked against the aggregated message.
 // NUT #11: `SIG_ALL` requires valid signatures on all inputs and on all outputs of a transaction.
 // NUT #11: If one input has the signature flag `SIG_ALL`, all other inputs MUST have the same `Secret.data` and `Secret.tags`, and by extension, also be `SIG_ALL`.
@@ -124,32 +273,65 @@ fn verify_sig_all(
     locks: &[InputLock<'_>],
     outputs: Option<&[BlindedMessage]>,
     quote_id: Option<&str>,
+    now: u64,
 ) -> Result<(), CashuError> {
     // Every input must be locked (upstream requires every input to parse as
     // the same condition; a plain input mixed into a SIG_ALL transaction
     // fails there too), and the first input must itself be SIG_ALL.
-    if locks.len() != inputs.len() || locks[0].conditions.sigflag != SigFlag::SigAll {
+    if locks.len() != inputs.len() || locks[0].sigflag() != SigFlag::SigAll {
         return Err(CashuError::SpendConditionsNotMet);
     }
     let first = &locks[0];
     for lock in &locks[1..] {
-        if lock.secret.data != first.secret.data || lock.secret.tags != first.secret.tags {
+        if lock.secret().kind != first.secret().kind
+            || lock.secret().data != first.secret().data
+            || lock.secret().tags != first.secret().tags
+        {
             return Err(CashuError::SpendConditionsNotMet);
         }
     }
 
     let message = sig_all_message(inputs, outputs, quote_id);
-    let witness = inputs[0]
-        .witness
-        .as_deref()
-        .and_then(P2pkWitness::from_json)
-        .ok_or(CashuError::SpendConditionsNotMet)?;
-    verify_witness_signatures(
-        message.as_bytes(),
-        &first.conditions.signing_pubkeys(),
-        &witness.signatures,
-        first.conditions.required_sigs(),
-    )
+    let requirements = first.requirements_at(now);
+    match first {
+        InputLock::P2pk { .. } => {
+            if let Some(refund) = &requirements.refund_path {
+                if refund.is_anyone_can_spend() {
+                    // Expired lock with no refund keys.
+                    return Ok(());
+                }
+            }
+            let witness = inputs[0]
+                .witness
+                .as_deref()
+                .and_then(P2pkWitness::from_json)
+                .ok_or(CashuError::SpendConditionsNotMet)?;
+            verify_p2pk_pathways(message.as_bytes(), &requirements, &witness.signatures)
+        }
+        InputLock::Htlc { conditions, .. } => {
+            let witness = inputs[0]
+                .witness
+                .as_deref()
+                .and_then(HtlcWitness::from_json);
+            let preimage_valid = witness
+                .as_ref()
+                .map(|w| {
+                    w.preimage
+                        .as_deref()
+                        .is_some_and(|preimage| conditions.matches_preimage(preimage))
+                })
+                .unwrap_or(false);
+            // Unlike the SIG_INPUTS path, upstream's `verify_sig_all_htlc`
+            // accepts a signatures-only (P2PK-shape) witness for the sender
+            // pathway, so the generic parse needs no divergence note here.
+            verify_htlc_pathways(
+                message.as_bytes(),
+                &requirements,
+                witness.as_ref(),
+                preimage_valid,
+            )
+        }
+    }
 }
 
 /// The SIG_ALL aggregated message.
@@ -182,22 +364,22 @@ fn sig_all_message(
     message
 }
 
-/// Count distinct locked keys (by x-coordinate) with a valid signature and
-/// require `required` of them. Any unparseable signature fails the check,
-/// and a key presenting TWO valid signatures is rejected (upstream
-/// `DuplicateSignature`).
+/// Count distinct locked keys (by x-coordinate) with a valid signature.
+/// `None` when any signature is unparseable or a key verifies twice
+/// (upstream `InvalidSignature` / `DuplicateSignature` — both make the
+/// PATHWAY invalid, not the whole request, so the caller may still try the
+/// other pathway).
 // NUT #11: Because Schnorr signatures are non-deterministic (due to auxiliary random data), we expect a minimum number of unique public keys with valid signatures instead of expecting a minimum number of signatures.
-fn verify_witness_signatures(
+fn count_valid_signatures(
     message: &[u8],
     locked_pubkeys: &[LitePublicKey],
     signature_hexes: &[String],
-    required: u64,
-) -> Result<(), CashuError> {
+) -> Option<u64> {
     let signatures: Vec<Signature> = signature_hexes
         .iter()
         .map(|hex_str| Signature::from_str(hex_str))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CashuError::SpendConditionsNotMet)?;
+        .ok()?;
 
     let mut verified_x_coordinates: HashSet<[u8; 32]> = HashSet::new();
     for locked in locked_pubkeys {
@@ -209,16 +391,26 @@ fn verify_witness_signatures(
                 x.copy_from_slice(&compressed[1..33]);
                 if !verified_x_coordinates.insert(x) {
                     // Same key verified twice — duplicate signature.
-                    return Err(CashuError::SpendConditionsNotMet);
+                    return None;
                 }
             }
         }
     }
 
-    if verified_x_coordinates.len() as u64 >= required {
-        Ok(())
-    } else {
-        Err(CashuError::SpendConditionsNotMet)
+    Some(verified_x_coordinates.len() as u64)
+}
+
+/// Require `required` distinct locked keys with a valid signature; any
+/// unparseable signature or duplicate verification fails the check outright.
+fn verify_witness_signatures(
+    message: &[u8],
+    locked_pubkeys: &[LitePublicKey],
+    signature_hexes: &[String],
+    required: u64,
+) -> Result<(), CashuError> {
+    match count_valid_signatures(message, locked_pubkeys, signature_hexes) {
+        Some(count) if count >= required => Ok(()),
+        _ => Err(CashuError::SpendConditionsNotMet),
     }
 }
 

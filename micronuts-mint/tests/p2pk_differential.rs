@@ -7,9 +7,13 @@
 //! each scenario additionally asserts the upstream verifier agrees with our
 //! mint's accept/reject decision.
 //!
-//! L1 scope note: scenarios here are locktime-free (or future locktime),
-//! where upstream and our permanent-lock L1 semantics coincide. Refund
-//! spending after expiry is L2 (roadmap #51).
+//! L2 scope: locktime pathways are enforced. Differential scenarios use
+//! locktimes far from the boundary (long-expired or far-future) so the
+//! upstream oracle's wall clock and our injectable clock always agree;
+//! the exact-boundary behavior (locktime == now) is pinned by frozen-clock
+//! tests against OUR mint only — upstream's verifier reads the real wall
+//! clock, so sub-second boundary agreement cannot be differentially
+//! asserted. L3 HTLC scenarios live in htlc_differential.rs.
 
 use std::str::FromStr;
 
@@ -29,6 +33,7 @@ use cashu::secret::Secret as CashuSecret;
 use cashu::{Amount, Id};
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::nuts::{nut00, nut03, nut04, nut05};
+use micronuts_mint::ln::{FakeWallet, MintClock, MockClock};
 use micronuts_mint::type_conversion::{cashu_pk_to_lite, lite_pk_to_cashu};
 use micronuts_mint::DemoMint;
 
@@ -73,7 +78,15 @@ fn witness_json(signatures: &[String]) -> String {
 /// A fresh demo mint with proofs minted over caller-chosen secrets (the
 /// spending condition travels inside the secret, blind-signed by the mint).
 fn mint_with_secrets(secret_amounts: &[(String, u64)]) -> (DemoMint, Vec<nut00::Proof>) {
-    let mut mint = DemoMint::new();
+    mint_with_secrets_at(Box::new(micronuts_mint::ln::SystemClock), secret_amounts)
+}
+
+/// [`mint_with_secrets`] with an injected clock (frozen-time scenarios).
+fn mint_with_secrets_at(
+    clock: Box<dyn MintClock>,
+    secret_amounts: &[(String, u64)],
+) -> (DemoMint, Vec<nut00::Proof>) {
+    let mut mint = DemoMint::with_backend(Box::new(FakeWallet), clock, 0);
     let keyset = mint.public_keyset();
     let total: u64 = secret_amounts.iter().map(|(_, a)| a).sum();
 
@@ -741,4 +754,300 @@ fn future_locktime_primary_path_still_spends() {
     let secret_str = proofs[0].secret.clone();
     proofs[0].witness = Some(witness_json(&[sign_hex(&key, &secret_str)]));
     assert_swap_differential(&mut mint, proofs, true);
+}
+
+// ---- L2 locktime semantics (refund pathways after expiry) ----
+
+/// Long-expired locktime: the upstream oracle's wall clock and any sane
+/// test clock agree the lock has expired.
+const EXPIRED_LOCKTIME: u64 = 1_600_000_000; // 2020-09-13
+
+#[test]
+fn post_expiry_refund_key_spends() {
+    let key = signing_key(30);
+    let refund_key = signing_key(31);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    // No witness: still locked (refund path needs its signature).
+    assert_swap_differential(&mut mint, proofs.clone(), false);
+
+    // The refund key alone spends after expiry.
+    proofs[0].witness = Some(witness_json(&[sign_hex(&refund_key, &proofs[0].secret)]));
+    assert_swap_differential(&mut mint, proofs, true);
+}
+
+#[test]
+fn post_expiry_primary_pathway_still_spends() {
+    // NUT-11 §Refund Multisig: the refund path is ADDITIONAL — the primary
+    // pathway continues to apply after expiry (upstream mirrors this).
+    let key = signing_key(32);
+    let refund_key = signing_key(33);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    let secret_str = proofs[0].secret.clone();
+    proofs[0].witness = Some(witness_json(&[sign_hex(&key, &secret_str)]));
+    assert_swap_differential(&mut mint, proofs, true);
+}
+
+#[test]
+fn post_expiry_no_refund_keys_anyone_can_spend() {
+    let key = signing_key(34);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    // No witness at all: expired + no refund keys → anyone-can-spend.
+    assert_swap_differential(&mut mint, proofs, true);
+}
+
+#[test]
+fn post_expiry_refund_multisig_2of2() {
+    let key = signing_key(35);
+    let refund_a = signing_key(36);
+    let refund_b = signing_key(37);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        refund_keys: Some(vec![refund_a.public_key(), refund_b.public_key()]),
+        num_sigs_refund: Some(2),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+    let message = proofs[0].secret.clone();
+
+    // One refund signature of two required: fail.
+    proofs[0].witness = Some(witness_json(&[sign_hex(&refund_a, &message)]));
+    assert_swap_differential(&mut mint, proofs.clone(), false);
+
+    // Both refund keys: pass.
+    proofs[0].witness = Some(witness_json(&[
+        sign_hex(&refund_a, &message),
+        sign_hex(&refund_b, &message),
+    ]));
+    assert_swap_differential(&mut mint, proofs, true);
+}
+
+#[test]
+fn post_expiry_primary_key_does_not_count_as_refund_signature() {
+    // A 2-of-2 primary the single primary signature cannot satisfy, with a
+    // 1-of-1 refund pathway the primary key is NOT part of: the primary
+    // signature must not serve as the refund signature.
+    let key = signing_key(38);
+    let k2 = signing_key(40);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        pubkeys: Some(vec![k2.public_key()]),
+        num_sigs: Some(2),
+        refund_keys: Some(vec![signing_key(41).public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+    let message = proofs[0].secret.clone();
+
+    proofs[0].witness = Some(witness_json(&[sign_hex(&key, &message)]));
+    assert_swap_differential(&mut mint, proofs, false);
+}
+
+#[test]
+fn sig_all_post_expiry_refund_key_spends_transaction() {
+    let key = signing_key(42);
+    let refund_key = signing_key(43);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_all_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    let total: u64 = proofs.iter().map(|p| p.amount).sum();
+    let outputs = swap_outputs(total);
+    let mut cashu_request = CashuSwapRequest::new(
+        proofs.iter().map(to_cashu_proof).collect(),
+        to_cashu_outputs(&outputs),
+    );
+    cashu_request
+        .sign_sig_all(refund_key.clone())
+        .expect("upstream signs with the refund key");
+    let witness = match &cashu_request.inputs()[0].witness {
+        Some(CashuWitness::P2PKWitness(w)) => serde_json::to_string(w).unwrap(),
+        other => panic!("expected P2PK witness, got {other:?}"),
+    };
+    assert!(cashu_request.verify_spending_conditions().is_ok());
+
+    proofs[0].witness = Some(witness);
+    let ours = mint.post_swap(nut03::SwapRequest {
+        inputs: proofs,
+        outputs,
+    });
+    assert!(
+        ours.is_ok(),
+        "our mint rejected the refund SIG_ALL swap: {ours:?}"
+    );
+}
+
+#[test]
+fn sig_all_post_expiry_no_refund_anyone_can_spend() {
+    let key = signing_key(44);
+    let conditions = Conditions {
+        locktime: Some(EXPIRED_LOCKTIME),
+        ..sig_all_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    // No witness: expired + no refund keys → anyone-can-spend even under
+    // SIG_ALL (upstream checks this before looking for a witness).
+    assert_swap_differential(&mut mint, proofs, true);
+}
+
+#[test]
+fn sig_all_pre_expiry_refund_signature_blocked() {
+    let key = signing_key(45);
+    let refund_key = signing_key(46);
+    let future = 4_102_444_800u64; // 2100-01-01
+    let conditions = Conditions {
+        locktime: Some(future),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_all_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mut mint, mut proofs) = mint_with_secrets(&[(secret, 8)]);
+
+    let total: u64 = proofs.iter().map(|p| p.amount).sum();
+    let outputs = swap_outputs(total);
+    let mut cashu_request = CashuSwapRequest::new(
+        proofs.iter().map(to_cashu_proof).collect(),
+        to_cashu_outputs(&outputs),
+    );
+    cashu_request
+        .sign_sig_all(refund_key.clone())
+        .expect("upstream signs");
+    let witness = match &cashu_request.inputs()[0].witness {
+        Some(CashuWitness::P2PKWitness(w)) => serde_json::to_string(w).unwrap(),
+        other => panic!("expected P2PK witness, got {other:?}"),
+    };
+    assert!(!cashu_request.verify_spending_conditions().is_ok());
+
+    proofs[0].witness = Some(witness);
+    let upstream = upstream_swap_verdict(&proofs, &outputs);
+    assert!(!upstream, "upstream must block pre-expiry refund SIG_ALL");
+    let ours = mint.post_swap(nut03::SwapRequest {
+        inputs: proofs,
+        outputs,
+    });
+    assert!(matches!(ours, Err(CashuError::SpendConditionsNotMet)));
+}
+
+// ---- frozen-clock boundary tests (OUR mint; the upstream oracle reads
+// ---- the wall clock, so the exact boundary cannot be tested
+// ---- differentially — see the module docs) ----
+
+const FROZEN_NOW: u64 = 1_700_000_050;
+
+fn frozen_mint_with_locktime(locktime: u64) -> (DemoMint, Vec<nut00::Proof>, CashuSecretKey) {
+    let key = signing_key(47);
+    let refund_key = signing_key(48);
+    let conditions = Conditions {
+        locktime: Some(locktime),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let (mint, proofs) = mint_with_secrets_at(Box::new(MockClock::new(FROZEN_NOW)), &[(secret, 8)]);
+    (mint, proofs, refund_key)
+}
+
+fn refund_attempt(proofs: &[nut00::Proof], refund_key: &CashuSecretKey) -> Vec<nut00::Proof> {
+    let mut attempt = proofs.to_vec();
+    attempt[0].witness = Some(witness_json(&[sign_hex(refund_key, &attempt[0].secret)]));
+    attempt
+}
+
+/// locktime == now: NOT expired (upstream computes `locktime < now`
+/// strictly; the spec's "greater than locktime" wording agrees) — the
+/// refund pathway stays closed for one more second.
+#[test]
+fn boundary_locktime_equals_now_still_active() {
+    let (mut mint, proofs, refund_key) = frozen_mint_with_locktime(FROZEN_NOW);
+    let err = try_swap(&mut mint, refund_attempt(&proofs, &refund_key)).unwrap_err();
+    assert_eq!(err, CashuError::SpendConditionsNotMet);
+}
+
+/// locktime == now - 1: expired — the refund pathway is open.
+#[test]
+fn boundary_locktime_now_minus_one_expired() {
+    let (mut mint, proofs, refund_key) = frozen_mint_with_locktime(FROZEN_NOW - 1);
+    let total: u64 = proofs.iter().map(|p| p.amount).sum();
+    let outputs = swap_outputs(total);
+    let inputs = refund_attempt(&proofs, &refund_key);
+    let result = mint.post_swap(nut03::SwapRequest { inputs, outputs });
+    assert!(
+        result.is_ok(),
+        "refund must spend at now = locktime + 1: {result:?}"
+    );
+}
+
+/// locktime == now + 1: active — the refund pathway is closed.
+#[test]
+fn boundary_locktime_now_plus_one_active() {
+    let (mut mint, proofs, refund_key) = frozen_mint_with_locktime(FROZEN_NOW + 1);
+    let err = try_swap(&mut mint, refund_attempt(&proofs, &refund_key)).unwrap_err();
+    assert_eq!(err, CashuError::SpendConditionsNotMet);
+}
+
+/// The same proofs transition from locked to refund-spendable purely by
+/// the clock advancing past the locktime (no re-minting).
+#[test]
+fn boundary_clock_advance_opens_refund_pathway() {
+    let key = signing_key(49);
+    let refund_key = signing_key(50);
+    let conditions = Conditions {
+        locktime: Some(FROZEN_NOW + 10),
+        refund_keys: Some(vec![refund_key.public_key()]),
+        num_sigs_refund: Some(1),
+        ..sig_inputs_conditions()
+    };
+    let secret = upstream_p2pk_secret(&key.public_key(), Some(conditions));
+    let clock = MockClock::new(FROZEN_NOW);
+    let (mut mint, proofs) = mint_with_secrets_at(Box::new(clock.clone()), &[(secret, 8)]);
+
+    // Before expiry: refund signature rejected, proofs stay unspent.
+    let err = try_swap(&mut mint, refund_attempt(&proofs, &refund_key)).unwrap_err();
+    assert_eq!(err, CashuError::SpendConditionsNotMet);
+
+    // Freeze-thaw: advance the SAME clock past the locktime.
+    clock.advance(11);
+    let total: u64 = proofs.iter().map(|p| p.amount).sum();
+    let outputs = swap_outputs(total);
+    let result = mint.post_swap(nut03::SwapRequest {
+        inputs: refund_attempt(&proofs, &refund_key),
+        outputs,
+    });
+    assert!(
+        result.is_ok(),
+        "refund must spend after the clock advances: {result:?}"
+    );
 }

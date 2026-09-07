@@ -7,7 +7,6 @@
 //!
 //! `MintClock` isolates time so quote expiry is testable.
 
-use std::cell::Cell;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cashu_core_lite::error::CashuError;
@@ -82,33 +81,36 @@ impl MintClock for SystemClock {
     }
 }
 
-/// Test clock: a settable/advancable unix-seconds cell.
+/// Test clock: a settable/advancable unix-seconds cell. Clones share the
+/// same clock, so a test can hand one to the mint and advance time later.
+#[derive(Clone)]
 pub struct MockClock {
-    now: Cell<u64>,
+    now: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl MockClock {
     /// Create a clock pinned to `start` unix seconds.
     pub fn new(start: u64) -> Self {
         Self {
-            now: Cell::new(start),
+            now: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(start)),
         }
     }
 
     /// Jump the clock to `now` unix seconds.
     pub fn set(&self, now: u64) {
-        self.now.set(now);
+        self.now.store(now, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Advance the clock by `secs` seconds.
     pub fn advance(&self, secs: u64) {
-        self.now.set(self.now.get().saturating_add(secs));
+        self.now
+            .fetch_add(secs, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
 impl MintClock for MockClock {
     fn now_secs(&self) -> u64 {
-        self.now.get()
+        self.now.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
