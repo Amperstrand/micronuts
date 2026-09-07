@@ -7,15 +7,23 @@ carries the sequencing rationale. Update both together.
 **Current state (all CI-green, 8/8 jobs incl. first-ever Xtensa link):**
 host mint prototype with durable state (mint + reserve), upstream
 settlement verified end-to-end against testnut (fake) and signut (real
-CLN signet, two-cycle restart proof), conformance 69/109.
+CLN signet, two-cycle restart proof), conformance 74/107 (2026-09-07
+matrix; was 69/107 before #51 L0+L1).
 
 ## 1. NUT-10/11/14 spending conditions — #51 (mint line)
 
-The conformance long pole (~35 scenarios). Layered plan lives on the
-issue (L0 secret model → L1 P2PK+sigflags → L2 locktime → L3 HTLC);
-L0+L1 is one focused session. Sequencing rule already recorded there:
-witness verification precedes `claim_proofs`; restart-harness cases ride
-along. Expect ~69→~78 after L1.
+The conformance long pole. Layered plan lives on the issue (L0 secret
+model → L1 P2PK+sigflags → L2 locktime → L3 HTLC); **L0+L1 landed
+2026-09-07** (NUT-10 Secret model + P2PK witness enforcement before
+`claim_proofs`, differential tests vs cashu 0.18 in
+`micronuts-mint/tests/p2pk_differential.rs`; 19 matrix scenarios fixed;
+the 14 now-failing expiry/HTLC spends passed only vacuously before).
+Sequencing rule already recorded there: witness verification precedes
+`claim_proofs`; restart-harness cases ride along. Next: L2 locktime
+(+~5 scenarios), then L3 HTLC (+~13). Known non-L2/L3 matrix crumbs:
+melt AMOUNT_MISMATCH path (4, pre-existing), NUT-20/29/19 (~7), and one
+runner no-op tamper (`p2pk_sigall_output_amounts_swapped_fail` re-prefixes
+`0` onto a `02/03` hex key — a no-op; document upstream before touching).
 
 ## 2. Security findings from FIPS gate-2 — #54, #55, #57, #56, #58 (hardware/FIPS line, parallel session's queue)
 
