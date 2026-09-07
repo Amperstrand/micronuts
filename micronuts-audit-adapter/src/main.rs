@@ -21,6 +21,7 @@
 // this standalone adapter.
 #![allow(clippy::result_large_err)]
 
+use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
 use std::process::Stdio;
@@ -33,7 +34,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use cashu_core_lite::error::CashuError;
-use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09, nut29};
 use cashu_core_lite::rpc::{
     decode_rpc_response, encode_rpc_request, MeltQuoteLookupRequest, MintQuoteLookupRequest,
     MintRpcMethod, MintRpcPayload, MintRpcRequest, MintRpcResult,
@@ -161,10 +162,12 @@ impl MintProcess {
 }
 
 /// Adapter-wide shared state: the long-lived mint subprocess plus a mutex that
-/// serializes concurrent HTTP handlers through the single stdin/stdout pair.
+/// serializes concurrent HTTP handlers through the single stdin/stdout pair,
+/// and the NUT-19 response cache (method + path + payload → last 200 body).
 #[derive(Clone)]
 struct AdapterState {
     mint: Arc<Mutex<MintProcess>>,
+    nut19_cache: Arc<Mutex<HashMap<String, Value>>>,
 }
 
 impl AdapterState {
@@ -189,6 +192,28 @@ impl AdapterState {
             }
         }
     }
+
+    /// NUT-19 derive-and-repeat: look up the cached 200 body for
+    /// `method path payload`; on miss, run `handler`, and store its success
+    /// body under the same key before returning it. Non-200 outcomes pass
+    /// through uncached.
+    async fn cached_post<F, Fut>(&self, path: &str, body: &Value, handler: F) -> Response
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Value, Response>>,
+    {
+        let key = format!("POST {path} {body}");
+        if let Some(cached) = self.nut19_cache.lock().await.get(&key) {
+            return (StatusCode::OK, Json(cached.clone())).into_response();
+        }
+        match handler().await {
+            Ok(value) => {
+                self.nut19_cache.lock().await.insert(key, value.clone());
+                (StatusCode::OK, Json(value)).into_response()
+            }
+            Err(resp) => resp,
+        }
+    }
 }
 
 #[tokio::main]
@@ -202,6 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mint = MintProcess::spawn(&mint_bin)?;
     let state = AdapterState {
         mint: Arc::new(Mutex::new(mint)),
+        nut19_cache: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -214,8 +240,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/keysets", get(get_keysets))
         // NUT-04
         .route("/v1/mint/quote/bolt11", post(post_mint_quote))
+        .route("/v1/mint/quote/bolt11/check", post(post_mint_quote_check))
         .route("/v1/mint/quote/bolt11/{quote}", get(get_mint_quote))
         .route("/v1/mint/bolt11", post(post_mint))
+        .route("/v1/mint/bolt11/batch", post(post_mint_batch))
         // NUT-03
         .route("/v1/swap", post(post_swap))
         // NUT-05
@@ -338,34 +366,79 @@ async fn get_mint_quote(State(state): State<AdapterState>, Path(quote): Path<Str
     }
 }
 
-/// POST /v1/mint/bolt11 — NUT-04 mint blinded outputs.
+/// POST /v1/mint/bolt11 — NUT-04 mint blinded outputs (NUT-19 cached).
 async fn post_mint(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
-    let request = match parse_mint_request(&body) {
-        Ok(r) => r,
+    state
+        .cached_post("/v1/mint/bolt11", &body, || async {
+            let request = match parse_mint_request(&body) {
+                Ok(r) => r,
+                Err(resp) => return Err(resp),
+            };
+            match state.call_mint(MintRpcMethod::Mint(request)).await {
+                Ok(MintRpcResult::Mint(resp)) => Ok(mint_response_to_json(&resp)),
+                Ok(other) => Err(unexpected_result_response("Mint", &other)),
+                Err(resp) => Err(resp),
+            }
+        })
+        .await
+}
+
+/// POST /v1/mint/quote/bolt11/check — NUT-29 batch quote state check.
+async fn post_mint_quote_check(
+    State(state): State<AdapterState>,
+    Json(body): Json<Value>,
+) -> Response {
+    let quotes = match parse_quote_ids(&body) {
+        Ok(q) => q,
         Err(resp) => return resp,
     };
-    match state.call_mint(MintRpcMethod::Mint(request)).await {
-        Ok(MintRpcResult::Mint(resp)) => {
-            (StatusCode::OK, Json(mint_response_to_json(&resp))).into_response()
-        }
-        Ok(other) => unexpected_result_response("Mint", &other),
+    let request = nut29::BatchCheckMintQuoteRequest { quotes };
+    match state
+        .call_mint(MintRpcMethod::BatchCheckMintQuotes(request))
+        .await
+    {
+        Ok(MintRpcResult::BatchCheckMintQuotes(responses)) => (
+            StatusCode::OK,
+            Json(Value::Array(
+                responses.iter().map(mint_quote_response_to_json).collect(),
+            )),
+        )
+            .into_response(),
+        Ok(other) => unexpected_result_response("BatchCheckMintQuotes", &other),
         Err(resp) => resp,
     }
 }
 
-/// POST /v1/swap — NUT-03 swap proofs for new outputs.
-async fn post_swap(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
-    let request = match parse_swap_request(&body) {
+/// POST /v1/mint/bolt11/batch — NUT-29 batch mint.
+async fn post_mint_batch(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
+    let request = match parse_batch_mint_request(&body) {
         Ok(r) => r,
         Err(resp) => return resp,
     };
-    match state.call_mint(MintRpcMethod::Swap(request)).await {
-        Ok(MintRpcResult::Swap(resp)) => {
-            (StatusCode::OK, Json(swap_response_to_json(&resp))).into_response()
+    match state.call_mint(MintRpcMethod::BatchMint(request)).await {
+        Ok(MintRpcResult::BatchMint(resp)) => {
+            (StatusCode::OK, Json(mint_response_to_json(&resp))).into_response()
         }
-        Ok(other) => unexpected_result_response("Swap", &other),
+        Ok(other) => unexpected_result_response("BatchMint", &other),
         Err(resp) => resp,
     }
+}
+
+/// POST /v1/swap — NUT-03 swap proofs for new outputs (NUT-19 cached).
+async fn post_swap(State(state): State<AdapterState>, Json(body): Json<Value>) -> Response {
+    state
+        .cached_post("/v1/swap", &body, || async {
+            let request = match parse_swap_request(&body) {
+                Ok(r) => r,
+                Err(resp) => return Err(resp),
+            };
+            match state.call_mint(MintRpcMethod::Swap(request)).await {
+                Ok(MintRpcResult::Swap(resp)) => Ok(swap_response_to_json(&resp)),
+                Ok(other) => Err(unexpected_result_response("Swap", &other)),
+                Err(resp) => Err(resp),
+            }
+        })
+        .await
 }
 
 /// POST /v1/melt/quote/bolt11 — NUT-05 melt quote creation.
@@ -475,6 +548,10 @@ fn cashu_error_to_response(err: &CashuError) -> Response {
         CashuError::MeltAlreadyPaid => (StatusCode::BAD_REQUEST, "MELT_ALREADY_PAID"),
         CashuError::SpendConditionsNotMet => (StatusCode::BAD_REQUEST, "SPEND_CONDITIONS_NOT_MET"),
         CashuError::PaymentFailed => (StatusCode::INTERNAL_SERVER_ERROR, "PAYMENT_FAILED"),
+        CashuError::QuoteSignatureInvalid => (StatusCode::BAD_REQUEST, "QUOTE_SIGNATURE_INVALID"),
+        CashuError::BatchTooLarge => (StatusCode::BAD_REQUEST, "BATCH_TOO_LARGE"),
+        CashuError::TooManyOutputs => (StatusCode::BAD_REQUEST, "TOO_MANY_OUTPUTS"),
+        CashuError::BatchQuoteNotUnique => (StatusCode::BAD_REQUEST, "BATCH_QUOTE_NOT_UNIQUE"),
         CashuError::Protocol(_) => (StatusCode::INTERNAL_SERVER_ERROR, "PROTOCOL_ERROR"),
         CashuError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR"),
         CashuError::Transport(_) => (StatusCode::INTERNAL_SERVER_ERROR, "TRANSPORT_ERROR"),
@@ -524,9 +601,21 @@ fn parse_mint_quote_request(body: &Value) -> Result<nut04::MintQuoteRequest, Res
         .get("unit")
         .and_then(|v| v.as_str())
         .ok_or_else(|| bad_request("unit", "missing or not a string"))?;
+    // NUT-20: optional locking pubkey — validated as a point and forwarded
+    // as canonical lowercase hex so the quote response echoes it verbatim.
+    let pubkey = match body.get("pubkey") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => {
+            let point = parse_public_key_from_hex(s)
+                .map_err(|_| bad_request("pubkey", "not a valid compressed secp256k1 point"))?;
+            Some(hex::encode(point.to_bytes()))
+        }
+        Some(_) => return Err(bad_request("pubkey", "expected a hex string or null")),
+    };
     Ok(nut04::MintQuoteRequest {
         amount,
         unit: unit.to_string(),
+        pubkey,
     })
 }
 
@@ -542,9 +631,81 @@ fn parse_mint_request(body: &Value) -> Result<nut04::MintRequest, Response> {
         .iter()
         .map(parse_blinded_message)
         .collect::<Result<_, _>>()?;
+    let signature = body
+        .get("signature")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     Ok(nut04::MintRequest {
         quote: quote.to_string(),
         outputs,
+        signature,
+    })
+}
+
+fn parse_quote_ids(body: &Value) -> Result<Vec<String>, Response> {
+    body.get("quotes")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| bad_request("quotes", "missing or not an array"))?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| bad_request("quotes", "every entry must be a quote id string"))
+        })
+        .collect()
+}
+
+fn parse_batch_mint_request(body: &Value) -> Result<nut29::BatchMintRequest, Response> {
+    let quotes = parse_quote_ids(body)?;
+    if quotes.is_empty() {
+        return Err(bad_request("quotes", "must contain at least one quote id"));
+    }
+    let raw_outputs = body
+        .get("outputs")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| bad_request("outputs", "missing or not an array"))?;
+    // Reject oversized batches before per-output validation so the limit
+    // error surfaces even when the outputs are also malformed.
+    if raw_outputs.len() > nut29::MAX_BATCH_OUTPUTS {
+        return Err(cashu_error_to_response(&CashuError::TooManyOutputs));
+    }
+    let quote_amounts = match body.get("quote_amounts") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(arr)) => Some(
+            arr.iter()
+                .map(|v| {
+                    v.as_u64()
+                        .ok_or_else(|| bad_request("quote_amounts", "entries must be integers"))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Some(_) => return Err(bad_request("quote_amounts", "expected an array or null")),
+    };
+    let outputs = raw_outputs
+        .iter()
+        .map(parse_blinded_message)
+        .collect::<Result<_, _>>()?;
+    let signatures = match body.get("signatures") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(arr)) => Some(
+            arr.iter()
+                .map(|v| match v {
+                    Value::Null => Ok(None),
+                    Value::String(s) => Ok(Some(s.clone())),
+                    _ => Err(bad_request(
+                        "signatures",
+                        "entries must be a hex string or null",
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Some(_) => return Err(bad_request("signatures", "expected an array or null")),
+    };
+    Ok(nut29::BatchMintRequest {
+        quotes,
+        quote_amounts,
+        outputs,
+        signatures,
     })
 }
 
@@ -752,7 +913,49 @@ fn mint_info_to_json(info: &nut06::MintInfo) -> Value {
                 nut.insert("methods".into(), Value::Array(methods));
                 nut.insert("disabled".into(), Value::Bool(false));
             }
-            "7" | "8" | "9" | "10" | "11" | "12" | "14" | "20" => {
+            "19" => {
+                // NUT-19 cache advertisement (spec shape: ttl + endpoints).
+                nut.insert(
+                    "ttl".into(),
+                    match settings.ttl {
+                        Some(ttl) => json!(ttl),
+                        None => Value::Null,
+                    },
+                );
+                nut.insert(
+                    "cached_endpoints".into(),
+                    Value::Array(
+                        settings
+                            .cached_endpoints
+                            .iter()
+                            .map(|e| json!({"method": e.method, "path": e.path}))
+                            .collect(),
+                    ),
+                );
+            }
+            "20" => {
+                nut.insert(
+                    "supported".into(),
+                    Value::Bool(settings.supported.unwrap_or(true)),
+                );
+            }
+            "29" => {
+                // NUT-29 batch settings (spec shape: methods as strings).
+                if let Some(max) = settings.max_batch_size {
+                    nut.insert("max_batch_size".into(), json!(max));
+                }
+                nut.insert(
+                    "methods".into(),
+                    Value::Array(
+                        settings
+                            .methods
+                            .iter()
+                            .map(|m| Value::String(m.method.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            "7" | "8" | "9" | "10" | "11" | "12" | "14" => {
                 nut.insert("supported".into(), Value::Bool(true));
             }
             _ => {
@@ -800,7 +1003,7 @@ fn keyset_info_to_json(info: &nut02::KeysetInfo) -> Value {
 }
 
 fn mint_quote_response_to_json(resp: &nut04::MintQuoteResponse) -> Value {
-    json!({
+    let mut obj = json!({
         "quote": resp.quote,
         "request": resp.request,
         "paid": resp.paid,
@@ -812,7 +1015,11 @@ fn mint_quote_response_to_json(resp: &nut04::MintQuoteResponse) -> Value {
         "amount_issued": resp.amount_issued,
         "updated_at": resp.updated_at,
         "method": resp.method,
-    })
+    });
+    if let Some(pubkey) = &resp.pubkey {
+        obj["pubkey"] = json!(pubkey);
+    }
+    obj
 }
 
 fn mint_response_to_json(resp: &nut04::MintResponse) -> Value {
