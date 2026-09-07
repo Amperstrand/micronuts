@@ -17,6 +17,7 @@ pub mod nut10;
 pub mod nut11;
 pub mod nut12;
 pub mod nut13;
+pub mod nut14;
 
 // Crate-private strict JSON scanner backing the NUT-10/11 embedded-JSON
 // codecs (see nuts/json.rs for why core-lite hand-rolls it).

@@ -10,11 +10,14 @@
 //! house crypto-provider pattern; PARITY.md only requires the boundary
 //! TYPES to stay in cashu-core-lite).
 //!
-//! L1 scope (roadmap #51): `locktime` and the refund pathway are parsed and
-//! validated but NOT enforced — every lock is treated as permanent, so only
-//! the primary pathway (data + pubkeys tag) can spend. Time-gated refund
-//! spending is L2. Divergences from upstream `cashu` 0.18 are marked with
-//! `Upstream divergence:` comments where the local spec files win.
+//! L2 scope (roadmap #51): `locktime` and the refund pathway are enforced.
+//! Before expiry only the primary pathway (data + pubkeys tag) can spend;
+//! after expiry the refund pathway opens (refund keys, `n_sigs_refund` with
+//! x-dedup) while the primary pathway remains available (the refund path is
+//! *additional* — see the Refund Multisig quotes below). Expired with no
+//! refund keys is anyone-can-spend. Divergences from upstream `cashu` 0.18
+//! are marked with `Upstream divergence:` comments where the local spec
+//! files win.
 
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
@@ -92,10 +95,10 @@ pub struct P2pkConditions {
     pub pubkeys: Vec<PublicKey>,
     /// Minimum primary-pathway signatures (`n_sigs` tag; default 1).
     pub num_sigs: Option<u64>,
-    /// Parsed `locktime` tag. NOT enforced in L1 — the lock is treated as
-    /// permanent (primary pathway only); refund spending is L2.
+    /// Parsed `locktime` tag: the Unix timestamp at which the refund
+    /// pathway opens (see [`P2pkConditions::requirements_at`]).
     pub locktime: Option<u64>,
-    /// Parsed `refund` tag keys (validated, unenforced until L2).
+    /// Parsed `refund` tag keys (spendable only after `locktime`).
     pub refund_keys: Vec<PublicKey>,
     /// Minimum refund-pathway signatures (`n_sigs_refund` tag).
     pub num_sigs_refund: Option<u64>,
@@ -115,106 +118,7 @@ impl P2pkConditions {
         }
         let data_pubkey =
             parse_compressed_pubkey(&secret.data).ok_or(P2pkError::InvalidDataPubkey)?;
-
-        let mut conditions = P2pkConditions {
-            data_pubkey,
-            pubkeys: Vec::new(),
-            num_sigs: None,
-            locktime: None,
-            refund_keys: Vec::new(),
-            num_sigs_refund: None,
-            sigflag: SigFlag::SigInputs,
-        };
-        // Per-tag "seen once" markers (a known tag key may appear exactly
-        // once — see the MUST-reject quote in the loop). Tracked separately
-        // from the parsed fields because e.g. a second `sigflag` row whose
-        // value equals the default must still count as a duplicate.
-        let (mut saw_sigflag, mut saw_pubkeys, mut saw_n_sigs) = (false, false, false);
-        let (mut saw_locktime, mut saw_refund, mut saw_n_sigs_refund) = (false, false, false);
-
-        for row in secret.tags.clone().unwrap_or_default() {
-            // NUT #11: Tags are arrays with two or more strings being `["key", "value1", "value2", ...]`. We denote a specific tag in a proof by its `key`.
-            let key = row.first().map(String::as_str).ok_or(P2pkError::EmptyTag)?;
-            // Values are strings on the wire even when semantically ints:
-            // NUT #11: The tag serialization type is `[<str>, <str>, ...]` but some tag values are `int`. Wallets and mints must cast types appropriately for de/serialization.
-            let value = || -> Result<&str, P2pkError> {
-                row.get(1)
-                    .map(String::as_str)
-                    .ok_or(P2pkError::InvalidTagValue)
-            };
-            // NUT #11: Each of the above tags may appear exactly **ONCE** in a P2PK secret. If a tag appears more than once, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
-            // Note: upstream divergence — cashu 0.18.0 silently keeps the
-            // Note: FIRST occurrence of a repeated tag
-            // Note: (`test_duplicate_tags_first_match`); the spec mandates
-            // Note: rejection, and the spec wins here.
-            match key {
-                "sigflag" => {
-                    if saw_sigflag {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_sigflag = true;
-                    conditions.sigflag = SigFlag::parse(value()?)
-                        // NUT #11: If a P2PK secret has any other signature flag value, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
-                        .ok_or(P2pkError::UnknownSigFlag)?;
-                }
-                "pubkeys" => {
-                    if saw_pubkeys {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_pubkeys = true;
-                    conditions.pubkeys = parse_pubkey_row(&row)?;
-                }
-                "n_sigs" => {
-                    if saw_n_sigs {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_n_sigs = true;
-                    let parsed: u64 = value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?;
-                    if parsed == 0 {
-                        return Err(P2pkError::ZeroSignatures);
-                    }
-                    conditions.num_sigs = Some(parsed);
-                }
-                "locktime" => {
-                    if saw_locktime {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_locktime = true;
-                    conditions.locktime =
-                        Some(value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?);
-                }
-                "refund" => {
-                    if saw_refund {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_refund = true;
-                    let keys = parse_pubkey_row(&row)?;
-                    if keys.is_empty() {
-                        // An empty `refund` row is an unsatisfiable 1-of-0
-                        // refund pathway (upstream: Impossible refund
-                        // multisig, required 1 available 0).
-                        return Err(P2pkError::ImpossibleMultisig {
-                            required: 1,
-                            available: 0,
-                        });
-                    }
-                    conditions.refund_keys = keys;
-                }
-                "n_sigs_refund" => {
-                    if saw_n_sigs_refund {
-                        return Err(P2pkError::DuplicateTag);
-                    }
-                    saw_n_sigs_refund = true;
-                    let parsed: u64 = value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?;
-                    if parsed == 0 {
-                        return Err(P2pkError::ZeroSignatures);
-                    }
-                    conditions.num_sigs_refund = Some(parsed);
-                }
-                // Unknown tags are ignored (upstream keeps them as Custom).
-                _ => {}
-            }
-        }
+        let tags = parse_condition_tags(secret.tags.as_deref().unwrap_or_default())?;
 
         // Threshold sanity. The primary pathway always includes data:
         // NUT #11: If `n_sigs` or `n_sigs_refund` is not a positive integer, or exceeds the total number of keys in its pathway, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
@@ -223,23 +127,12 @@ impl P2pkConditions {
         // Note: unsatisfiable threshold just fails signature verification);
         // Note: the outcome is the same rejection, but we follow the spec's
         // Note: "malformed" ruling.
-        let primary_available = 1 + conditions.pubkeys.len() as u64;
-        if let Some(required) = conditions.num_sigs {
+        let primary_available = 1 + tags.pubkeys.len() as u64;
+        if let Some(required) = tags.num_sigs {
             if required > primary_available {
                 return Err(P2pkError::ImpossibleMultisig {
                     required,
                     available: primary_available,
-                });
-            }
-        }
-        // n_sigs_refund without refund keys is unsatisfiable (the refund
-        // pathway defaults to requiring 1 key).
-        if let Some(required) = conditions.num_sigs_refund {
-            let available = conditions.refund_keys.len() as u64;
-            if required > available {
-                return Err(P2pkError::ImpossibleMultisig {
-                    required,
-                    available,
                 });
             }
         }
@@ -249,17 +142,25 @@ impl P2pkConditions {
         // NUT #11: Each key **MUST** appear at most **ONCE** per [multi-signature](#Multisig) pathway. The same key **MAY** appear in both pathways.
         // NUT #11: Keys are compared using their lowercase x-coordinate (`02` or `03` y-parity prefix ignored).
         // NUT #11: If a pathway contains a duplicate key, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
-        let mut primary = Vec::with_capacity(conditions.pubkeys.len() + 1);
-        primary.push(conditions.data_pubkey);
-        primary.extend(conditions.pubkeys.iter().copied());
+        let mut primary = Vec::with_capacity(tags.pubkeys.len() + 1);
+        primary.push(data_pubkey);
+        primary.extend(tags.pubkeys.iter().copied());
         if has_duplicate_x_coordinates(&primary) {
             return Err(P2pkError::DuplicatePubkey);
         }
-        if has_duplicate_x_coordinates(&conditions.refund_keys) {
+        if has_duplicate_x_coordinates(&tags.refund_keys) {
             return Err(P2pkError::DuplicatePubkey);
         }
 
-        Ok(conditions)
+        Ok(P2pkConditions {
+            data_pubkey,
+            pubkeys: tags.pubkeys,
+            num_sigs: tags.num_sigs,
+            locktime: tags.locktime,
+            refund_keys: tags.refund_keys,
+            num_sigs_refund: tags.num_sigs_refund,
+            sigflag: tags.sigflag,
+        })
     }
 
     /// The keys that can sign the primary pathway: data + `pubkeys` tag.
@@ -275,6 +176,89 @@ impl P2pkConditions {
     pub fn required_sigs(&self) -> u64 {
         self.num_sigs.unwrap_or(1)
     }
+
+    /// Minimum distinct-key signatures the refund pathway requires
+    /// (`n_sigs_refund` tag; defaults to 1 like upstream).
+    pub fn required_sigs_refund(&self) -> u64 {
+        self.num_sigs_refund.unwrap_or(1)
+    }
+
+    /// Resolve the lock's spending pathways at time `now` (unix seconds).
+    ///
+    /// The primary pathway is ALWAYS available. The refund pathway exists
+    /// only once the lock has expired, and an expired lock with no refund
+    /// keys resolves to a refund path with zero required signatures — i.e.
+    /// anyone-can-spend.
+    // NUT #11: If the `locktime` tag is a valid unix time and the mint's local clock is greater than `locktime`, the lock has "expired".
+    // NUT #11: Both [Locktime Multisig](#locktime-multisig) and [Refund Multisig](#refund-multisig) conditions apply if the `refund` tag is present, otherwise the proof is considered unlocked and spendable without a witness signature.
+    // Note: expiry boundary — upstream cashu 0.18 computes
+    // Note: `locktime_passed = locktime < now` (strictly), so a lock whose
+    // Note: locktime equals `now` exactly is NOT yet expired and the refund
+    // Note: pathway stays closed. The spec's "greater than locktime" wording
+    // Note: agrees; frozen-clock boundary tests pin this.
+    // NUT #11: Refund Multisig allows proofs to be _additionally spendable_ by a separate set of public keys once the `locktime` has expired. These public keys are stored in the `refund` tag, and can include keys previously listed in `data` or `pubkeys`.
+    // NUT #11: [Locktime Multisig](#locktime-multisig) conditions continue to apply, and the proof can continue to be spent according to Locktime Multisig rules.
+    // NUT #11: If the number of `refund` public keys with valid signatures is greater or equal to the number specified in `n_sigs_refund` (or `1` if `n_sigs_refund` is not present), the transaction is valid. The signatures are provided in an array of strings in the `P2PKWitness` object.
+    pub fn requirements_at(&self, now: u64) -> SpendingRequirements {
+        let expired = self.locktime.is_some_and(|locktime| locktime < now);
+        let refund_path = if expired {
+            Some(if self.refund_keys.is_empty() {
+                RefundPath::anyone()
+            } else {
+                RefundPath {
+                    pubkeys: self.refund_keys.clone(),
+                    required_sigs: self.required_sigs_refund(),
+                }
+            })
+        } else {
+            None
+        };
+        SpendingRequirements {
+            pubkeys: self.signing_pubkeys(),
+            required_sigs: self.required_sigs(),
+            refund_path,
+        }
+    }
+}
+
+/// The refund pathway of a lock, resolved after its expiry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefundPath {
+    /// Keys that can sign the refund pathway.
+    pub pubkeys: Vec<PublicKey>,
+    /// Minimum distinct-key signatures required; `0` means the proof is
+    /// anyone-can-spend (expired lock with no refund keys).
+    pub required_sigs: u64,
+}
+
+impl RefundPath {
+    /// The anyone-can-spend refund path (expired lock, no refund keys).
+    pub fn anyone() -> Self {
+        RefundPath {
+            pubkeys: Vec::new(),
+            required_sigs: 0,
+        }
+    }
+
+    /// True when the lock expired with no refund keys.
+    pub fn is_anyone_can_spend(&self) -> bool {
+        self.required_sigs == 0
+    }
+}
+
+/// The pathways a lock offers at a specific moment.
+///
+/// Shared shape for P2PK (NUT-11) and HTLC (NUT-14): for P2PK the primary
+/// pathway is `data` + `pubkeys`; for HTLC it is the `pubkeys` receiver set
+/// (empty means the hash lock alone spends, so `required_sigs == 0`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpendingRequirements {
+    /// Primary-pathway (P2PK) / receiver-pathway (HTLC) keys.
+    pub pubkeys: Vec<PublicKey>,
+    /// Minimum distinct-key primary/receiver signatures required.
+    pub required_sigs: u64,
+    /// The refund pathway, present only after expiry.
+    pub refund_path: Option<RefundPath>,
 }
 
 /// The NUT-11 witness carried (as stringified JSON) in `Proof.witness`.
@@ -343,15 +327,138 @@ fn json_escape(raw: &str) -> String {
     out
 }
 
+/// The NUT-11 condition tags shared by P2PK and HTLC locks
+/// (NUT-14: "All additional tags from P2PK locks can also be used here").
+#[derive(Debug, Clone, Default)]
+pub(super) struct ConditionTags {
+    pub pubkeys: Vec<PublicKey>,
+    pub num_sigs: Option<u64>,
+    pub locktime: Option<u64>,
+    pub refund_keys: Vec<PublicKey>,
+    pub num_sigs_refund: Option<u64>,
+    pub sigflag: SigFlag,
+}
+
+/// Parse and validate the shared condition tags. `Err` means the secret is
+/// malformed and the proof MUST be rejected as unspendable. Kind-specific
+/// rules (primary-pathway composition, key canonicalisation) are the
+/// caller's job.
+pub(super) fn parse_condition_tags(tags: &[Vec<String>]) -> Result<ConditionTags, P2pkError> {
+    let mut parsed = ConditionTags::default();
+    // Per-tag "seen once" markers (a known tag key may appear exactly
+    // once — see the MUST-reject quote in the loop). Tracked separately
+    // from the parsed fields because e.g. a second `sigflag` row whose
+    // value equals the default must still count as a duplicate.
+    let (mut saw_sigflag, mut saw_pubkeys, mut saw_n_sigs) = (false, false, false);
+    let (mut saw_locktime, mut saw_refund, mut saw_n_sigs_refund) = (false, false, false);
+
+    for row in tags {
+        // NUT #11: Tags are arrays with two or more strings being `["key", "value1", "value2", ...]`. We denote a specific tag in a proof by its `key`.
+        let key = row.first().map(String::as_str).ok_or(P2pkError::EmptyTag)?;
+        // Values are strings on the wire even when semantically ints:
+        // NUT #11: The tag serialization type is `[<str>, <str>, ...]` but some tag values are `int`. Wallets and mints must cast types appropriately for de/serialization.
+        let value = || -> Result<&str, P2pkError> {
+            row.get(1)
+                .map(String::as_str)
+                .ok_or(P2pkError::InvalidTagValue)
+        };
+        // NUT #11: Each of the above tags may appear exactly **ONCE** in a P2PK secret. If a tag appears more than once, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
+        // Note: upstream divergence — cashu 0.18.0 silently keeps the
+        // Note: FIRST occurrence of a repeated tag
+        // Note: (`test_duplicate_tags_first_match`); the spec mandates
+        // Note: rejection, and the spec wins here.
+        match key {
+            "sigflag" => {
+                if saw_sigflag {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_sigflag = true;
+                parsed.sigflag = SigFlag::parse(value()?)
+                    // NUT #11: If a P2PK secret has any other signature flag value, the P2PK secret is malformed and the Proof **MUST** be rejected as unspendable.
+                    .ok_or(P2pkError::UnknownSigFlag)?;
+            }
+            "pubkeys" => {
+                if saw_pubkeys {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_pubkeys = true;
+                parsed.pubkeys = parse_pubkey_row(row)?;
+            }
+            "n_sigs" => {
+                if saw_n_sigs {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_n_sigs = true;
+                let count: u64 = value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?;
+                if count == 0 {
+                    return Err(P2pkError::ZeroSignatures);
+                }
+                parsed.num_sigs = Some(count);
+            }
+            "locktime" => {
+                if saw_locktime {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_locktime = true;
+                parsed.locktime = Some(value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?);
+            }
+            "refund" => {
+                if saw_refund {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_refund = true;
+                let keys = parse_pubkey_row(row)?;
+                if keys.is_empty() {
+                    // An empty `refund` row is an unsatisfiable 1-of-0
+                    // refund pathway (upstream: Impossible refund
+                    // multisig, required 1 available 0).
+                    return Err(P2pkError::ImpossibleMultisig {
+                        required: 1,
+                        available: 0,
+                    });
+                }
+                parsed.refund_keys = keys;
+            }
+            "n_sigs_refund" => {
+                if saw_n_sigs_refund {
+                    return Err(P2pkError::DuplicateTag);
+                }
+                saw_n_sigs_refund = true;
+                let count: u64 = value()?.parse().map_err(|_| P2pkError::InvalidTagValue)?;
+                if count == 0 {
+                    return Err(P2pkError::ZeroSignatures);
+                }
+                parsed.num_sigs_refund = Some(count);
+            }
+            // Unknown tags are ignored (upstream keeps them as Custom).
+            _ => {}
+        }
+    }
+
+    // n_sigs_refund without (enough) refund keys is unsatisfiable (the
+    // refund pathway defaults to requiring 1 key).
+    if let Some(required) = parsed.num_sigs_refund {
+        let available = parsed.refund_keys.len() as u64;
+        if required > available {
+            return Err(P2pkError::ImpossibleMultisig {
+                required,
+                available,
+            });
+        }
+    }
+
+    Ok(parsed)
+}
+
 /// Parse a hex string into a compressed secp256k1 public key.
-fn parse_compressed_pubkey(hex_str: &str) -> Option<PublicKey> {
+pub(super) fn parse_compressed_pubkey(hex_str: &str) -> Option<PublicKey> {
     let bytes = hex::decode(hex_str).ok()?;
     let compressed: &[u8; 33] = bytes.as_slice().try_into().ok()?;
     PublicKey::from_bytes(compressed)
 }
 
 /// Parse the value entries of a `pubkeys`/`refund` tag row into keys.
-fn parse_pubkey_row(row: &[String]) -> Result<Vec<PublicKey>, P2pkError> {
+pub(super) fn parse_pubkey_row(row: &[String]) -> Result<Vec<PublicKey>, P2pkError> {
     row.iter()
         .skip(1)
         .map(|value| parse_compressed_pubkey(value).ok_or(P2pkError::InvalidTagValue))
@@ -359,7 +466,7 @@ fn parse_pubkey_row(row: &[String]) -> Result<Vec<PublicKey>, P2pkError> {
 }
 
 /// True if any two keys share an x-coordinate (02/03 parity ignored).
-fn has_duplicate_x_coordinates(pubkeys: &[PublicKey]) -> bool {
+pub(super) fn has_duplicate_x_coordinates(pubkeys: &[PublicKey]) -> bool {
     let mut seen: Vec<[u8; 32]> = Vec::with_capacity(pubkeys.len());
     for pubkey in pubkeys {
         let compressed = pubkey.to_bytes();
