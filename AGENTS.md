@@ -15,7 +15,6 @@ firmware + a backend-driven demo/prototype mint. Rust workspace; own git repo
 | `micronuts-app/` + `firmware/` | STM32F469I wallet hardware |
 | `host-mint-tool/` | USB-CDC demo signer |
 | `micronuts-fips-bridge/` | microfips service-boundary adapter |
-| `micronuts-esp32-bridge/` | legacy WiFi→UART bridge (superseded) |
 | `micronuts-esp32-mint/` | ESP32 esp-idf std mint front-end (standalone, house-style) |
 
 ## Commands (the sanctioned battery — mirrors `.github/workflows/rust-ci.yml`)
@@ -68,6 +67,17 @@ gm65-scanner: sessions backup the 2 MiB image and restore it in `finally`.
 Hard-won protocol facts live in docs/QR-RIG-SESSION-PLAN-2026-09-11.md
 (60 s splash before CDC; quiet cadence after trigger; silent continuous
 mode 0x92; ACK-leak strip; module degradation → xHCI power-cycle).
+
+## Modularity rule (owner directive 2026-09-11 — see bolty-rs B28 for the full lesson)
+
+Shared logic lives in exactly one crate and projects inherit it: QR-scanner
+logic is gm65-scanner's (`ScanPolicy::start_scanning`, sanitize-in-read,
+`deep_sleep_reboot` heal — consume, never reimplement); board glue (screen
+settings for the F469 / CYD / Lilygo S3 class) belongs in the BSP crates;
+when this repo discovers itself hand-rolling module or board lore, that is
+a bug in the upstream crate — file it, promote the API, delete the local
+copy. Superseded code is removed, not fenced (`micronuts-esp32-bridge`
+was the first removal of this audit).
 
 ## Rules
 
