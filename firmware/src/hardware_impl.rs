@@ -25,6 +25,26 @@ use crate::qr::Gm65ScannerAsync;
 
 pub type UsbDriverType = embassy_stm32::usb::Driver<'static, peripherals::USB_OTG_FS>;
 
+/// Remove leading GM65 register-response frames
+/// (`02 00 00 01 <val> 00 33 31`) from scan data.
+fn strip_leaked_ack_frames(mut data: Vec<u8>) -> Vec<u8> {
+    loop {
+        if data.len() >= 8
+            && data[0] == 0x02
+            && data[1] == 0x00
+            && data[2] == 0x00
+            && data[3] == 0x01
+            && data[5] == 0x00
+            && data[6] == 0x33
+            && data[7] == 0x31
+        {
+            data.drain(..8);
+            continue;
+        }
+        return data;
+    }
+}
+
 pub struct AsyncUart<'d> {
     pub inner: embassy_stm32::usart::Uart<'d, embassy_stm32::mode::Blocking>,
     pub uart_error_count: u32,
@@ -249,8 +269,20 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
-        let data = self.scanner.read_scan().await?;
+        crate::log_info!("read_scan: enter");
+        let data = match self.scanner.read_scan().await {
+            Some(d) => d,
+            None => {
+                crate::log_info!("read_scan: none");
+                return None;
+            }
+        };
         crate::log_info!("SCAN: {} bytes", data.len());
+        // GM65 register-response frames (02 00 00 01 <val> 00 33 31) leak
+        // into the scan buffer when a trigger ACK races the decode (gm65
+        // bench lesson 2026-09-10); strip them or decode_qr classifies the
+        // payload as binary and UR reassembly never sees it.
+        let data = strip_leaked_ack_frames(data);
         let preview_len = data.len().min(40);
         crate::log_info!("SCAN head: {:?}", &data[..preview_len]);
         Some(data)
@@ -266,18 +298,17 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
-        use gm65_scanner::ScannerSettings;
-        let settings = self
+        let mut settings = self
             .scanner
             .get_scanner_settings()
             .await
             .ok_or(ScanError::NotReady)?;
-        let new_settings = if enabled {
-            settings | ScannerSettings::AIM
+        settings.aim = if enabled {
+            gm65_scanner::AimSetting::Always
         } else {
-            settings & !(ScannerSettings::AIM)
+            gm65_scanner::AimSetting::Off
         };
-        if self.scanner.set_scanner_settings(new_settings).await {
+        if self.scanner.set_scanner_settings(settings).await {
             crate::log_info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
             Ok(())
         } else {

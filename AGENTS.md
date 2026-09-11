@@ -57,6 +57,18 @@ Spec-quote drift: `greatspectate check` per `cashu-core-lite/specquotes.toml`
   + `MELT_AMOUNT`. Signut recipe: pay both the user quote and the printed
   bootstrap invoice via ssh → cln-hub nsenter lightning-cli.
 
+
+## QR rig (tools/hil, 2026-09-11)
+
+Cross-project bench rig (CYD QR source → GM65 → F469 wallet CDC), gm65-scanner
+harness lineage: BenchLock FIRST, then the labgrid place `micronuts-qr-rig`
+(tokens from the microfips bench exporter — acquiring it excludes gm65
+sessions). `make hil-place`, `make test-qr-scanin`. The F469 is shared with
+gm65-scanner: sessions backup the 2 MiB image and restore it in `finally`.
+Hard-won protocol facts live in docs/QR-RIG-SESSION-PLAN-2026-09-11.md
+(60 s splash before CDC; quiet cadence after trigger; silent continuous
+mode 0x92; ACK-leak strip; module degradation → xHCI power-cycle).
+
 ## Rules
 
 1. **Never file PRs/issues on upstream projects without human review** —

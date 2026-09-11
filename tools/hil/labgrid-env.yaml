@@ -1,0 +1,18 @@
+# Labgrid environment for the micronuts QR rig.
+#
+# Use with the labgrid pytest plugin (the Amperstrand lab deployment):
+#   pytest --lg-env tools/hil/labgrid-env.yaml \
+#          --lg-coordinator 192.168.13.221:20408 tools/hil/tests -v
+#
+# The place binds the CYD (cyd-serial) and ST-Link (stm32-stlink) acquisition
+# tokens exported by the microfips bench exporter — acquiring it reserves
+# BOTH boards and excludes gm65-qr-loopback / microfips-bench. Direct I/O
+# stays the working path (BenchLock first, then the place — never reversed;
+# playbook pattern 12).
+imports: []
+targets:
+  main:
+    role: micronuts-qr-rig
+    resources:
+      RemotePlace:
+        name: micronuts-qr-rig

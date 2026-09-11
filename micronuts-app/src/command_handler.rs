@@ -52,11 +52,17 @@ pub async fn handle_command<H: MicronutsHardware>(
             Response::with_payload(Status::Ok, &payload[..offset])
                 .unwrap_or_else(|| Response::new(Status::Error))
         }
-        Command::ScannerTrigger => match hw.trigger().await {
-            Ok(()) => {
-                display::render_status(hw.display(), "Scanning...");
-                Response::new(Status::Ok)
-            }
+        Command::ScannerTrigger => match hw.set_aim(true).await {
+            Ok(()) => match hw.trigger().await {
+                Ok(()) => {
+                    display::render_status(hw.display(), "Scanning...");
+                    Response::new(Status::Ok)
+                }
+                Err(_) => {
+                    display::render_error(hw.display(), "Scanner error");
+                    Response::new(Status::ScannerNotConnected)
+                }
+            },
             Err(_) => {
                 display::render_error(hw.display(), "Scanner error");
                 Response::new(Status::ScannerNotConnected)
@@ -73,6 +79,16 @@ pub async fn handle_command<H: MicronutsHardware>(
                     qr::QrPayload::PlainText(_) => 0x00,
                     qr::QrPayload::Binary(_) => 0x04,
                 };
+                // On-device reassembly for the CDC path (the Scanning
+                // screen feeds the same state-level assembler): a completed
+                // sequence imports the token immediately.
+                if let crate::scanflow::ScanOutcome::TokenReady(token) =
+                    state.scan_assembler.process(&data)
+                {
+                    display::render_token_info(hw.display(), &token);
+                    state.imported_token = Some(token);
+                    state.swap_state = crate::state::SwapState::TokenImported;
+                }
                 let max_payload = MAX_PAYLOAD_SIZE;
                 let total = 1 + data.len().min(max_payload - 1);
                 let mut buf = alloc::vec![type_byte; total];
@@ -465,6 +481,46 @@ mod tests {
                 ],
             }],
         }
+    }
+
+    #[tokio::test]
+    async fn scanner_data_reassembles_ur_and_imports_token() {
+        use crate::protocol::{Command, Status};
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let wire = cashu_core_lite::encode_token_wire(&sample_token()).unwrap();
+        let (a, b) = wire.split_at(wire.len() / 2);
+        let hash = "deadbeef";
+        for (idx, chunk) in [(1usize, a), (2usize, b)] {
+            let mut last_scan = Some(format!("ur:bytes/{}-2/{}/{}", idx, hash, chunk).into_bytes());
+            let resp = handle_command(
+                Command::ScannerData,
+                &[],
+                &mut state,
+                &mut hw,
+                &mut last_scan,
+            )
+            .await;
+            assert_eq!(resp.status, Status::Ok);
+            if idx == 1 {
+                assert!(
+                    state.imported_token.is_none(),
+                    "no import before the sequence completes"
+                );
+            }
+        }
+
+        assert_eq!(state.swap_state, crate::state::SwapState::TokenImported);
+        let info = handle_command(Command::GetTokenInfo, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(info.status, Status::Ok);
+        // payload = mint-len || mint || unit-len || unit || amount(8) || proofs(4)
+        let p = info.payload();
+        let mint_len = p[0] as usize;
+        let unit_len = p[1 + mint_len] as usize;
+        let off = 1 + mint_len + 1 + unit_len;
+        let amount = u64::from_be_bytes(p[off..off + 8].try_into().unwrap());
+        let proofs = u32::from_be_bytes(p[off + 8..off + 12].try_into().unwrap());
+        assert_eq!((amount, proofs), (10, 2));
     }
 
     #[tokio::test]

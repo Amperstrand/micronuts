@@ -21,19 +21,12 @@ pub struct FirmwareState {
     pub new_proofs: Option<Vec<cashu_core_lite::Proof>>,
     pub swap_state: SwapState,
     pub last_scan_data: Option<Vec<u8>>,
+    pub scan_assembler: crate::scanflow::ScanAssembler,
 }
 
 impl FirmwareState {
-    pub const fn new() -> Self {
-        Self {
-            imported_token: None,
-            blinded_messages: None,
-            swap_secrets: None,
-            swap_amounts: None,
-            new_proofs: None,
-            swap_state: SwapState::Idle,
-            last_scan_data: None,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -85,8 +78,8 @@ mod tests {
     }
 
     #[test]
-    fn test_new_state_is_const() {
-        const STATE: FirmwareState = FirmwareState::new();
-        assert_eq!(STATE.swap_state, SwapState::Idle);
+    fn test_new_state_is_fresh() {
+        let state = FirmwareState::new();
+        assert_eq!(state.swap_state, SwapState::Idle);
     }
 }

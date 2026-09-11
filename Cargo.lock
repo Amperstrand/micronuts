@@ -1660,13 +1660,14 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?rev=fa9b750#fa9b75077724e65443af57ab0175e31d15b59824"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=8c043d1#8c043d12ede84ed50d653290d236189fe7b81f5c"
 dependencies = [
  "bitflags 2.11.1",
  "defmt 1.0.1",
  "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-io-async",
+ "maybe-async",
  "nb 1.1.0",
 ]
 
@@ -2301,6 +2302,17 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "maybe-async"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "746873a384ad60adc5db74471dfaba74bd278afbdcfd81db93fafcdfc8b5ca0c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "memchr"

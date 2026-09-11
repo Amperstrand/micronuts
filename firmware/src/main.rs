@@ -397,6 +397,21 @@ async fn main(spawner: Spawner) {
     let scanner_connected = match scanner.init().await {
         Ok(model) => {
             crate::log_info!("QR scanner ready: {}", model);
+            // gm65-scanner #75: in Command mode the module ACKs ScanEnable
+            // writes but never scans — Continuous mode + ScanEnable=1 is
+            // the proven scan path. Built from ScannerSettings::default()
+            // so the decode buzzer stays OFF (owner default, fa6dc93);
+            // fire-and-forget, no save_settings (NVRAM risk, #82).
+            let _ = scanner.stop_scan().await;
+            embassy_time::Timer::after(embassy_time::Duration::from_millis(50)).await;
+            let mut scan_cfg = gm65_scanner::ScannerSettings::default();
+            scan_cfg.read_mode = gm65_scanner::ReadMode::Continuous; // 0x92, silent
+            let m1 = scanner.set_scanner_settings(scan_cfg).await;
+            embassy_time::Timer::after(embassy_time::Duration::from_millis(100)).await;
+            let m2 = scanner
+                .set_setting(gm65_scanner::Register::ScanEnable, 0x01)
+                .await;
+            crate::log_info!("continuous mode: settings={} scan={}", m1, m2);
             true
         }
         Err(e) => {

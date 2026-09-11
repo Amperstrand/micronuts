@@ -11,8 +11,12 @@ pub mod display;
 pub mod hardware;
 pub mod protocol;
 pub mod qr;
+pub mod scanflow;
 pub mod state;
 pub mod util;
+
+#[cfg(any(test, feature = "std"))]
+pub mod test_util;
 
 pub use hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
 
@@ -37,6 +41,11 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
     let aim_btn = display::aim_button();
     let mut state = state::FirmwareState::new();
     let mut last_scan_data: Option<Vec<u8>> = None;
+    // CDC scan capture window: ScannerTrigger has no UI screen attached,
+    // so the ticker arm harvests read_scan() into last_scan_data for the
+    // following ScannerData poll (10 s window, one long await per trigger —
+    // chopped reads eat UART bytes mid-frame and the frame never completes).
+    let mut capture_until: Option<embassy_time::Instant> = None;
     let mut aim_on: bool = false;
     let mut scan_ticks: u32 = 0;
     let mut scan_retries: u32 = 0;
@@ -59,6 +68,8 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                     .await;
                     if frame.command == protocol::Command::ScannerTrigger {
                         last_scan_data = None;
+                        capture_until =
+                            Some(embassy_time::Instant::now() + Duration::from_secs(10));
                     }
                     if frame.command == protocol::Command::ImportToken {
                         if let AppScreen::WaitingToken = screen {
@@ -77,6 +88,21 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                 }
             }
             embassy_futures::select::Either::Second(_) => {
+                if let Some(deadline) = capture_until {
+                    match embassy_time::with_timeout(
+                        deadline - embassy_time::Instant::now(),
+                        hw.read_scan(),
+                    )
+                    .await
+                    {
+                        Ok(Some(data)) => {
+                            last_scan_data = Some(data);
+                            capture_until = None;
+                        }
+                        _ => capture_until = None,
+                    }
+                }
+
                 let mut go_home = false;
 
                 match screen {
@@ -88,6 +114,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                                     screen = AppScreen::Scanning;
                                     last_scan_data = None;
                                     aim_on = true;
+                                    state.scan_assembler.reset();
                                     let _ = hw.set_aim(true).await;
                                     let _ = hw.trigger().await;
                                     display::draw_scanning(hw.display(), true);
@@ -131,20 +158,47 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                         }
                     }
                     AppScreen::Scanning => {
-                        match embassy_time::with_timeout(Duration::from_millis(100), hw.read_scan())
+                        match embassy_time::with_timeout(Duration::from_secs(5), hw.read_scan())
                             .await
                         {
-                            Ok(Some(data)) => {
-                                let payload = qr::decode_qr(&data);
-                                screen = AppScreen::ScanResult;
-                                let _ = hw.set_aim(false).await;
-                                aim_on = false;
-                                scan_ticks = 0;
-                                scan_retries = 0;
-                                display::render_decoded_scan(hw.display(), &payload);
-                                hw.swap_buffers();
-                                last_scan_data = Some(data);
-                            }
+                            Ok(Some(data)) => match state.scan_assembler.process(&data) {
+                                scanflow::ScanOutcome::TokenReady(token) => {
+                                    let _ = hw.set_aim(false).await;
+                                    aim_on = false;
+                                    scan_ticks = 0;
+                                    scan_retries = 0;
+                                    display::render_token_info(hw.display(), &token);
+                                    hw.swap_buffers();
+                                    state.imported_token = Some(token);
+                                    state.swap_state = state::SwapState::TokenImported;
+                                    last_scan_data = Some(data);
+                                    screen = AppScreen::TokenInfo;
+                                }
+                                scanflow::ScanOutcome::KeepScanning { received, total } => {
+                                    scan_ticks = 0;
+                                    scan_retries = 0;
+                                    last_scan_data = Some(data);
+                                    display::draw_scanning(hw.display(), aim_on);
+                                    display::draw_scanning_progress(hw.display(), received, total);
+                                    hw.swap_buffers();
+                                    let _ = hw.trigger().await;
+                                }
+                                scanflow::ScanOutcome::InvalidFragment => {
+                                    scan_ticks = 0;
+                                    last_scan_data = Some(data);
+                                    let _ = hw.trigger().await;
+                                }
+                                scanflow::ScanOutcome::ShowPayload(payload) => {
+                                    screen = AppScreen::ScanResult;
+                                    let _ = hw.set_aim(false).await;
+                                    aim_on = false;
+                                    scan_ticks = 0;
+                                    scan_retries = 0;
+                                    display::render_decoded_scan(hw.display(), &payload);
+                                    hw.swap_buffers();
+                                    last_scan_data = Some(data);
+                                }
+                            },
                             _ => {
                                 scan_ticks += 1;
                                 if scan_ticks.is_multiple_of(200) {
@@ -212,6 +266,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                 if go_home {
                     let _ = hw.set_aim(false).await;
                     aim_on = false;
+                    state.scan_assembler.reset();
                     hw.stop().await;
                     screen = AppScreen::Home;
                     display::render_home(hw.display(), scanner_connected, last_scan_data.is_some());
