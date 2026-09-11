@@ -1660,7 +1660,7 @@ dependencies = [
 [[package]]
 name = "gm65-scanner"
 version = "0.2.0"
-source = "git+https://github.com/Amperstrand/gm65-scanner?rev=8c043d1#8c043d12ede84ed50d653290d236189fe7b81f5c"
+source = "git+https://github.com/Amperstrand/gm65-scanner?rev=c018316#c0183162f2282863173349f4e2ccfe3d5cb06e65"
 dependencies = [
  "bitflags 2.11.1",
  "defmt 1.0.1",

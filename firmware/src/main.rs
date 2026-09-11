@@ -394,31 +394,33 @@ async fn main(spawner: Spawner) {
 
     let mut scanner = Gm65ScannerAsync::with_default_config(async_uart);
 
-    let scanner_connected = match scanner.init().await {
-        Ok(model) => {
-            crate::log_info!("QR scanner ready: {}", model);
-            // gm65-scanner #75: in Command mode the module ACKs ScanEnable
-            // writes but never scans — Continuous mode + ScanEnable=1 is
-            // the proven scan path. Built from ScannerSettings::default()
-            // so the decode buzzer stays OFF (owner default, fa6dc93);
-            // fire-and-forget, no save_settings (NVRAM risk, #82).
-            let _ = scanner.stop_scan().await;
-            embassy_time::Timer::after(embassy_time::Duration::from_millis(50)).await;
-            let mut scan_cfg = gm65_scanner::ScannerSettings::default();
-            scan_cfg.read_mode = gm65_scanner::ReadMode::Continuous; // 0x92, silent
-            let m1 = scanner.set_scanner_settings(scan_cfg).await;
-            embassy_time::Timer::after(embassy_time::Duration::from_millis(100)).await;
-            let m2 = scanner
-                .set_setting(gm65_scanner::Register::ScanEnable, 0x01)
-                .await;
-            crate::log_info!("continuous mode: settings={} scan={}", m1, m2);
-            true
+    // Boot heal (gm65-scanner #100 Tier A): init failures from module
+    // state carry-over get ONE deep-sleep reboot — it keeps settings and
+    // baud, so the fixed-115200 UART stays valid — then a re-init.
+    let mut scanner_connected = false;
+    for attempt in 0..2 {
+        match scanner.init().await {
+            Ok(model) => {
+                crate::log_info!("QR scanner ready: {} (attempt {})", model, attempt + 1);
+                // Crate-owned policy: silent continuous mode via the
+                // proven sequence — no module lore in this firmware.
+                let started = scanner
+                    .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
+                    .await;
+                crate::log_info!("start_scanning(SilentContinuous): {:?}", started);
+                scanner_connected = true;
+                break;
+            }
+            Err(e) if attempt == 0 => {
+                crate::log_warn!("scanner init failed ({}) — deep-sleep heal + retry", e);
+                let _ = scanner.deep_sleep_reboot().await;
+                embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
+            }
+            Err(e) => {
+                crate::log_warn!("QR scanner init failed after heal: {}", e);
+            }
         }
-        Err(e) => {
-            crate::log_warn!("QR scanner init failed: {}", e);
-            false
-        }
-    };
+    }
 
     crate::log_info!("Scanner state after init: connected={}", scanner_connected);
 

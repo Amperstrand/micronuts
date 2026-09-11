@@ -35,7 +35,7 @@ embedded-hal = "1.0"
 embedded-graphics = "0.8.2"
 embedded-io = "0.7.1"
 embedded-io-async = "0.7"
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "8c043d1", features = ["sync", "async", "defmt"] }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "c018316", features = ["sync", "async", "defmt"] }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 nb = "1.1"
