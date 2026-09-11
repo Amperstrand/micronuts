@@ -62,9 +62,9 @@ def consume_stale(cdc: rig.StmCdcClient) -> None:
     cdc.send_recv(rig.CMD_DATA)
 
 
-def arm_winning_config(cyd: rig.CydQrClient) -> None:
-    cyd.set_inverted(WINNING_INVERTED)
-    cyd.set_ecch(WINNING_ECCH)
+# arm_winning_config moved to tollgate_lab.cyd_qr (2026-09-11 DRY
+# extraction) — re-exported here for the reference-client API.
+from tollgate_lab.cyd_qr import arm_winning_config  # noqa: E402
 
 
 def scan_roundtrip(

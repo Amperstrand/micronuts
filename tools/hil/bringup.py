@@ -74,6 +74,12 @@ def main() -> int:
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     with acquire_bench_lock("amperstrand-bench"):
+        from tollgate_lab import ensure_run_headroom
+
+        hygiene = ensure_run_headroom()
+        if hygiene.acted:
+            note(f"disk hygiene: {hygiene.actions}")
+
         acquired = lg(["acquire"])
         note(f"place acquire rc={acquired.returncode}")
 

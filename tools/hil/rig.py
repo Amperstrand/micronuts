@@ -23,6 +23,10 @@ from pathlib import Path
 
 import serial
 
+# Shared CYD QR-source client (tollgate-lab owns it — same module gm65's
+# harness imports; 2026-09-11 DRY extraction).
+from tollgate_lab.cyd_qr import QR_WINNING_CAP, CydQrClient
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOARDS_TOML = REPO_ROOT.parent / "fips-lab" / "fips_lab" / "boards.toml"
 
@@ -39,8 +43,6 @@ WALLET_CDC_PRODUCT = "Micronuts Cashu Hardware Wallet"
 
 STM32_FLASH_SIZE = 0x200000  # 2 MiB (STM32F469NI)
 STM32_FLASH_BASE = 0x08000000
-
-QR_WINNING_CAP = 224  # gm65-measured winning cap (inverted + ECC-H)
 
 # Micronuts CDC protocol (micronuts-app/src/protocol.rs)
 CMD_IMPORT_TOKEN = 0x01
@@ -123,56 +125,6 @@ def cdc_with_retries(port: str, attempts: int = 10, settle_s: float = 3.0):
     raise RigError(f"wallet CDC on {port} never answered ScannerStatus: {last}")
 
 
-class CydQrClient:
-    """Line-protocol client for the cyd-qr firmware (CH340 UART0)."""
-
-    def __init__(self, port: str, timeout: float = 8.0):
-        self.ser = serial.Serial(port, 115200, timeout=timeout)
-        self.ser.reset_input_buffer()
-
-    def close(self):
-        self.ser.close()
-
-    def _cmd(self, line: str) -> str:
-        self.ser.reset_input_buffer()
-        self.ser.write(line.encode() + b"\n")
-        self.ser.flush()
-        reply = self.ser.readline().decode(errors="replace").strip()
-        if not reply:
-            raise RigError(f"CYD no reply to {line!r}")
-        return reply
-
-    def id(self) -> str:
-        return self._cmd("ID")
-
-    def set_inverted(self, target: bool) -> None:
-        for _ in range(2):
-            r = self._cmd("INV")
-            if (target and r == "INVERTED 1") or (not target and r == "INVERTED 0"):
-                return
-        raise RigError(f"INV toggle stuck at {r!r}")
-
-    def set_ecch(self, target: bool) -> None:
-        for _ in range(2):
-            r = self._cmd("ECCH")
-            if (target and r == "ECC HIGH") or (not target and r == "ECC MEDIUM"):
-                return
-        raise RigError(f"ECCH toggle stuck at {r!r}")
-
-    def show_qr_capped(self, payload: bytes, cap: int) -> tuple[int, int]:
-        reply = self._cmd(f"QRS {cap} " + payload.hex())
-        parts = reply.split()
-        if len(parts) != 4 or parts[0] != "RENDERED":
-            raise RigError(f"CYD QR render failed: {reply!r} (payload {payload[:20]!r})")
-        return int(parts[1]), int(parts[2])
-
-    def show_qr(self, payload: bytes) -> tuple[int, int]:
-        return self.show_qr_capped(payload, QR_WINNING_CAP)
-
-    def clear(self) -> None:
-        reply = self._cmd("CLR")
-        if reply != "CLEARED":
-            raise RigError(f"CYD clear failed: {reply!r}")
 
 
 class MicronutsCdc:
