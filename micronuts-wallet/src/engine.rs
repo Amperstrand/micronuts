@@ -9,6 +9,7 @@
 
 use cashu_core_lite::crypto::hash_to_curve;
 use cashu_core_lite::error::CashuError;
+use cashu_core_lite::nuts::nut12::verify_proof_dleq;
 use cashu_core_lite::nuts::{nut00, nut01, nut04, nut05, nut07};
 use cashu_core_lite::persistent::{MeltOutcome, PersistentWallet};
 use cashu_core_lite::store::ProofStore;
@@ -17,6 +18,7 @@ use cashu_core_lite::token::{
 };
 use cashu_core_lite::transport::MintClient;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -159,12 +161,16 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         self.meta.get_mint_quote(quote_id)
     }
 
-    /// NUT-04 step 3: mint ecash against a paid quote.
+    /// NUT-04 step 3: mint ecash against a paid quote. The newly credited
+    /// proofs are NUT-12-verified against the cached mint keys and rolled
+    /// back if the mint's signatures do not check out.
     pub fn mint_paid_quote(&mut self, quote_id: &str, amount: u64) -> Result<u64, CashuError> {
         self.ensure_connected()?;
+        let known = self.known_secrets();
         let minted =
             self.wallet
                 .mint_deterministic(quote_id, amount, &self.keyset_id, &self.keys)?;
+        self.verify_new_proofs(&known)?;
         self.record(HistoryKind::Mint, minted, format!("quote {quote_id}"));
         Ok(minted)
     }
@@ -190,12 +196,16 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 inputs.push(token_proof_to_wallet(proof, &group.keyset_id)?);
             }
             let group_total: u64 = inputs.iter().map(|p| p.amount).sum();
-            self.wallet.swap_deterministic(
+            let fresh = self.wallet.swap_deterministic(
                 inputs,
                 &nut00::decompose_amount(group_total),
                 &self.keyset_id,
                 &self.keys,
             )?;
+            if let Err(err) = self.verify_proofs(&fresh) {
+                let _ = self.wallet.remove_proofs(&fresh);
+                return Err(err);
+            }
             total += group_total;
         }
         self.record(HistoryKind::Receive, total, String::from("ecash token"));
@@ -283,6 +293,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             .ok_or(CashuError::InvalidAmount)?;
 
         let total = self.wallet.balance();
+        let known = self.known_secrets();
         let all = self.wallet.spend(total)?;
         let swap_fee = if self.fee_ppk == 0 {
             0
@@ -309,6 +320,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             &self.keyset_id,
             &self.keys,
         )?;
+        self.verify_new_proofs(&known)?;
         let detail = match &outcome.preimage {
             Some(preimage) => format!("preimage {preimage}"),
             None => String::from("no preimage"),
@@ -317,10 +329,67 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok((quote, outcome))
     }
 
-    /// NUT-09 restore from the deterministic seed.
+    /// NUT-09 restore from the deterministic seed. Restored proofs are
+    /// verified like every other credit path.
     pub fn restore(&mut self) -> Result<u64, CashuError> {
         self.ensure_connected()?;
-        self.wallet.restore(&self.keyset_id, &self.keys)
+        let known = self.known_secrets();
+        let restored = self.wallet.restore(&self.keyset_id, &self.keys)?;
+        if restored > 0 {
+            self.verify_new_proofs(&known)?;
+        }
+        Ok(restored)
+    }
+
+    fn known_secrets(&self) -> HashSet<String> {
+        self.wallet
+            .proofs()
+            .iter()
+            .map(|p| p.secret.clone())
+            .collect()
+    }
+
+    /// NUT-12 gate: every proof must carry a DLEQ that verifies against
+    /// the cached keyset's amount key (the same primitive walletport's
+    /// offline gate uses). Fail-closed — no dleq, no credit.
+    fn verify_proofs(&self, proofs: &[nut00::Proof]) -> Result<(), CashuError> {
+        for proof in proofs {
+            let dleq = proof.dleq.as_ref().ok_or_else(|| {
+                CashuError::Crypto(String::from(
+                    "mint signature carries no NUT-12 dleq — cannot verify",
+                ))
+            })?;
+            let key = self
+                .keys
+                .keys
+                .iter()
+                .find(|k| k.amount == proof.amount)
+                .ok_or(CashuError::KeysetNotFound)?;
+            if !verify_proof_dleq(proof.secret.as_bytes(), &proof.c, dleq, &key.pubkey) {
+                return Err(CashuError::Crypto(String::from(
+                    "NUT-12 DLEQ verification failed",
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Verify proofs that entered the store since `known` was captured;
+    /// roll them back (remove + persist) on failure so the balance never
+    /// counts an unverifiable proof.
+    fn verify_new_proofs(&mut self, known: &HashSet<String>) -> Result<(), CashuError> {
+        let fresh: Vec<nut00::Proof> = self
+            .wallet
+            .proofs()
+            .iter()
+            .filter(|p| !known.contains(&p.secret))
+            .cloned()
+            .collect();
+        if let Err(err) = self.verify_proofs(&fresh) {
+            let _ = self.wallet.remove_proofs(&fresh);
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Produce exactly `amount` of spendable proofs in the wallet (change

@@ -1,6 +1,8 @@
 //! WalletEngine integration tests against the real `DemoMint` (FakeWallet
 //! auto-settlement, demo keyset, fee 0) behind a shareable RPC client.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use cashu_core_lite::error::CashuError;
@@ -101,6 +103,148 @@ fn engine(
 }
 
 const SEED: [u8; 32] = [0x42; 32];
+
+/// 2*G — a valid curve point that is definitely not any mint signature.
+const G2: &str = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+
+fn point(hex_point: &str) -> cashu_core_lite::PublicKey {
+    let bytes: [u8; 33] = hex::decode(hex_point).unwrap().try_into().unwrap();
+    cashu_core_lite::PublicKey::from_bytes(&bytes).unwrap()
+}
+
+/// Wraps a shared mint client; when armed, `post_mint` responses carry a
+/// valid-but-wrong `C_` point (forged signature) or lose their dleq.
+#[derive(Clone)]
+struct TamperMint {
+    inner: SharedMintClient,
+    forged_c: Rc<Cell<bool>>,
+    strip_dleq: Rc<Cell<bool>>,
+}
+
+impl TamperMint {
+    fn new(inner: SharedMintClient) -> Self {
+        Self {
+            inner,
+            forged_c: Rc::new(Cell::new(false)),
+            strip_dleq: Rc::new(Cell::new(false)),
+        }
+    }
+}
+
+impl MintClient for TamperMint {
+    fn get_info(&mut self) -> Result<nut06::MintInfo, CashuError> {
+        self.inner.get_info()
+    }
+    fn get_keys(&mut self) -> Result<cashu_core_lite::nuts::nut01::KeysResponse, CashuError> {
+        self.inner.get_keys()
+    }
+    fn get_keysets(&mut self) -> Result<nut02::KeysetsResponse, CashuError> {
+        self.inner.get_keysets()
+    }
+    fn post_mint_quote(
+        &mut self,
+        request: nut04::MintQuoteRequest,
+    ) -> Result<nut04::MintQuoteResponse, CashuError> {
+        self.inner.post_mint_quote(request)
+    }
+    fn get_mint_quote(&mut self, quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError> {
+        self.inner.get_mint_quote(quote_id)
+    }
+    fn post_mint(
+        &mut self,
+        request: nut04::MintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
+        let mut response = self.inner.post_mint(request)?;
+        if self.forged_c.get() {
+            for sig in &mut response.signatures {
+                sig.c = point(G2);
+            }
+        }
+        if self.strip_dleq.get() {
+            for sig in &mut response.signatures {
+                sig.dleq = None;
+            }
+        }
+        Ok(response)
+    }
+    fn post_melt_quote(
+        &mut self,
+        request: nut05::MeltQuoteRequest,
+    ) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        self.inner.post_melt_quote(request)
+    }
+    fn get_melt_quote(&mut self, quote_id: &str) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        self.inner.get_melt_quote(quote_id)
+    }
+    fn post_melt(
+        &mut self,
+        request: nut05::MeltRequest,
+    ) -> Result<nut05::MeltResponse, CashuError> {
+        self.inner.post_melt(request)
+    }
+    fn post_swap(
+        &mut self,
+        request: cashu_core_lite::nuts::nut03::SwapRequest,
+    ) -> Result<cashu_core_lite::nuts::nut03::SwapResponse, CashuError> {
+        self.inner.post_swap(request)
+    }
+    fn post_check_state(
+        &mut self,
+        request: nut07::CheckStateRequest,
+    ) -> Result<nut07::CheckStateResponse, CashuError> {
+        self.inner.post_check_state(request)
+    }
+    fn post_restore(
+        &mut self,
+        request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError> {
+        self.inner.post_restore(request)
+    }
+}
+
+fn tamper_engine(client: &SharedMintClient) -> (WalletEngine<TamperMint, MemoryStore>, TamperMint) {
+    let tamper = TamperMint::new(client.clone());
+    let mut engine = WalletEngine::new(
+        "https://mint.example",
+        tamper.clone(),
+        MemoryStore::new(),
+        SEED,
+        Vec::new(),
+    )
+    .unwrap();
+    engine.connect().unwrap();
+    (engine, tamper)
+}
+
+#[test]
+fn forged_mint_signatures_are_rejected_with_rollback() {
+    let client = shared_mint();
+    let (mut wallet, tamper) = tamper_engine(&client);
+    let quote = wallet.mint_via_invoice(21).unwrap();
+    let quote = wallet.poll_mint_quote(&quote.quote).unwrap();
+    tamper.forged_c.set(true);
+
+    let err = wallet.mint_paid_quote(&quote.quote, 21).unwrap_err();
+    assert!(matches!(err, CashuError::Crypto(_)), "{err:?}");
+    assert_eq!(
+        wallet.balance(),
+        0,
+        "unverifiable proofs must not stay in the wallet"
+    );
+}
+
+#[test]
+fn dleq_less_mint_signatures_are_rejected() {
+    let client = shared_mint();
+    let (mut wallet, tamper) = tamper_engine(&client);
+    let quote = wallet.mint_via_invoice(21).unwrap();
+    let quote = wallet.poll_mint_quote(&quote.quote).unwrap();
+    tamper.strip_dleq.set(true);
+
+    let err = wallet.mint_paid_quote(&quote.quote, 21).unwrap_err();
+    assert!(matches!(err, CashuError::Crypto(_)), "{err:?}");
+    assert_eq!(wallet.balance(), 0);
+}
 
 fn fund<S: ProofStore>(engine: &mut WalletEngine<SharedMintClient, S>, amount: u64) {
     let quote = engine.mint_via_invoice(amount).unwrap();
