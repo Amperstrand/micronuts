@@ -1,0 +1,102 @@
+import { Button, LineEdit, TextEdit } from "std-widgets.slint";
+import { WalletLogic } from "logic.slint";
+import { TabBar, Theme } from "theme.slint";
+
+export component SendScreen inherits Rectangle {
+    in-out property <int> tab: 0;
+    in-out property <string> amount-text: "";
+    in-out property <string> memo-text: "";
+    in-out property <string> invoice-text: "";
+    background: transparent;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        alignment: start;
+        Text { text: "Send"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        TabBar { current: root.tab; label-a: "Ecash"; label-b: "Lightning"; select(t) => { root.tab = t; } }
+
+        if root.tab == 0 : VerticalLayout {
+            spacing: 12px;
+            LineEdit {
+                text: root.amount-text;
+                placeholder-text: "Amount (sat)";
+                font-size: 18px;
+                input-type: number;
+                edited(text) => { root.amount-text = text; }
+            }
+            LineEdit {
+                text: root.memo-text;
+                placeholder-text: "Memo (optional)";
+                edited(text) => { root.memo-text = text; }
+            }
+            Button {
+                text: "Create token";
+                primary: true;
+                enabled: WalletLogic.has-active-mint && root.amount-text != "" && !WalletLogic.busy;
+                clicked => { WalletLogic.send-token(root.amount-text, root.memo-text); }
+            }
+            if WalletLogic.token-out != "" : VerticalLayout {
+                spacing: 10px;
+                Rectangle {
+                    height: 264px;
+                    border-radius: 12px;
+                    background: #ffffff;
+                    Image {
+                        source: WalletLogic.token-qr;
+                        width: 248px;
+                        height: 248px;
+                    }
+                }
+                TextEdit {
+                    text: WalletLogic.token-out;
+                    read-only: true;
+                    font-size: 11px;
+                    height: 88px;
+                }
+            }
+        }
+
+        if root.tab == 1 : VerticalLayout {
+            spacing: 12px;
+            Text {
+                text: "Pay a Lightning invoice with ecash.";
+                color: Theme.text-dim;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            TextEdit {
+                text: root.invoice-text;
+                placeholder-text: "lnbc…";
+                font-size: 12px;
+                height: 110px;
+                edited(text) => { root.invoice-text = text; }
+            }
+            Button {
+                text: "Get quote";
+                enabled: root.invoice-text != "" && !WalletLogic.busy;
+                clicked => { WalletLogic.melt-quote(root.invoice-text); }
+            }
+            if WalletLogic.melt-quote-info != "" : VerticalLayout {
+                spacing: 10px;
+                Text {
+                    text: WalletLogic.melt-quote-info;
+                    color: Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Button {
+                    text: "Pay invoice";
+                    primary: true;
+                    enabled: !WalletLogic.busy;
+                    clicked => { WalletLogic.melt-confirm(); }
+                }
+            }
+            if WalletLogic.melt-preimage != "" : Text {
+                text: "Paid — preimage " + WalletLogic.melt-preimage;
+                color: Theme.ok;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

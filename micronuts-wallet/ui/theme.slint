@@ -1,0 +1,58 @@
+// Dark wallet palette — bitcoin orange accent on graphite.
+export global Theme {
+    out property <color> background: #10141a;
+    out property <color> card: #1b2129;
+    out property <color> card-hover: #232b35;
+    out property <color> text: #e8eaed;
+    out property <color> text-dim: #8a939f;
+    out property <color> accent: #f7931a;
+    out property <color> accent-press: #d97e12;
+    out property <color> ok: #3fb68b;
+    out property <color> warn: #f2b366;
+    out property <color> danger: #e5534b;
+    out property <length> pad: 20px;
+}
+
+export component TabBar inherits Rectangle {
+    in property <string> label-a: "Ecash";
+    in property <string> label-b: "Lightning";
+    in property <int> current;
+    callback select(int);
+    height: 48px;
+    border-radius: 10px;
+    background: Theme.card;
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 4px;
+        Rectangle {
+            border-radius: 8px;
+            background: root.current == 0 ? Theme.accent-press : transparent;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.select(0); }
+            }
+            Text {
+                text: root.label-a;
+                color: root.current == 0 ? Theme.background : Theme.text-dim;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+            }
+        }
+        Rectangle {
+            border-radius: 8px;
+            background: root.current == 1 ? Theme.accent-press : transparent;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.select(1); }
+            }
+            Text {
+                text: root.label-b;
+                color: root.current == 1 ? Theme.background : Theme.text-dim;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+            }
+        }
+    }
+}

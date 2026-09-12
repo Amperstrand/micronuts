@@ -1,0 +1,102 @@
+import { Button, LineEdit, TextEdit } from "std-widgets.slint";
+import { WalletLogic } from "logic.slint";
+import { TabBar, Theme } from "theme.slint";
+
+export component ReceiveScreen inherits Rectangle {
+    in-out property <int> tab: 0;
+    in-out property <string> amount-text: "";
+    in-out property <string> token-text: "";
+    background: transparent;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        alignment: start;
+        Text { text: "Receive"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        TabBar { current: root.tab; select(t) => { root.tab = t; } }
+
+        if root.tab == 1 : VerticalLayout {
+            spacing: 12px;
+            LineEdit {
+                text: root.amount-text;
+                placeholder-text: "Amount (sat)";
+                font-size: 18px;
+                input-type: number;
+                edited(text) => { root.amount-text = text; }
+            }
+            Button {
+                text: "Create invoice";
+                primary: true;
+                enabled: WalletLogic.has-active-mint && !WalletLogic.busy;
+                clicked => { WalletLogic.mint-invoice(root.amount-text); }
+            }
+            if WalletLogic.invoice != "" : VerticalLayout {
+                spacing: 10px;
+                Text {
+                    text: "Invoice (" + WalletLogic.invoice-state + ") — " + WalletLogic.invoice-amount-text;
+                    color: WalletLogic.invoice-state == "PAID" ? Theme.ok : Theme.warn;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 264px;
+                    border-radius: 12px;
+                    background: #ffffff;
+                    Image {
+                        source: WalletLogic.invoice-qr;
+                        width: 248px;
+                        height: 248px;
+                    }
+                }
+                TextEdit {
+                    text: WalletLogic.invoice;
+                    read-only: true;
+                    font-size: 11px;
+                    height: 72px;
+                }
+                Button {
+                    text: "Mint ecash";
+                    primary: true;
+                    enabled: WalletLogic.invoice-state == "PAID" && !WalletLogic.busy;
+                    clicked => { WalletLogic.mint-paid(WalletLogic.invoice-quote-id, WalletLogic.invoice-amount); }
+                }
+            }
+        }
+
+        if root.tab == 0 : VerticalLayout {
+            spacing: 12px;
+            Text {
+                text: "Paste a Cashu token (cashuB…) or scan its QR with another wallet.";
+                color: Theme.text-dim;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            TextEdit {
+                text: root.token-text;
+                placeholder-text: "cashuB…";
+                font-size: 12px;
+                height: 110px;
+                edited(text) => { root.token-text = text; }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Button {
+                    text: "Check";
+                    enabled: root.token-text != "" && !WalletLogic.busy;
+                    clicked => { WalletLogic.check-token(root.token-text); }
+                }
+                Button {
+                    text: "Redeem";
+                    primary: true;
+                    enabled: root.token-text != "" && !WalletLogic.busy;
+                    clicked => { WalletLogic.receive-token(root.token-text); }
+                }
+            }
+            if WalletLogic.token-check-text != "" : Text {
+                text: WalletLogic.token-check-text;
+                color: Theme.warn;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

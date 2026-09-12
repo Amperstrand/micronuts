@@ -254,6 +254,15 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(wire)
     }
 
+    /// NUT-05 step 1: fetch a melt quote for an invoice without paying.
+    pub fn quote_melt(&mut self, invoice: &str) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        self.ensure_connected()?;
+        self.meta.post_melt_quote(nut05::MeltQuoteRequest {
+            request: String::from(invoice),
+            unit: self.unit.clone(),
+        })
+    }
+
     /// NUT-05: pay a Lightning invoice. The whole balance is first swapped
     /// into an exact `amount + fee_reserve` set plus change capped at the
     /// target's lowest denomination, because the wallet's melt selects

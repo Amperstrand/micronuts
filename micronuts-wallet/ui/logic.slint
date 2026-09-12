@@ -1,0 +1,70 @@
+// Shared enums, structs, and the WalletLogic global — imported by app.slint
+// and every screen (avoids circular module imports).
+
+export enum Page {
+    Home,
+    Receive,
+    Send,
+    History,
+    Mints,
+    Backup,
+}
+
+export struct HistoryItem {
+    line1: string,
+    line2: string,
+}
+
+export struct MintItem {
+    url: string,
+    name: string,
+    active: bool,
+}
+
+export global WalletLogic {
+    // wallet state
+    in-out property <bool> connected: false;
+    in-out property <bool> busy: false;
+    in-out property <bool> privacy-hide: false;
+    in-out property <bool> has-active-mint: false;
+    in-out property <string> balance-text: "0 sat";
+    in-out property <string> mint-name: "";
+    in-out property <string> mint-url: "";
+    in-out property <string> status-message: "";
+
+    // receive: lightning invoice
+    in-out property <string> invoice: "";
+    in-out property <string> invoice-quote-id: "";
+    in-out property <string> invoice-state: "";
+    in-out property <string> invoice-amount-text: "";
+    in-out property <int> invoice-amount: 0;
+    in-out property <image> invoice-qr;
+
+    // receive: ecash token
+    in-out property <string> token-check-text: "";
+
+    // send: ecash token
+    in-out property <string> token-out: "";
+    in-out property <image> token-qr;
+
+    // send: lightning melt
+    in-out property <string> melt-quote-info: "";
+    in-out property <string> melt-preimage: "";
+
+    // lists + backup
+    in-out property <[HistoryItem]> history;
+    in-out property <[MintItem]> mints;
+    in-out property <string> seed: "";
+
+    pure callback connect();
+    pure callback mint-invoice(string);
+    pure callback mint-paid(string, int);
+    pure callback receive-token(string);
+    pure callback check-token(string);
+    pure callback send-token(string, string);
+    pure callback melt-quote(string);
+    pure callback melt-confirm();
+    pure callback add-mint(string);
+    pure callback switch-mint(int);
+    pure callback toggle-privacy();
+}

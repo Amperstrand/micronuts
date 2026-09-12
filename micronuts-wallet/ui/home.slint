@@ -1,0 +1,77 @@
+import { Button, ScrollView } from "std-widgets.slint";
+import { Page, WalletLogic } from "logic.slint";
+import { Theme } from "theme.slint";
+
+export component HomeScreen inherits Rectangle {
+    callback navigate(Page);
+    background: transparent;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 14px;
+        alignment: start;
+        Rectangle { height: 32px; }
+        Text {
+            text: WalletLogic.mint-name;
+            color: Theme.text-dim;
+            font-size: 16px;
+            horizontal-alignment: center;
+            width: parent.width;
+        }
+        Text {
+            text: WalletLogic.privacy-hide ? "••••••" : WalletLogic.balance-text;
+            color: Theme.text;
+            font-size: 46px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            width: parent.width;
+        }
+        Text {
+            text: WalletLogic.status-message;
+            color: WalletLogic.connected ? Theme.text-dim : Theme.warn;
+            font-size: 13px;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+            width: parent.width;
+        }
+        Rectangle { height: 16px; }
+        HorizontalLayout {
+            spacing: 12px;
+            Button {
+                text: "Receive";
+                primary: true;
+                clicked => { root.navigate(Page.Receive); }
+            }
+            Button {
+                text: "Send";
+                clicked => { root.navigate(Page.Send); }
+            }
+            Button {
+                text: WalletLogic.privacy-hide ? "Show" : "Hide";
+                clicked => { WalletLogic.toggle-privacy(); }
+            }
+        }
+        Rectangle { height: 12px; }
+        Text {
+            text: "Recent activity";
+            color: Theme.text-dim;
+            font-size: 14px;
+        }
+        ScrollView {
+            VerticalLayout {
+                spacing: 6px;
+                alignment: start;
+                for entry in WalletLogic.history: Rectangle {
+                    height: 56px;
+                    border-radius: 10px;
+                    background: Theme.card;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 2px;
+                        Text { text: entry.line1; color: Theme.text; font-size: 15px; }
+                        Text { text: entry.line2; color: Theme.text-dim; font-size: 12px; wrap: word-wrap; }
+                    }
+                }
+            }
+        }
+    }
+}

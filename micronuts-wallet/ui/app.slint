@@ -1,11 +1,85 @@
-// Stub main window — the wallet screens land with the UI todo.
+// Wallet shell: page switching + bottom navigation. Screens live in their
+// own modules; shared state is the WalletLogic global (logic.slint).
+import { Page, WalletLogic } from "logic.slint";
+import { Theme } from "theme.slint";
+import { HomeScreen } from "home.slint";
+import { ReceiveScreen } from "receive.slint";
+import { SendScreen } from "send.slint";
+import { HistoryScreen } from "history.slint";
+import { MintsScreen } from "mints.slint";
+import { BackupScreen } from "backup.slint";
+
+export { WalletLogic, Page, HistoryItem, MintItem } from "logic.slint";
+
+component NavButton inherits Rectangle {
+    in property <string> label;
+    in property <Page> target;
+    in property <bool> selected;
+    callback navigate(Page);
+    height: 72px;
+    background: selected ? Theme.card-hover : transparent;
+    border-radius: 12px;
+    Text {
+        text: root.label;
+        color: root.selected ? Theme.accent : Theme.text-dim;
+        font-size: 15px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.navigate(root.target);
+        }
+    }
+}
+
+component BottomNav inherits Rectangle {
+    in property <Page> current;
+    callback navigate(Page);
+    height: 92px;
+    background: Theme.card;
+    HorizontalLayout {
+        padding: 8px;
+        spacing: 4px;
+        NavButton { label: "Home"; target: Page.Home; selected: root.current == Page.Home; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "Receive"; target: Page.Receive; selected: root.current == Page.Receive; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "Send"; target: Page.Send; selected: root.current == Page.Send; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "History"; target: Page.History; selected: root.current == Page.History; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "Mints"; target: Page.Mints; selected: root.current == Page.Mints || root.current == Page.Backup; navigate(p) => { root.navigate(p); } }
+    }
+}
+
 export component MainWindow inherits Window {
     preferred-width: 480px;
     preferred-height: 800px;
-    background: #10141a;
-    Text {
-        text: "micronuts wallet";
-        color: #e8eaed;
-        font-size: 22px;
+    background: Theme.background;
+    in-out property <Page> current-page: WalletLogic.has-active-mint ? Page.Home : Page.Mints;
+    callback navigate(Page);
+
+    navigate(page) => {
+        root.current-page = page;
+    }
+
+    VerticalLayout {
+        Rectangle {
+            if root.current-page == Page.Home && WalletLogic.has-active-mint : HomeScreen {
+                navigate(p) => { root.navigate(p); }
+            }
+            if root.current-page == Page.Receive && WalletLogic.has-active-mint : ReceiveScreen { }
+            if root.current-page == Page.Send && WalletLogic.has-active-mint : SendScreen { }
+            if root.current-page == Page.History : HistoryScreen { }
+            if root.current-page == Page.Mints : MintsScreen {
+                navigate(p) => { root.navigate(p); }
+            }
+            if root.current-page == Page.Backup : BackupScreen {
+                navigate(p) => { root.navigate(p); }
+            }
+        }
+        BottomNav {
+            current: root.current-page;
+            navigate(p) => { root.navigate(p); }
+        }
     }
 }

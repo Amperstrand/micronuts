@@ -1,0 +1,101 @@
+import { Button, LineEdit } from "std-widgets.slint";
+import { Page, WalletLogic } from "logic.slint";
+import { Theme } from "theme.slint";
+
+export component MintsScreen inherits Rectangle {
+    callback navigate(Page);
+    in-out property <string> add-url: "";
+    in-out property <bool> confirming: false;
+    background: transparent;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        Text { text: "Mints"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        Text {
+            text: "Mints custody your sats and issue the ecash you hold. Choose operators you trust.";
+            color: Theme.text-dim;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+        for mint[index] in WalletLogic.mints: Rectangle {
+            height: 64px;
+            border-radius: 10px;
+            background: mint.active ? Theme.card-hover : Theme.card;
+            border-width: mint.active ? 1px : 0px;
+            border-color: mint.active ? Theme.accent : transparent;
+            VerticalLayout {
+                padding: 9px;
+                spacing: 2px;
+                Text {
+                    text: mint.name == "" ? mint.url : mint.name;
+                    color: Theme.text;
+                    font-size: 15px;
+                }
+                Text {
+                    text: mint.active ? "active" : mint.url;
+                    color: mint.active ? Theme.accent : Theme.text-dim;
+                    font-size: 12px;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if (!mint.active) {
+                        WalletLogic.switch-mint(index);
+                    }
+                }
+            }
+        }
+        if !root.confirming : VerticalLayout {
+            spacing: 10px;
+            LineEdit {
+                text: root.add-url;
+                placeholder-text: "https://mint.example";
+                font-size: 14px;
+                edited(text) => { root.add-url = text; }
+            }
+            Button {
+                text: "Add mint";
+                enabled: root.add-url != "" && !WalletLogic.busy;
+                clicked => { root.confirming = true; }
+            }
+        }
+        if root.confirming : Rectangle {
+            height: 150px;
+            border-radius: 12px;
+            background: Theme.card;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+                Text {
+                    text: "Do you trust this mint? It controls the funds you send it.";
+                    color: Theme.warn;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Text { text: root.add-url; color: Theme.text; font-size: 13px; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Button {
+                        text: "Cancel";
+                        clicked => { root.confirming = false; }
+                    }
+                    Button {
+                        text: "Trust & add";
+                        primary: true;
+                        enabled: !WalletLogic.busy;
+                        clicked => {
+                            root.confirming = false;
+                            WalletLogic.add-mint(root.add-url);
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle { height: 8px; }
+        Button {
+            text: "Wallet backup";
+            clicked => { root.navigate(Page.Backup); }
+        }
+    }
+}

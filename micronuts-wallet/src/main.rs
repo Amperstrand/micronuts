@@ -5,12 +5,18 @@ use std::path::PathBuf;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--demo") {
-        // Wired with the engine todo: full mint/send/receive/melt cycle.
+        // Wired with the live-demo todo: full mint/send/receive/melt cycle.
         eprintln!("micronuts-wallet: --demo arrives with the engine");
         std::process::exit(2);
     }
     let dir = data_dir_from(&args);
-    println!("micronuts-wallet scaffold; data dir: {}", dir.display());
+    match micronuts_wallet::ui::run(dir) {
+        Ok(()) => {}
+        Err(err) => {
+            eprintln!("micronuts-wallet: UI error: {err}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// `--dir <path>` overrides the data directory.
