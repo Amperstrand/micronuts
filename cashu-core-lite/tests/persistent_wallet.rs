@@ -201,9 +201,26 @@ impl MintClient for MockMint {
 
     fn post_swap(
         &mut self,
-        _request: nut03::SwapRequest,
+        request: nut03::SwapRequest,
     ) -> Result<nut03::SwapResponse, CashuError> {
-        Err(unused(()))
+        let mut signatures = Vec::with_capacity(request.outputs.len());
+        for output in &request.outputs {
+            let privkey = self
+                .privkeys
+                .get(&output.amount)
+                .ok_or(CashuError::KeysetNotFound)?;
+            let sig = nut00::BlindSignature {
+                amount: output.amount,
+                id: output.id.clone(),
+                c: sign_message(privkey, &output.b),
+                dleq: None,
+            };
+            self.signed
+                .borrow_mut()
+                .insert(output.b.to_bytes(), sig.clone());
+            signatures.push(sig);
+        }
+        Ok(nut03::SwapResponse { signatures })
     }
 
     fn post_check_state(
@@ -494,4 +511,94 @@ fn melt_insufficient_inputs_errors() {
         Err(CashuError::InsufficientInputs)
     );
     assert_eq!(w.balance(), 8);
+}
+
+#[test]
+fn swap_deterministic_resplits_and_persists() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium.clone());
+    w.mint_deterministic("q1", 63, KEYSET_ID, &keyset).unwrap();
+    let selected = w.spend(63).unwrap();
+    assert_eq!(selected.iter().map(|p| p.amount).sum::<u64>(), 63);
+    assert_eq!(w.balance(), 0);
+
+    let fresh = w
+        .swap_deterministic(selected, &[32, 16, 8, 4, 2, 1], KEYSET_ID, &keyset)
+        .unwrap();
+    assert_eq!(
+        fresh.iter().map(|p| p.amount).collect::<Vec<_>>(),
+        vec![32, 16, 8, 4, 2, 1],
+        "returned proofs follow new_amounts order"
+    );
+    assert_eq!(w.balance(), 63);
+    assert_eq!(w.proof_count(), 6);
+
+    let restarted = wallet_with(&mock, medium);
+    assert_eq!(restarted.balance(), 63);
+    assert_eq!(restarted.proof_count(), 6);
+}
+
+#[test]
+fn swap_deterministic_rejects_empty_outputs() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let mut w = wallet_with(&mock, SharedStore::new());
+    w.mint_deterministic("q1", 8, KEYSET_ID, &keyset).unwrap();
+    let selected = w.spend(8).unwrap();
+    assert_eq!(
+        w.swap_deterministic(selected, &[], KEYSET_ID, &keyset),
+        Err(CashuError::InvalidAmount)
+    );
+}
+
+#[test]
+fn add_proofs_credits_external_proofs_across_seeds() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+
+    let mut source = wallet_with(&mock, SharedStore::new());
+    source
+        .mint_deterministic("q1", 21, KEYSET_ID, &keyset)
+        .unwrap();
+    let external = source.spend(21).unwrap();
+
+    let medium = SharedStore::new();
+    let mut recipient = PersistentWallet::new(
+        "https://mint.example",
+        mock.clone(),
+        medium.clone(),
+        [0x77; 32],
+    )
+    .unwrap();
+    assert_eq!(recipient.balance(), 0);
+    recipient.add_proofs(external).unwrap();
+    assert_eq!(recipient.balance(), 21);
+
+    let restarted =
+        PersistentWallet::new("https://mint.example", mock, medium, [0x77; 32]).unwrap();
+    assert_eq!(restarted.balance(), 21);
+}
+
+#[test]
+fn remove_proofs_removes_only_the_given_slice() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium.clone());
+    w.mint_deterministic("q1", 63, KEYSET_ID, &keyset).unwrap();
+
+    let selected = w.spend(32).unwrap();
+    assert_eq!(selected.iter().map(|p| p.amount).sum::<u64>(), 32);
+    w.add_proofs(selected.clone()).unwrap();
+    assert_eq!(w.balance(), 63);
+
+    w.remove_proofs(&selected).unwrap();
+    assert_eq!(w.balance(), 31);
+
+    let restarted = wallet_with(&mock, medium);
+    assert_eq!(restarted.balance(), 31);
 }

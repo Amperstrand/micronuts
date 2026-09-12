@@ -42,6 +42,7 @@ use crate::error::CashuError;
 use crate::keypair::SecretKey;
 use crate::nuts::nut00;
 use crate::nuts::nut01;
+use crate::nuts::nut03;
 use crate::nuts::nut04;
 use crate::nuts::nut05;
 use crate::nuts::nut09;
@@ -385,6 +386,58 @@ where
     /// Roll back a [`Self::spend`] whose transfer never completed.
     pub fn undo_spend(&mut self, proofs: Vec<nut00::Proof>) -> Result<(), CashuError> {
         self.proofs.extend(proofs);
+        self.persist()
+    }
+
+    /// NUT-03 swap with NUT-13 deterministic outputs.
+    ///
+    /// Spends `inputs` — proofs the caller has already taken out of the
+    /// wallet ([`Self::spend`]) or received from another wallet — into
+    /// fresh outputs of `new_amounts`, unblinds the signatures, stores the
+    /// fresh proofs, and returns them (in `new_amounts` order).
+    ///
+    /// Input-side custody is the caller's: this method never touches
+    /// `self.proofs` on the input side. Counter semantics match
+    /// [`Self::mint_deterministic`] (advance before the call, persist with
+    /// the proofs on success).
+    pub fn swap_deterministic(
+        &mut self,
+        inputs: Vec<nut00::Proof>,
+        new_amounts: &[u64],
+        keyset_id: &str,
+        mint_keys: &nut01::KeySet,
+    ) -> Result<Vec<nut00::Proof>, CashuError> {
+        if new_amounts.is_empty() {
+            return Err(CashuError::InvalidAmount);
+        }
+        let (outputs, pending) = self.deterministic_outputs(new_amounts, keyset_id)?;
+        self.counter = self.counter.saturating_add(pending.len() as u32);
+
+        let response = self
+            .inner
+            .transport
+            .post_swap(nut03::SwapRequest { inputs, outputs })?;
+
+        let proofs = self
+            .inner
+            .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
+        self.proofs.extend(proofs.iter().cloned());
+        self.persist()?;
+        Ok(proofs)
+    }
+
+    /// Store external proofs the mint already issued (e.g. re-credited
+    /// after an out-of-band transfer). Caller guarantees validity.
+    pub fn add_proofs(&mut self, proofs: Vec<nut00::Proof>) -> Result<(), CashuError> {
+        self.proofs.extend(proofs);
+        self.persist()
+    }
+
+    /// Remove specific proofs from the store (e.g. the send slice carved
+    /// out of a [`Self::swap_deterministic`] result). Proofs not present
+    /// are ignored.
+    pub fn remove_proofs(&mut self, proofs: &[nut00::Proof]) -> Result<(), CashuError> {
+        self.proofs.retain(|p| !proofs.contains(p));
         self.persist()
     }
 
