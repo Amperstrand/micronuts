@@ -1,6 +1,6 @@
 import { Button, LineEdit, TextEdit } from "std-widgets.slint";
 import { Page, WalletLogic } from "logic.slint";
-import { TabBar, Theme } from "theme.slint";
+import { BackHeader, TabBar, Theme } from "theme.slint";
 
 export component ReceiveScreen inherits Rectangle {
     callback navigate(Page);
@@ -11,7 +11,10 @@ export component ReceiveScreen inherits Rectangle {
         padding: Theme.pad;
         spacing: 12px;
         alignment: start;
-        Text { text: "Receive"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        BackHeader {
+            title: "Receive";
+            back => { root.navigate(Page.Home); }
+        }
         TabBar { current: root.tab; select(t) => { root.tab = t; } }
 
         if root.tab == 1 : VerticalLayout {

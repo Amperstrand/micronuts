@@ -1,6 +1,6 @@
 import { Button } from "std-widgets.slint";
 import { Page, WalletLogic } from "logic.slint";
-import { Theme } from "theme.slint";
+import { BackHeader, Theme } from "theme.slint";
 
 export component BackupScreen inherits Rectangle {
     callback navigate(Page);
@@ -10,7 +10,10 @@ export component BackupScreen inherits Rectangle {
         padding: Theme.pad;
         spacing: 12px;
         alignment: start;
-        Text { text: "Backup"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        BackHeader {
+            title: "Backup";
+            back => { root.navigate(Page.Settings); }
+        }
         Text {
             text: "This seed derives every ecash secret deterministically (NUT-13). Write it down offline — with it, a restored wallet re-fetches every unspent proof from the mint (NUT-09).";
             color: Theme.text-dim;
@@ -44,8 +47,8 @@ export component BackupScreen inherits Rectangle {
         }
         Rectangle { height: 8px; }
         Button {
-            text: "Back to mints";
-            clicked => { root.navigate(Page.Mints); }
+            text: "Done";
+            clicked => { root.navigate(Page.Settings); }
         }
     }
 }

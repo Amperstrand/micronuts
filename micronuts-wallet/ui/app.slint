@@ -1,11 +1,15 @@
 // Wallet shell: page switching + bottom navigation. Screens live in their
 // own modules; shared state is the WalletLogic global (logic.slint).
+// Navigation contract (UX refactor): Home / Activity / Settings tabs;
+// Receive, Send and Scan are intents pushed from Home; Mints and Backup
+// hang off Settings.
 import { Page, WalletLogic } from "logic.slint";
 import { Theme } from "theme.slint";
 import { HomeScreen } from "home.slint";
 import { ReceiveScreen } from "receive.slint";
 import { SendScreen } from "send.slint";
 import { HistoryScreen } from "history.slint";
+import { SettingsScreen } from "settings.slint";
 import { MintsScreen } from "mints.slint";
 import { BackupScreen } from "backup.slint";
 import { ScannerScreen } from "scan.slint";
@@ -23,7 +27,7 @@ component NavButton inherits Rectangle {
     Text {
         text: root.label;
         color: root.selected ? Theme.accent : Theme.text-dim;
-        font-size: 15px;
+        font-size: 16px;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: parent.width;
@@ -45,10 +49,8 @@ component BottomNav inherits Rectangle {
         padding: 8px;
         spacing: 4px;
         NavButton { label: "Home"; target: Page.Home; selected: root.current == Page.Home; navigate(p) => { root.navigate(p); } }
-        NavButton { label: "Receive"; target: Page.Receive; selected: root.current == Page.Receive; navigate(p) => { root.navigate(p); } }
-        NavButton { label: "Send"; target: Page.Send; selected: root.current == Page.Send; navigate(p) => { root.navigate(p); } }
-        NavButton { label: "History"; target: Page.History; selected: root.current == Page.History; navigate(p) => { root.navigate(p); } }
-        NavButton { label: "Mints"; target: Page.Mints; selected: root.current == Page.Mints || root.current == Page.Backup; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "Activity"; target: Page.Activity; selected: root.current == Page.Activity; navigate(p) => { root.navigate(p); } }
+        NavButton { label: "Settings"; target: Page.Settings; selected: root.current == Page.Settings || root.current == Page.Mints || root.current == Page.Backup; navigate(p) => { root.navigate(p); } }
     }
 }
 
@@ -61,6 +63,15 @@ export component MainWindow inherits Window {
 
     navigate(page) => {
         root.current-page = page;
+        WalletLogic.page-name =
+            page == Page.Home ? "home"
+            : page == Page.Receive ? "receive"
+            : page == Page.Send ? "send"
+            : page == Page.Scan ? "scan"
+            : page == Page.Activity ? "activity"
+            : page == Page.Settings ? "settings"
+            : page == Page.Mints ? "mints"
+            : "backup";
     }
 
     VerticalLayout {
@@ -72,14 +83,17 @@ export component MainWindow inherits Window {
                 navigate(p) => { root.navigate(p); }
             }
             if root.current-page == Page.Send && WalletLogic.has-active-mint : SendScreen { }
-            if root.current-page == Page.History : HistoryScreen { }
+            if root.current-page == Page.Scan : ScannerScreen {
+                navigate(p) => { root.navigate(p); }
+            }
+            if root.current-page == Page.Activity : HistoryScreen { }
+            if root.current-page == Page.Settings : SettingsScreen {
+                navigate(p) => { root.navigate(p); }
+            }
             if root.current-page == Page.Mints : MintsScreen {
                 navigate(p) => { root.navigate(p); }
             }
             if root.current-page == Page.Backup : BackupScreen {
-                navigate(p) => { root.navigate(p); }
-            }
-            if root.current-page == Page.Scan : ScannerScreen {
                 navigate(p) => { root.navigate(p); }
             }
         }

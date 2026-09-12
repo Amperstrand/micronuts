@@ -130,11 +130,12 @@ fn main() {
     std::fs::create_dir_all(out_dir).expect("shots dir");
 
     shot(&ui, Page::Home, "home", out_dir);
-    shot(&ui, Page::History, "history", out_dir);
+    shot(&ui, Page::Activity, "history", out_dir);
+    shot(&ui, Page::Settings, "settings", out_dir);
     shot(&ui, Page::Mints, "mints", out_dir);
     shot(&ui, Page::Backup, "backup", out_dir);
 
-    logic.set_token_check_text("healthy: 3 unspent proofs".into());
+    logic.set_token_check_text("21 sats from https://mint.example".into());
     shot(&ui, Page::Receive, "receive-token", out_dir);
 
     logic.set_receive_tab(1);

@@ -5,10 +5,11 @@ export enum Page {
     Home,
     Receive,
     Send,
-    History,
+    Scan,
+    Activity,
+    Settings,
     Mints,
     Backup,
-    Scan,
 }
 
 export struct HistoryItem {
@@ -28,10 +29,13 @@ export global WalletLogic {
     in-out property <bool> busy: false;
     in-out property <bool> privacy-hide: false;
     in-out property <bool> has-active-mint: false;
-    in-out property <string> balance-text: "0 sat";
+    in-out property <string> balance-text: "0 sats";
     in-out property <string> mint-name: "";
     in-out property <string> mint-url: "";
     in-out property <string> status-message: "";
+    // Current page name for tooling/tests ("home", "receive", …) — the
+    // shell keeps it in sync; never user-facing.
+    in-out property <string> page-name: "home";
 
     // receive: lightning invoice
     in-out property <string> invoice: "";
@@ -72,7 +76,6 @@ export global WalletLogic {
     pure callback add-mint(string);
     pure callback switch-mint(int);
     pure callback toggle-privacy();
-    pure callback reconcile();
     pure callback scan-start();
     pure callback scan-stop();
 

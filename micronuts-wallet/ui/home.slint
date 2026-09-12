@@ -2,6 +2,9 @@ import { Button, ScrollView } from "std-widgets.slint";
 import { Page, WalletLogic } from "logic.slint";
 import { Theme } from "theme.slint";
 
+// Home answers: how much, which mint, receive/send/scan, what happened
+// recently, is anything wrong. No developer controls — reconciliation
+// is wallet machinery (UX contract).
 export component HomeScreen inherits Rectangle {
     callback navigate(Page);
     background: transparent;
@@ -9,22 +12,43 @@ export component HomeScreen inherits Rectangle {
         padding: Theme.pad;
         spacing: 14px;
         alignment: start;
-        Rectangle { height: 32px; }
-        Text {
-            text: WalletLogic.mint-name;
-            color: Theme.text-dim;
-            font-size: 16px;
-            horizontal-alignment: center;
-            width: parent.width;
+        Rectangle { height: 28px; }
+
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: WalletLogic.mint-name != "" ? WalletLogic.mint-name : WalletLogic.mint-url;
+                color: Theme.text-dim;
+                font-size: 15px;
+                vertical-alignment: center;
+            }
         }
-        Text {
-            text: WalletLogic.privacy-hide ? "••••••" : WalletLogic.balance-text;
-            color: Theme.text;
-            font-size: 46px;
-            font-weight: 800;
-            horizontal-alignment: center;
-            width: parent.width;
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            Text {
+                text: WalletLogic.privacy-hide ? "••••••" : WalletLogic.balance-text;
+                color: Theme.text;
+                font-size: 54px;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                width: 28px;
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { WalletLogic.toggle-privacy(); }
+                }
+                Text {
+                    text: WalletLogic.privacy-hide ? "◌" : "◉";
+                    color: Theme.text-dim;
+                    font-size: 18px;
+                    vertical-alignment: center;
+                }
+            }
         }
+
         Text {
             text: WalletLogic.status-message;
             color: WalletLogic.connected ? Theme.text-dim : Theme.warn;
@@ -33,29 +57,30 @@ export component HomeScreen inherits Rectangle {
             horizontal-alignment: center;
             width: parent.width;
         }
-        Rectangle { height: 16px; }
+
+        Rectangle { height: 8px; }
+
         HorizontalLayout {
             spacing: 12px;
             Button {
                 text: "Receive";
                 primary: true;
+                height: 68px;
                 clicked => { root.navigate(Page.Receive); }
             }
             Button {
                 text: "Send";
+                height: 68px;
                 clicked => { root.navigate(Page.Send); }
             }
-        Button {
-            text: WalletLogic.privacy-hide ? "Show balance" : "Hide balance";
-            clicked => { WalletLogic.toggle-privacy(); }
         }
         Button {
-            text: "Refresh balance";
-            enabled: WalletLogic.has-active-mint && !WalletLogic.busy;
-            clicked => { WalletLogic.reconcile(); }
+            text: "Scan";
+            height: 56px;
+            clicked => { root.navigate(Page.Scan); }
         }
-        }
-        Rectangle { height: 12px; }
+
+        Rectangle { height: 6px; }
         Text {
             text: "Recent activity";
             color: Theme.text-dim;
@@ -65,16 +90,23 @@ export component HomeScreen inherits Rectangle {
             VerticalLayout {
                 spacing: 6px;
                 alignment: start;
-                for entry in WalletLogic.history: Rectangle {
-                    height: 56px;
+                for entry[i] in WalletLogic.history: Rectangle {
+                    // Home shows the three most recent entries; the full
+                    // list lives on Activity.
+                    height: i < 3 ? 56px : 0px;
                     border-radius: 10px;
-                    background: Theme.card;
+                    background: i < 3 ? Theme.card : transparent;
                     VerticalLayout {
                         padding: 8px;
                         spacing: 2px;
                         Text { text: entry.line1; color: Theme.text; font-size: 15px; }
                         Text { text: entry.line2; color: Theme.text-dim; font-size: 12px; wrap: word-wrap; }
                     }
+                }
+                if WalletLogic.history.length == 0 : Text {
+                    text: "Nothing yet — receive your first ecash.";
+                    color: Theme.text-dim;
+                    font-size: 13px;
                 }
             }
         }

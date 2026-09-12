@@ -710,25 +710,6 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
     }
 
     {
-        let tx = dispatcher.clone();
-        let weak = weak.clone();
-        logic.on_reconcile(move || {
-            let weak = weak.clone();
-            set_busy(&weak);
-            tx.post(move |worker| {
-                let Some(engine) = worker.engine.as_mut() else {
-                    return;
-                };
-                match engine.reconcile_spent() {
-                    Ok(0) => worker.status = String::from("no spent proofs"),
-                    Ok(pruned) => worker.status = format!("pruned {pruned} spent proofs"),
-                    Err(err) => worker.status = format!("reconcile failed: {err}"),
-                }
-            });
-        });
-    }
-
-    {
         let weak = weak.clone();
         logic.on_scan_start(move || {
             let weak = weak.clone();

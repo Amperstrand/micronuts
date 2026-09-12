@@ -1,6 +1,6 @@
 import { Button, LineEdit } from "std-widgets.slint";
 import { Page, WalletLogic } from "logic.slint";
-import { Theme } from "theme.slint";
+import { BackHeader, Theme } from "theme.slint";
 
 export component MintsScreen inherits Rectangle {
     callback navigate(Page);
@@ -11,7 +11,10 @@ export component MintsScreen inherits Rectangle {
         padding: Theme.pad;
         spacing: 12px;
         alignment: start;
-        Text { text: "Mints"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        BackHeader {
+            title: "Mints";
+            back => { root.navigate(Page.Settings); }
+        }
         Text {
             text: "Mints custody your sats and issue the ecash you hold. Choose operators you trust.";
             color: Theme.text-dim;

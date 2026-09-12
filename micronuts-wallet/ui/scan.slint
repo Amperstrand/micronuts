@@ -37,7 +37,7 @@ export component ScannerScreen inherits Rectangle {
             clicked => {
                 WalletLogic.scan-stop();
                 WalletLogic.scanning = false;
-                root.navigate(Page.Receive);
+                root.navigate(Page.Home);
             }
         }
     }

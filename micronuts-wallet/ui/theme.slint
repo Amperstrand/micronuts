@@ -13,6 +13,38 @@ export global Theme {
     out property <length> pad: 20px;
 }
 
+// Page header with a back affordance for intent pages pushed from Home
+// or Settings (nav contract: the bottom bar stays for tabs only).
+export component BackHeader inherits Rectangle {
+    in property <string> title;
+    callback back();
+    height: 44px;
+    HorizontalLayout {
+        spacing: 10px;
+        Rectangle {
+            width: 44px;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.back(); }
+            }
+            Text {
+                text: "‹";
+                color: Theme.accent;
+                font-size: 28px;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component TabBar inherits Rectangle {
     in property <string> label-a: "Ecash";
     in property <string> label-b: "Lightning";

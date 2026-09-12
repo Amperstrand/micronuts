@@ -1,0 +1,58 @@
+import { Page, WalletLogic } from "logic.slint";
+import { Theme } from "theme.slint";
+
+component SettingsRow inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    callback clicked();
+    height: 72px;
+    border-radius: 12px;
+    background: touch.has-hover ? Theme.card-hover : Theme.card;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding: 16px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { text: root.label; color: Theme.text; font-size: 16px; }
+            Text { text: root.hint; color: Theme.text-dim; font-size: 12px; }
+        }
+        Text {
+            text: "›";
+            color: Theme.text-dim;
+            font-size: 22px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component SettingsScreen inherits Rectangle {
+    callback navigate(Page);
+    background: transparent;
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        alignment: start;
+        Text { text: "Settings"; color: Theme.text; font-size: 24px; font-weight: 700; }
+        SettingsRow {
+            label: "Mints";
+            hint: "Add and manage the mints you trust";
+            clicked => { root.navigate(Page.Mints); }
+        }
+        SettingsRow {
+            label: "Backup";
+            hint: "Reveal the recovery words for this wallet";
+            clicked => { root.navigate(Page.Backup); }
+        }
+        Rectangle { height: 8px; }
+        Text {
+            text: "Micronuts — a Cashu wallet on dedicated hardware.";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+}
