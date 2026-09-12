@@ -1,47 +1,130 @@
-//! Slint UI wiring: every `WalletLogic` callback posts a job to a worker
-//! thread that owns the engine + wallet state; results flow back through
-//! `Weak::upgrade_in_event_loop` (the docs-recommended cross-thread pattern).
-//! A snapshot of generic wallet state is re-applied after every job.
+//! Slint UI wiring: every `WalletLogic` callback posts a job to the worker
+//! that owns the engine + wallet state. Native runs the worker on a thread
+//! (results flow back via `Weak::upgrade_in_event_loop`); the browser
+//! build executes jobs synchronously on the JS event loop with an
+//! embedded demo mint. A snapshot of generic wallet state is re-applied
+//! after every job.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::time::Duration;
 
 use rand_core::{OsRng, RngCore};
 use slint::{ComponentHandle, ModelRc, VecModel, Weak};
 
 use crate::engine::{HistoryEntry, HistoryKind, WalletEngine};
-use crate::http::HttpMintClient;
-use crate::state::{FileStore, MintEntry, WalletState};
-use cashu_core_lite::store::StoreError;
+use crate::state::{MintEntry, WalletState};
 use cashu_core_lite::transport::MintClient;
+
+#[cfg(target_arch = "wasm32")]
+use crate::demo_mint::DemoMintClient;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::http::HttpMintClient;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::state::FileStore;
+#[cfg(target_arch = "wasm32")]
+use cashu_core_lite::store::MemoryStore;
+#[cfg(not(target_arch = "wasm32"))]
+use cashu_core_lite::store::StoreError;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
 
 slint::include_modules!();
 
 const QR_SCALE: usize = 6;
 const QR_QUIET_ZONE: usize = 4;
 
+#[cfg(not(target_arch = "wasm32"))]
+type Transport = HttpMintClient;
+#[cfg(not(target_arch = "wasm32"))]
+type Store = FileStore;
+#[cfg(target_arch = "wasm32")]
+type Transport = DemoMintClient;
+#[cfg(target_arch = "wasm32")]
+type Store = MemoryStore;
+
+#[cfg(not(target_arch = "wasm32"))]
+type Job = Box<dyn FnOnce(&mut Worker) + Send + 'static>;
+#[cfg(target_arch = "wasm32")]
+type Job = Box<dyn FnOnce(&mut Worker) + 'static>;
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static WORKER: std::cell::RefCell<Option<Worker>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[derive(Clone)]
+struct Dispatcher {
+    #[cfg(not(target_arch = "wasm32"))]
+    tx: mpsc::Sender<Job>,
+    #[cfg(target_arch = "wasm32")]
+    weak: Weak<MainWindow>,
+}
+
+impl Dispatcher {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn post(&self, job: impl FnOnce(&mut Worker) + Send + 'static) {
+        let _ = self.tx.send(Box::new(job));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn post(&self, job: impl FnOnce(&mut Worker) + 'static) {
+        let weak = self.weak.clone();
+        WORKER.with(|slot| {
+            if let Some(worker) = slot.borrow_mut().as_mut() {
+                job(worker);
+                finish_job(worker, &weak);
+            }
+        });
+    }
+}
+
 pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
 
-    let worker = Worker::new(&dir).expect("wallet data directory");
-    let (tx, rx) = mpsc::channel::<Job>();
-    let weak = ui.as_weak();
-    std::thread::spawn(move || worker_loop(worker, rx, weak));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let worker = Worker::new(&dir).expect("wallet data directory");
+        let (tx, rx) = mpsc::channel::<Job>();
+        let weak = ui.as_weak();
+        std::thread::spawn(move || worker_loop(worker, rx, weak));
 
-    wire_callbacks(&ui, tx.clone());
-    start_quote_poller(&ui, tx.clone());
-    post(&tx, |worker| worker.connect_active());
+        let dispatcher = Dispatcher { tx };
+        wire_callbacks(&ui, dispatcher.clone());
+        start_quote_poller(&ui, dispatcher.clone());
+        dispatcher.post(|worker| worker.connect_active());
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let worker = Worker::new(&dir).expect("browser worker");
+        WORKER.with(|slot| *slot.borrow_mut() = Some(worker));
+        let dispatcher = Dispatcher { weak: ui.as_weak() };
+        wire_callbacks(&ui, dispatcher.clone());
+        start_quote_poller(&ui, dispatcher.clone());
+        dispatcher.post(|worker| worker.connect_active());
+    }
 
     ui.run()
 }
 
-type Job = Box<dyn FnOnce(&mut Worker) + Send + 'static>;
-
-fn post(tx: &mpsc::Sender<Job>, job: impl FnOnce(&mut Worker) + Send + 'static) {
-    let _ = tx.send(Box::new(job));
+#[cfg(not(target_arch = "wasm32"))]
+fn worker_loop(mut worker: Worker, rx: mpsc::Receiver<Job>, weak: Weak<MainWindow>) {
+    while let Ok(job) = rx.recv() {
+        job(&mut worker);
+        finish_job(&mut worker, &weak);
+    }
 }
 
+fn finish_job(worker: &mut Worker, weak: &Weak<MainWindow>) {
+    worker.persist_state();
+    let snapshot = worker.snapshot();
+    let _ = weak.upgrade_in_event_loop(move |ui| {
+        apply_snapshot(&ui, &snapshot);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn store_error_text(err: StoreError) -> String {
     match err {
         StoreError::Unavailable => String::from("store unavailable"),
@@ -52,7 +135,7 @@ fn store_error_text(err: StoreError) -> String {
 struct Worker {
     dir: PathBuf,
     state: WalletState,
-    engine: Option<WalletEngine<HttpMintClient, FileStore>>,
+    engine: Option<WalletEngine<Transport, Store>>,
     pending_melt: Option<String>,
     status: String,
 }
@@ -71,6 +154,7 @@ struct Snapshot {
 }
 
 impl Worker {
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("create data dir: {e}"))?;
         let state_path = dir.join("wallet.json");
@@ -92,6 +176,38 @@ impl Worker {
         Ok(worker)
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn new(_dir: &Path) -> Result<Self, String> {
+        let mut wallet_seed = [0u8; 32];
+        OsRng.fill_bytes(&mut wallet_seed);
+        let mut mint_seed = [0u8; 32];
+        OsRng.fill_bytes(&mut mint_seed);
+        let mut state = WalletState::default();
+        state.mints.push(MintEntry {
+            url: String::from(crate::demo_mint::DEMO_MINT_URL),
+            name: String::from("Browser Demo Mint"),
+            trusted: true,
+        });
+        state.active_mint = Some(String::from(crate::demo_mint::DEMO_MINT_URL));
+        state.seed_hex = Some(hex::encode(wallet_seed));
+        let engine = WalletEngine::new(
+            crate::demo_mint::DEMO_MINT_URL,
+            DemoMintClient::new(mint_seed),
+            MemoryStore::new(),
+            wallet_seed,
+            Vec::new(),
+        )
+        .map_err(|e| format!("browser engine: {e}"))?;
+        Ok(Self {
+            dir: PathBuf::new(),
+            state,
+            engine: Some(engine),
+            pending_melt: None,
+            status: String::from("browser demo — embedded mint, state lives in this tab only"),
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn state_path(&self) -> PathBuf {
         self.dir.join("wallet.json")
     }
@@ -108,11 +224,13 @@ impl Worker {
         seed
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn store_path(&self, url: &str) -> PathBuf {
         let tag = url.trim_end_matches('/').replace(['/', ':'], "_");
         self.dir.join(format!("proofs-{tag}.bin"))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn build_engine(&mut self) {
         self.engine = None;
         let Some(active) = self.state.active_mint.clone() else {
@@ -155,6 +273,7 @@ impl Worker {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn persist_state(&mut self) {
         if let Some(engine) = self.engine.as_ref() {
             self.state.history = engine.history().to_vec();
@@ -162,6 +281,15 @@ impl Worker {
         if let Err(err) = self.state.save(&self.state_path()) {
             self.status = format!("state save failed: {}", store_error_text(err));
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn persist_state(&mut self) {
+        self.state.history = self
+            .engine
+            .as_ref()
+            .map(|engine| engine.history().to_vec())
+            .unwrap_or_default();
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -227,17 +355,6 @@ fn history_line1(entry: &HistoryEntry) -> String {
     format!("{arrow} {amount} sat · {label}", amount = entry.amount)
 }
 
-fn worker_loop(mut worker: Worker, rx: mpsc::Receiver<Job>, weak: Weak<MainWindow>) {
-    while let Ok(job) = rx.recv() {
-        job(&mut worker);
-        worker.persist_state();
-        let snapshot = worker.snapshot();
-        let _ = weak.upgrade_in_event_loop(move |ui| {
-            apply_snapshot(&ui, &snapshot);
-        });
-    }
-}
-
 fn apply_snapshot(ui: &MainWindow, snapshot: &Snapshot) {
     let logic = ui.global::<WalletLogic>();
     logic.set_busy(false);
@@ -258,21 +375,21 @@ fn parse_amount(text: &str) -> Result<u64, String> {
         .map_err(|_| format!("invalid amount: {text}"))
 }
 
-fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
+fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
     let logic = ui.global::<WalletLogic>();
     let weak = ui.as_weak();
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_connect(move || {
             set_busy(&weak);
-            post(&tx, |worker| worker.connect_active());
+            tx.post(|worker| worker.connect_active());
         });
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_mint_invoice(move |amount_text: slint::SharedString| {
             let weak = weak.clone();
@@ -281,7 +398,7 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
                 Ok(amount) => amount,
                 Err(err) => return report(&weak, err),
             };
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     worker.status = String::from("add a mint first");
                     return;
@@ -311,14 +428,14 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_mint_paid(move |quote_id: slint::SharedString, amount: i32| {
             let weak = weak.clone();
             set_busy(&weak);
             let quote_id = quote_id.to_string();
             let amount = u64::try_from(amount).unwrap_or(0);
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     return;
                 };
@@ -341,13 +458,13 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_receive_token(move |token: slint::SharedString| {
             let weak = weak.clone();
             set_busy(&weak);
             let token = token.to_string();
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     worker.status = String::from("add a mint first");
                     return;
@@ -368,13 +485,13 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_check_token(move |token: slint::SharedString| {
             let weak = weak.clone();
             set_busy(&weak);
             let token = token.to_string();
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     return;
                 };
@@ -400,7 +517,7 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_send_token(
             move |amount_text: slint::SharedString, memo: slint::SharedString| {
@@ -416,7 +533,7 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
                 } else {
                     Some(memo)
                 };
-                post(&tx, move |worker| {
+                tx.post(move |worker| {
                     let Some(engine) = worker.engine.as_mut() else {
                         worker.status = String::from("add a mint first");
                         return;
@@ -440,13 +557,13 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_melt_quote(move |invoice: slint::SharedString| {
             let weak = weak.clone();
             set_busy(&weak);
             let invoice = invoice.to_string();
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     return;
                 };
@@ -468,12 +585,12 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_melt_confirm(move || {
             let weak = weak.clone();
             set_busy(&weak);
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(invoice) = worker.pending_melt.clone() else {
                     worker.status = String::from("get a quote first");
                     return;
@@ -500,12 +617,12 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_add_mint(move |url: slint::SharedString| {
             set_busy(&weak);
             let url = url.trim().trim_end_matches('/').to_string();
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 if url.is_empty() {
                     return;
                 }
@@ -513,41 +630,57 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
                     worker.status = format!("mint already known: {url}");
                     return;
                 }
-                let mut probe = HttpMintClient::new(&url);
-                match probe.get_info() {
-                    Ok(info) => {
-                        worker.state.mints.push(MintEntry {
-                            url: url.clone(),
-                            name: info.name,
-                            trusted: true,
-                        });
-                        worker.state.active_mint = Some(url);
-                        worker.build_engine();
-                        worker.connect_active();
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let mut probe = HttpMintClient::new(&url);
+                    match probe.get_info() {
+                        Ok(info) => {
+                            worker.state.mints.push(MintEntry {
+                                url: url.clone(),
+                                name: info.name,
+                                trusted: true,
+                            });
+                            worker.state.active_mint = Some(url);
+                            worker.build_engine();
+                            worker.connect_active();
+                        }
+                        Err(err) => worker.status = format!("mint unreachable: {err}"),
                     }
-                    Err(err) => worker.status = format!("mint unreachable: {err}"),
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = url;
+                    worker.status =
+                        String::from("browser demo: the embedded mint is the only mint here");
                 }
             });
         });
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         let weak = weak.clone();
         logic.on_switch_mint(move |index: i32| {
             set_busy(&weak);
-            post(&tx, move |worker| {
-                let index = usize::try_from(index).unwrap_or(usize::MAX);
-                let Some(entry) = worker.state.mints.get(index) else {
-                    return;
-                };
-                let url = entry.url.clone();
-                if worker.state.active_mint.as_deref() == Some(&url) {
-                    return;
+            tx.post(move |worker| {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let index = usize::try_from(index).unwrap_or(usize::MAX);
+                    let Some(entry) = worker.state.mints.get(index) else {
+                        return;
+                    };
+                    let url = entry.url.clone();
+                    if worker.state.active_mint.as_deref() == Some(&url) {
+                        return;
+                    }
+                    worker.state.active_mint = Some(url);
+                    worker.build_engine();
+                    worker.connect_active();
                 }
-                worker.state.active_mint = Some(url);
-                worker.build_engine();
-                worker.connect_active();
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = (index, worker);
+                }
             });
         });
     }
@@ -563,10 +696,10 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
     }
 
     {
-        let tx = tx.clone();
+        let tx = dispatcher.clone();
         logic.on_reconcile(move || {
             set_busy(&weak);
-            post(&tx, move |worker| {
+            tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
                     return;
                 };
@@ -595,7 +728,7 @@ fn post_current_poll(worker: &mut Worker, quote_id: String, weak: Weak<MainWindo
     }
 }
 
-fn start_quote_poller(ui: &MainWindow, tx: mpsc::Sender<Job>) {
+fn start_quote_poller(ui: &MainWindow, dispatcher: Dispatcher) {
     thread_local! {
         static KEEP_ALIVE: std::cell::RefCell<Vec<slint::Timer>> =
             const { std::cell::RefCell::new(Vec::new()) };
@@ -619,7 +752,7 @@ fn start_quote_poller(ui: &MainWindow, tx: mpsc::Sender<Job>) {
             }
             let quote_id = logic.get_invoice_quote_id().to_string();
             let weak = weak.clone();
-            post(&tx, move |worker| {
+            dispatcher.post(move |worker| {
                 post_current_poll(worker, quote_id, weak);
             });
         },

@@ -1,0 +1,39 @@
+License note for the bundled DejaVu fonts
+==========================================
+
+DejaVuSans.ttf and DejaVuSans-Bold.ttf are from the DejaVu fonts
+(https://dejavu-fonts.github.io/), distributed under their free,
+redistribution-permitting license (Bitstream Vera license with
+additions). They are bundled here so the browser (wasm) build has
+embedded fonts — the web sandbox has no system fonts for Slint's
+font database to discover.
+
+The full license text ships with every DejaVu distribution and is
+reproduced below per its requirement:
+
+Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
+Bitstream Vera is a trademark of Bitstream, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the fonts accompanying this license ("Fonts") to use,
+distribute, reproduce, embed, modify and create derivative works from
+the Fonts, subject to the following conditions:
+
+1) The Fonts, as originally distributed, may be distributed with any
+   software, and the Fonts may be embedded in documents. Derivative
+   works of the Fonts may not use the names "Bitstream Vera" or "Vera"
+   without Bitstream's written permission.
+
+2) The Font may be sold as part of a larger software package, but not
+   sold by itself. Derivative works based on the Fonts may be sold by
+   themselves.
+
+3) The Font's copyright information (this license and the copyright
+   notices in the font files) may not be removed or altered.
+
+BITSTREAM OR ITS LICENSORS SHALL NOT BE LIABLE FOR ANY DIRECT,
+INDIRECT, CONSEQUENTIAL, OR INCIDENTAL DAMAGES ARISING OUT OF THE USE
+OR INABILITY TO USE THE FONTS.
+
+The DejaVu modifications are Copyright (c) 2003-2026 by the DejaVu
+project contributors and are licensed under the same terms.

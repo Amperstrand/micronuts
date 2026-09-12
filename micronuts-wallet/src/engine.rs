@@ -498,8 +498,8 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
     }
 
     fn record(&mut self, kind: HistoryKind, amount: u64, detail: String) {
-        let ts_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let ts_secs = web_time::SystemTime::now()
+            .duration_since(web_time::SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
         self.history.push(HistoryEntry {

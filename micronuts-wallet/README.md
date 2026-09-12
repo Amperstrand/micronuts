@@ -7,6 +7,11 @@ management with a trust gate, history, and seed backup. Money logic rides
 NUT-09 restore) behind a REST `MintClient`; every credited proof is
 NUT-12-verified against the mint's published keys.
 
+The same UI also builds to **WebAssembly** with an embedded in-browser
+demo mint (no network, no persistence — a playground, not a wallet you
+keep funds in): `trunk build` here, or grab the deployed build from
+GitHub Pages (`Wallet Pages` workflow).
+
 Design: [`docs/WALLET-UX-DESIGN.md`](../docs/WALLET-UX-DESIGN.md) ·
 Research: [`docs/RESEARCH-2026-09-12-cashu-wallet-ux.md`](../docs/RESEARCH-2026-09-12-cashu-wallet-ux.md)
 
