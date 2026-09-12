@@ -10,3 +10,8 @@ paths = [
   '''cashu-core-lite/src/nuts/nut13\.rs''',
   '''cashu-core-lite/tests/cross_vectors\.rs''',
 ]
+
+[[allowlists]]
+description = "tools/hil/rig.py names the labgrid board alias with a *_KEY constant; generic-api-key fires on the name + literal. The value is a board name, not a credential (allowlist covers the pre-allow-comment history)"
+regexTarget = "match"
+regex = '''stm32f469i-disco'''
