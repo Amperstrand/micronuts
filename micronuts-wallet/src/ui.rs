@@ -54,6 +54,8 @@ type Job = Box<dyn FnOnce(&mut Worker) + 'static>;
 thread_local! {
     static WORKER: std::cell::RefCell<Option<Worker>> =
         const { std::cell::RefCell::new(None) };
+    static MIRROR_TIMER: std::cell::RefCell<Option<slint::Timer>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 #[derive(Clone)]
@@ -106,6 +108,21 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
         wire_callbacks(&ui, dispatcher.clone());
         start_quote_poller(&ui, dispatcher.clone());
         dispatcher.post(|worker| worker.connect_active());
+
+        // Keep the e2e/tooling mirror fresh between snapshots (page
+        // changes happen without a worker round-trip).
+        let weak = ui.as_weak();
+        let mirror_timer = slint::Timer::default();
+        mirror_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(250),
+            move || {
+                if let Some(ui) = weak.upgrade() {
+                    mirror_state_to_window(&ui.global::<WalletLogic>());
+                }
+            },
+        );
+        MIRROR_TIMER.with(|slot| *slot.borrow_mut() = Some(mirror_timer));
     }
 
     ui.run()
@@ -300,7 +317,7 @@ impl Worker {
         let (connected, balance_text, mint_name, mint_url, history) = match self.engine.as_ref() {
             Some(engine) => (
                 !engine.keyset_id().is_empty(),
-                format!("{} sat", engine.balance()),
+                crate::format_amount(engine.balance()),
                 engine.mint_name().to_string(),
                 engine.mint_url().to_string(),
                 engine
@@ -315,7 +332,7 @@ impl Worker {
             ),
             None => (
                 false,
-                String::from("0 sat"),
+                crate::format_amount(0),
                 String::new(),
                 String::new(),
                 Vec::new(),
@@ -371,6 +388,38 @@ fn apply_snapshot(ui: &MainWindow, snapshot: &Snapshot) {
     logic.set_seed(snapshot.seed.clone().into());
     logic.set_history(ModelRc::new(VecModel::from(snapshot.history.clone())));
     logic.set_mints(ModelRc::new(VecModel::from(snapshot.mints.clone())));
+    #[cfg(target_arch = "wasm32")]
+    mirror_state_to_window(&logic);
+}
+
+/// Test/tooling seam for the wasm build: Slint renders to a canvas, so
+/// browser e2e (Playwright) has no DOM to assert on. Mirror the semantic
+/// wallet state onto `window.__micronuts` — the same pattern the gm65
+/// playground uses. Contains no secrets: page, balance text, mint name,
+/// connection flags, history length.
+#[cfg(target_arch = "wasm32")]
+fn mirror_state_to_window(logic: &WalletLogic) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let obj = js_sys::Object::new();
+    let set = |key: &str, value: wasm_bindgen::JsValue| {
+        let _ = js_sys::Reflect::set(obj.as_ref(), &wasm_bindgen::JsValue::from_str(key), &value);
+    };
+    set("page", logic.get_page_name().to_string().into());
+    set("balance", logic.get_balance_text().to_string().into());
+    set("mint", logic.get_mint_name().to_string().into());
+    set("connected", logic.get_connected().into());
+    set("hasActiveMint", logic.get_has_active_mint().into());
+    set(
+        "historyLen",
+        (slint::Model::row_count(&logic.get_history()) as u32).into(),
+    );
+    let _ = js_sys::Reflect::set(
+        window.as_ref(),
+        &wasm_bindgen::JsValue::from_str("__micronuts"),
+        obj.as_ref(),
+    );
 }
 
 fn parse_amount(text: &str) -> Result<u64, String> {
