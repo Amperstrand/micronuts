@@ -13,6 +13,8 @@ pub enum Command {
     ScannerStatus = 0x10,
     ScannerTrigger = 0x11,
     ScannerData = 0x12,
+    ScannerHeal = 0x13,
+    ScannerFactoryHeal = 0x14,
 }
 
 impl Command {
@@ -26,6 +28,8 @@ impl Command {
             0x10 => Some(Command::ScannerStatus),
             0x11 => Some(Command::ScannerTrigger),
             0x12 => Some(Command::ScannerData),
+            0x13 => Some(Command::ScannerHeal),
+            0x14 => Some(Command::ScannerFactoryHeal),
             _ => None,
         }
     }

@@ -58,6 +58,7 @@ unsafe fn nop_irq() {
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
     HASH_RNG => embassy_stm32::rng::InterruptHandler<peripherals::RNG>;
+    USART6 => usart::BufferedInterruptHandler<peripherals::USART6>;
 });
 
 #[allow(non_snake_case)]
@@ -371,14 +372,24 @@ async fn main(spawner: Spawner) {
     crate::log_info!("USB CDC initialized");
 
     crate::log_info!("Initializing QR scanner (USART6)...");
-    embassy_stm32::interrupt::USART6.disable();
+    // Interrupt-driven BufferedUart (gm65-scanner #88 research: bytes are
+    // stored between reads — the polling shim lost frames whenever the
+    // reader was cancelled mid-frame, which is why hosts needed the
+    // quiet-cadence contract).
     let mut uart_config = usart::Config::default();
     uart_config.baudrate = 115200;
-    let uart = usart::Uart::new_blocking(p.USART6, p.PG9, p.PG14, uart_config).unwrap();
-    let async_uart = firmware::hardware_impl::AsyncUart {
-        inner: uart,
-        uart_error_count: 0,
-    };
+    static UART_RX_BUF: StaticCell<[u8; 512]> = StaticCell::new();
+    static UART_TX_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+    let async_uart = usart::BufferedUart::new(
+        p.USART6,
+        p.PG9,
+        p.PG14,
+        UART_TX_BUF.init([0u8; 64]),
+        UART_RX_BUF.init([0u8; 512]),
+        Irqs,
+        uart_config,
+    )
+    .unwrap();
 
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     crate::log_info!("Scanner UART ready (115200 baud, USART6 PG14=TX PG9=RX)");
@@ -426,7 +437,7 @@ async fn main(spawner: Spawner) {
 
     let mut hw = FirmwareHardware::new(
         fb,
-        scanner,
+        Some(scanner),
         usb_receiver,
         usb_sender,
         touch_ctrl,

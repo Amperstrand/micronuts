@@ -248,4 +248,37 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn real_token_fifteen_fragments_complete_and_decode() {
+        let frags: [&str; 15] = [
+            r"ur:bytes/1-15/31697202/cashuBpGFtcGRlbW86Ly9taWNyb251dHNhdWNzYXRhZHVTd2FwcGVkIHZpYSBNaWNyb2",
+            r"ur:bytes/2-15/31697202/51dHNhdIGiYWlBAGFwg6RhYRBhc3hANTI1MjhkOTVmZDc0MThiNjJmNmJiNzI4OTkzMz",
+            r"ur:bytes/3-15/31697202/liYmY4MTlkMWY3Y2UwZjE3MzljOTE1ZjcyMDA1MGFjYjVhZGFjWCECVLTS4rwCHKKxkL",
+            r"ur:bytes/4-15/31697202/tix7DHEkRmovr2DSEq1Can9TzXwJphZKNhZVgg-EH-lQFeTp_YIk56MoV8MN1oO-bDNQ",
+            r"ur:bytes/5-15/31697202/CL8Mva8Z8nz7Jhc1ggZ7ZtSNAtgJkLSBjH9xb-2T77y4NBGhS9LFMrBI9b081hclggB0",
+            r"ur:bytes/6-15/31697202/t8gpDoVjBIzJ_KsVt8ojDu-ZiY0-XVgrMb8BPIttOkYWEEYXN4QGM1NmY3YmU3MDk0OT",
+            r"ur:bytes/7-15/31697202/Q3MTJkMmJmMGU1NDMxZGYwYjM5NWRkY2FjZmVkOGQ2NjM5ZmExNTViN2FmYzEwMGJiY2",
+            r"ur:bytes/8-15/31697202/FhY1ghAvsolyC66qbnaQlNNrZnDiF-kjxys8d4RPua9MHYRggGYWSjYWVYIKGDBBxOVv",
+            r"ur:bytes/9-15/31697202/dyXRgkl_qRJOP6Z5XSls8Fu-9PgUfTL6GNYXNYIDzR5S3TIFeIc-unfQPW_uFGaAhEl1",
+            r"ur:bytes/10-15/31697202/69VvPUMd7F862KYXJYIKAwOD4XvRek1n1VW2D4PHZuw2ky76LTYHoFp8rdWYtwpGFhAW",
+            r"ur:bytes/11-15/31697202/FzeEA4NjA4MmY4YTE4NzZmNzA2ZGUxODI4ZWJkNTBkYTE2YjlmMjNjOGU4ZTMyYTUzOD",
+            r"ur:bytes/12-15/31697202/Q3MDdmYTMzMGE4ZGVhNjE5YWNYIQNsbP10Tod0VeRI1jP3eVAJPBgUBAgEERrK4ap6Da",
+            r"ur:bytes/13-15/31697202/b_jWFko2FlWCAfiTzr_W8SnHvqHDrb33IreLIJ6ZK7-QecF6OqH7VqPGFzWCBRmluzf7",
+            r"ur:bytes/14-15/31697202/EdKsdYJJqMV8hHtb2B9hJEucOCoW9IT5judmFyWCD-SWhyxsl9aD8SZhPjohpMOZDba6",
+            r"ur:bytes/15-15/31697202/HjUWnTgdCpDwSIeA",
+        ];
+        let mut asm = ScanAssembler::new();
+        let mut last = None;
+        for f in frags {
+            last = Some(asm.process(f.as_bytes()));
+        }
+        match last {
+            Some(ScanOutcome::TokenReady(t)) => {
+                assert_eq!(t.total_amount(), 21);
+                assert!(t.proof_count() >= 1);
+            }
+            other => panic!("expected TokenReady(21 sat), got {other:?}"),
+        }
+    }
 }

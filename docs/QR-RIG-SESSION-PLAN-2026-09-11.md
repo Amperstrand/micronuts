@@ -127,3 +127,38 @@ Follow-ups (highest value first):
   caps, inter-token cooldown), then the E1–E5 campaign from the plan.
 - Embassy `BufferedUart` for USART6 (research: gm65 #88) — removes the
   quiet-cadence contract and the polling shim.
+
+## Session 2 results (2026-09-11/12 night — BufferedUart + #92 root cause)
+
+**Banked and verified on hardware:**
+- **Embassy BufferedUart migration** (the AsyncUart polling shim deleted):
+  poll storms no longer break scan capture — the quiet-cadence host
+  contract is DEAD. Trigger+0.4s-polling round-trips in ~1.4 s.
+- **#92 root cause (soak data in tools/hil/results/soak-20260911-232825)**:
+  the degradation is the decode engine's NEW-SYMBOL path — same-content
+  re-renders scan 171/171 (100%) while unique content degrades to ~53%
+  at 2 s duty. Not optics, not the screen, not the UART. Mid-run
+  deep-sleep heal restored 5/5 at 0.2 s once; deeper wedges later ignored
+  both the heal and idle time (all earlier "power-cycle recoveries" were
+  idle-time recoveries — the ST-Link keeps the board powered, so no
+  remote power-cycle exists).
+- **Heal ladder in the CDC protocol**: 0x13 ScannerHeal (deep-sleep
+  reboot + re-init + policy restart), 0x14 ScannerFactoryHeal (factory
+  reset + re-init, panic-safe — the firmware ALWAYS keeps answering CDC
+  even when the heal fails). UR responses now carry an assembler-outcome
+  byte (0 accepted / 1 invalid / 2 imported / 3 decode-failed) —
+  harness-visible device state.
+- **UR fragment delivery proven byte-exact 15/15** (clipped={}), and the
+  on-device assembler + token decode proven correct against a real
+  minted token in host tests.
+
+**Open (next session, module willing):**
+- The F4 GREEN run: fragments + assembler + decode are each proven; the
+  missing observation is a single ladder run on a healthy module ending
+  in token_info=21 sat. The module ended tonight in a deep wedge
+  (factory-heal corners: post-reset init VERIFY failures) — expect idle
+  recovery by morning; if not, the 0x14 ladder needs the crate's
+  multi-baud init exposed (crate issue-worthy).
+- mnscan heals between ladder cycles are wired; outcome telemetry will
+  pinpoint any residue immediately.
+- gm65-scanner #92 comment with the soak data (member-org post).

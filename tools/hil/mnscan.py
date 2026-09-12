@@ -54,6 +54,8 @@ def scan_ur_token(cdc, cyd, token: str, chunk: int = 68,
 
     frames = urtoken.ur_fragments(token, chunk=chunk)
     seen: set[int] = set()
+    clipped: dict[int, list[dict]] = {}
+    outcomes: dict[int, int] = {}
     start = time.monotonic()
     # The import assertion is only meaningful from a clean slate: the
     # completing fragment flips GetTokenInfo from Error to Ok. Callers
@@ -61,14 +63,31 @@ def scan_ur_token(cdc, cyd, token: str, chunk: int = 68,
     st0, _ = cdc.token_info()
     assert st0 != rig.STATUS_OK, "device already holds a token — reset first"
 
-    for _ in range(cycles):
+    # BufferedUart cadence (2026-09-11): poll storms no longer break the
+    # capture — render, trigger, poll at will. Fragment budget ~6 s each.
+    for cycle in range(cycles):
+        if cycle > 0:
+            # Soak finding (2026-09-11): the decode engine fatigues on
+            # unique-content load; a mid-run module heal restores it fully.
+            cdc.send_recv(0x13, timeout=15.0)  # ScannerHeal
+            time.sleep(8)
         for i, frame in enumerate(frames):
             cyd.show_qr(frame.encode("ascii"))
             cdc.trigger()
-            time.sleep(dwell_s)
-            status, pl = cdc.read_data()
-            if status == rig.STATUS_OK and pl and len(pl) >= 2 and pl[0] == rig.SCAN_TYPE_UR:
-                seen.add(i)
+            frag_t0 = time.monotonic()
+            want = frame.encode("ascii")
+            while time.monotonic() - frag_t0 < 6.0:
+                status, pl = cdc.read_data()
+                if status == rig.STATUS_OK and pl and len(pl) >= 3 and pl[0] == rig.SCAN_TYPE_UR:
+                    outcomes.setdefault(pl[1], 0)
+                    outcomes[pl[1]] += 1
+                    if pl[2:] == want:
+                        seen.add(i)
+                    else:
+                        clipped.setdefault(i, []).append(
+                            {"got": len(pl) - 2, "want": len(want)})
+                    break
+                time.sleep(0.4)
         if len(seen) == len(frames):
             st, info = cdc.token_info()
             if st == rig.STATUS_OK and len(info) > 12:
@@ -76,4 +95,7 @@ def scan_ur_token(cdc, cyd, token: str, chunk: int = 68,
                         "token_info": rig.parse_token_info(info),
                         "latency_s": round(time.monotonic() - start, 2)}
     return {"ok": False, "fragments": len(frames), "fragments_seen": sorted(seen),
-            "token_info": None, "latency_s": round(time.monotonic() - start, 2)}
+            "clipped": clipped,
+            "assembler_outcomes": outcomes,
+            "token_info": None,
+            "latency_s": round(time.monotonic() - start, 2)}

@@ -68,6 +68,20 @@ pub async fn handle_command<H: MicronutsHardware>(
                 Response::new(Status::ScannerNotConnected)
             }
         },
+        Command::ScannerHeal => {
+            // Crate-owned module heal (gm65-scanner #100 Tier A): deep-sleep
+            // reboot keeps settings and baud, then re-init + policy restart.
+            // Mid-run recovery for the sustained-load degradation (#92).
+            let _ = hw.deep_sleep_reboot().await;
+            match hw.reinit_scanner().await {
+                Ok(()) => Response::new(Status::Ok),
+                Err(_) => Response::new(Status::ScannerNotConnected),
+            }
+        }
+        Command::ScannerFactoryHeal => match hw.factory_heal().await {
+            Ok(()) => Response::new(Status::Ok),
+            Err(_) => Response::new(Status::ScannerNotConnected),
+        },
         Command::ScannerData => match last_scan_data.take() {
             Some(data) => {
                 let payload = qr::decode_qr(&data);
@@ -81,18 +95,33 @@ pub async fn handle_command<H: MicronutsHardware>(
                 };
                 // On-device reassembly for the CDC path (the Scanning
                 // screen feeds the same state-level assembler): a completed
-                // sequence imports the token immediately.
-                if let crate::scanflow::ScanOutcome::TokenReady(token) =
-                    state.scan_assembler.process(&data)
-                {
-                    display::render_token_info(hw.display(), &token);
-                    state.imported_token = Some(token);
-                    state.swap_state = crate::state::SwapState::TokenImported;
+                // sequence imports the token immediately. UR responses
+                // carry the assembler outcome as a second byte so hosts can
+                // observe device-side progress: 0 accepted, 1 invalid
+                // (hash mismatch / bad index), 2 completed + imported,
+                // 3 completed but decode failed.
+                let mut asm_byte = 0u8;
+                match state.scan_assembler.process(&data) {
+                    crate::scanflow::ScanOutcome::TokenReady(token) => {
+                        asm_byte = 2;
+                        display::render_token_info(hw.display(), &token);
+                        state.imported_token = Some(token);
+                        state.swap_state = crate::state::SwapState::TokenImported;
+                    }
+                    crate::scanflow::ScanOutcome::InvalidFragment => asm_byte = 1,
+                    crate::scanflow::ScanOutcome::ShowPayload(crate::qr::QrPayload::PlainText(
+                        _,
+                    )) => asm_byte = 3,
+                    _ => {}
                 }
                 let max_payload = MAX_PAYLOAD_SIZE;
-                let total = 1 + data.len().min(max_payload - 1);
+                let header_len = if type_byte == 0x03 { 2 } else { 1 };
+                let total = header_len + data.len().min(max_payload - header_len);
                 let mut buf = alloc::vec![type_byte; total];
-                buf[1..].copy_from_slice(&data[..total - 1]);
+                if type_byte == 0x03 {
+                    buf[1] = asm_byte;
+                }
+                buf[header_len..].copy_from_slice(&data[..total - header_len]);
                 Response::with_payload(Status::Ok, &buf)
                     .unwrap_or_else(|| Response::new(Status::BufferOverflow))
             }
@@ -385,6 +414,8 @@ mod tests {
         display: MockDisplay,
         scanner_connected: bool,
         scan_data: Option<Vec<u8>>,
+        heal_count: u32,
+        factory_heal_count: u32,
     }
 
     impl MockHardware {
@@ -393,6 +424,8 @@ mod tests {
                 display: MockDisplay,
                 scanner_connected: false,
                 scan_data: None,
+                heal_count: 0,
+                factory_heal_count: 0,
             }
         }
 
@@ -401,6 +434,8 @@ mod tests {
                 display: MockDisplay,
                 scanner_connected: connected,
                 scan_data: None,
+                heal_count: 0,
+                factory_heal_count: 0,
             }
         }
     }
@@ -429,6 +464,28 @@ mod tests {
         }
 
         fn debug_dump_settings(&mut self) {}
+
+        async fn deep_sleep_reboot(&mut self) -> bool {
+            self.heal_count += 1;
+            true
+        }
+
+        async fn reinit_scanner(&mut self) -> Result<(), ScanError> {
+            if self.scanner_connected {
+                Ok(())
+            } else {
+                Err(ScanError::NotConnected)
+            }
+        }
+
+        async fn factory_heal(&mut self) -> Result<(), ScanError> {
+            self.factory_heal_count += 1;
+            if self.scanner_connected {
+                Ok(())
+            } else {
+                Err(ScanError::NotConnected)
+            }
+        }
     }
 
     impl MicronutsHardware for MockHardware {
@@ -481,6 +538,46 @@ mod tests {
                 ],
             }],
         }
+    }
+
+    #[tokio::test]
+    async fn scanner_heal_reboots_and_reinits() {
+        use crate::protocol::{Command, Status};
+        let mut hw = MockHardware::with_scanner(true);
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let resp = handle_command(
+            Command::ScannerHeal,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(
+            hw.heal_count, 1,
+            "heal must issue exactly one module reboot"
+        );
+    }
+
+    #[tokio::test]
+    async fn scanner_heal_reports_disconnected_scanner() {
+        use crate::protocol::{Command, Status};
+        let mut hw = MockHardware::with_scanner(false);
+        let mut state = FirmwareState::new();
+        let mut last_scan = None;
+
+        let resp = handle_command(
+            Command::ScannerHeal,
+            &[],
+            &mut state,
+            &mut hw,
+            &mut last_scan,
+        )
+        .await;
+        assert_eq!(resp.status, Status::ScannerNotConnected);
     }
 
     #[tokio::test]

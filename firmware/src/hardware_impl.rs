@@ -25,54 +25,6 @@ use crate::qr::Gm65ScannerAsync;
 
 pub type UsbDriverType = embassy_stm32::usb::Driver<'static, peripherals::USB_OTG_FS>;
 
-pub struct AsyncUart<'d> {
-    pub inner: embassy_stm32::usart::Uart<'d, embassy_stm32::mode::Blocking>,
-    pub uart_error_count: u32,
-}
-
-impl<'d> embedded_io::ErrorType for AsyncUart<'d> {
-    type Error = embassy_stm32::usart::Error;
-}
-
-impl<'d> embedded_io_async::Read for AsyncUart<'d> {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-        let mut total = 0usize;
-        for slot in buf.iter_mut() {
-            loop {
-                match embedded_hal_02::serial::Read::read(&mut self.inner) {
-                    Ok(byte) => {
-                        *slot = byte;
-                        total += 1;
-                        break;
-                    }
-                    Err(nb::Error::WouldBlock) => {
-                        embassy_time::Timer::after_micros(10).await;
-                    }
-                    Err(nb::Error::Other(_e)) => {
-                        self.uart_error_count = self.uart_error_count.saturating_add(1);
-                        embassy_time::Timer::after_micros(10).await;
-                    }
-                }
-            }
-        }
-        Ok(total)
-    }
-}
-
-impl<'d> embedded_io_async::Write for AsyncUart<'d> {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        self.inner.bwrite_all(buf)?;
-        Ok(buf.len())
-    }
-
-    async fn flush(&mut self) -> Result<(), Self::Error> {
-        self.inner.bflush()
-    }
-}
-
 pub struct RawFramebuffer {
     buf0: &'static mut [u32],
     buf1: &'static mut [u32],
@@ -199,7 +151,7 @@ impl OriginDimensions for RawFramebuffer {
 
 pub struct FirmwareHardware {
     pub fb: RawFramebuffer,
-    pub scanner: Gm65ScannerAsync<AsyncUart<'static>>,
+    pub scanner: Option<Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>>,
     pub usb_receiver: Receiver<'static, UsbDriverType>,
     pub usb_sender: Sender<'static, UsbDriverType>,
     pub decoder: FrameDecoder,
@@ -211,13 +163,20 @@ pub struct FirmwareHardware {
 }
 
 impl FirmwareHardware {
+    /// Borrow the scanner; only absent transiently inside factory_heal.
+    fn sc(&mut self) -> &mut Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>> {
+        self.scanner
+            .as_mut()
+            .expect("scanner present outside factory_heal")
+    }
+
     // Hardware wiring signature: every pin/peripheral is an explicit
     // argument by design; grouping into a config struct would obscure
     // the board pinout this mirrors.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         fb: RawFramebuffer,
-        scanner: Gm65ScannerAsync<AsyncUart<'static>>,
+        scanner: Option<Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>>,
         usb_receiver: Receiver<'static, UsbDriverType>,
         usb_sender: Sender<'static, UsbDriverType>,
         touch_ctrl: TouchCtrl,
@@ -242,7 +201,7 @@ impl FirmwareHardware {
 
 impl Scanner for FirmwareHardware {
     async fn trigger(&mut self) -> Result<(), ScanError> {
-        self.scanner
+        self.sc()
             .trigger_scan()
             .await
             .map_err(|_| ScanError::IoError)
@@ -250,7 +209,7 @@ impl Scanner for FirmwareHardware {
 
     async fn read_scan(&mut self) -> Option<Vec<u8>> {
         crate::log_info!("read_scan: enter");
-        let data = match self.scanner.read_scan().await {
+        let data = match self.sc().read_scan().await {
             Some(d) => d,
             None => {
                 crate::log_info!("read_scan: none");
@@ -267,17 +226,21 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn stop(&mut self) {
-        let _ = self.scanner.stop_scan().await;
-        self.scanner.cancel_scan();
+        let _ = self.sc().stop_scan().await;
+        self.sc().cancel_scan();
     }
 
     fn is_connected(&self) -> bool {
-        self.scanner.status().connected
+        self.scanner
+            .as_ref()
+            .expect("scanner present outside factory_heal")
+            .status()
+            .connected
     }
 
     async fn set_aim(&mut self, enabled: bool) -> Result<(), ScanError> {
         let mut settings = self
-            .scanner
+            .sc()
             .get_scanner_settings()
             .await
             .ok_or(ScanError::NotReady)?;
@@ -286,7 +249,7 @@ impl Scanner for FirmwareHardware {
         } else {
             gm65_scanner::AimSetting::Off
         };
-        if self.scanner.set_scanner_settings(settings).await {
+        if self.sc().set_scanner_settings(settings).await {
             crate::log_info!("Scanner aim: {}", if enabled { "ON" } else { "OFF" });
             Ok(())
         } else {
@@ -294,9 +257,85 @@ impl Scanner for FirmwareHardware {
         }
     }
 
+    async fn deep_sleep_reboot(&mut self) -> bool {
+        self.sc().deep_sleep_reboot().await
+    }
+
+    async fn reinit_scanner(&mut self) -> Result<(), ScanError> {
+        // Settle through the reboot, then re-init + policy restart
+        // (crate-owned sequence, same as boot). 5 s: the module's reboot
+        // window outlasted a 2 s settle (soak 2026-09-11 — heal functioned
+        // but reported ScannerNotConnected from the racing probe).
+        embassy_time::Timer::after(embassy_time::Duration::from_secs(5)).await;
+        self.sc()
+            .init()
+            .await
+            .map_err(|_| ScanError::NotConnected)?;
+        self.sc()
+            .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
+            .await
+            .map_err(|_| ScanError::IoError)
+    }
+
+    async fn factory_heal(&mut self) -> Result<(), ScanError> {
+        // Factory reset at the CURRENT baud, settle, then the crate's full
+        // init (which restores operating state — the boot ladder proves it
+        // recovers a factory-fresh module) + policy restart. Panic-safe:
+        // whatever happens, a scanner object is always rebuilt so the
+        // firmware keeps answering CDC (the earlier Err path left None and
+        // the next sc() panicked the run loop dead).
+        let mut scanner = self
+            .scanner
+            .take()
+            .expect("factory_heal reentry is not supported");
+        let mut uart;
+        let mut ok = false;
+        // Factory reset (module may land at 9600 — the init below and the
+        // boot ladder both recover from either baud).
+        let _ = scanner.factory_reset().await;
+        let (u, ..) = scanner.into_parts();
+        uart = u;
+        embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
+        let mut scanner = Gm65ScannerAsync::with_default_config(uart);
+        match scanner.init().await {
+            Ok(_) => {
+                if scanner
+                    .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
+                    .await
+                    .is_ok()
+                {
+                    ok = true;
+                }
+            }
+            Err(_) => {
+                // init failed (baud mismatch class): deep-sleep heal, then
+                // one more init + policy attempt before giving up.
+                let _ = scanner.deep_sleep_reboot().await;
+                embassy_time::Timer::after(embassy_time::Duration::from_secs(5)).await;
+                if scanner.init().await.is_ok() {
+                    ok = scanner
+                        .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
+                        .await
+                        .is_ok();
+                }
+            }
+        }
+        let (u, ..) = scanner.into_parts();
+        uart = u;
+        // ALWAYS leave a live scanner (115200 host side); the CDC layer
+        // must survive a failed heal.
+        let scanner = Gm65ScannerAsync::with_default_config(uart);
+        self.scanner = Some(scanner);
+        if ok {
+            Ok(())
+        } else {
+            Err(ScanError::NotConnected)
+        }
+    }
+
     fn debug_dump_settings(&mut self) {
-        crate::log_info!("Scanner connected: {}", self.scanner.status().connected);
-        crate::log_info!("Scanner model: {}", self.scanner.status().model);
+        crate::log_info!("Scanner connected: {}", self.sc().status().connected);
+        crate::log_info!("Scanner model: {}", self.sc().status().model);
     }
 }
 

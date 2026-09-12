@@ -27,6 +27,14 @@ pub trait Scanner {
         enabled: bool,
     ) -> impl core::future::Future<Output = Result<(), ScanError>>;
     fn debug_dump_settings(&mut self);
+    /// Deep-sleep module reboot (crate-owned Tier-A heal): keeps settings
+    /// and baud; the module wakes on the next UART activity.
+    fn deep_sleep_reboot(&mut self) -> impl core::future::Future<Output = bool>;
+    /// Re-init + re-apply the scan policy after a heal.
+    fn reinit_scanner(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
+    /// Last-resort heal: factory reset (module returns to 9600 baud —
+    /// the host UART follows), re-init (restores 115200), policy restart.
+    fn factory_heal(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
 }
 
 pub trait MicronutsHardware: Scanner {
