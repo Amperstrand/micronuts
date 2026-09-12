@@ -514,6 +514,30 @@ fn melt_insufficient_inputs_errors() {
 }
 
 #[test]
+fn proofs_view_is_live_and_read_only() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium);
+    w.mint_deterministic("q1", 63, KEYSET_ID, &keyset).unwrap();
+    let view = w.proofs();
+    assert_eq!(view.len(), w.proof_count());
+    assert_eq!(view.iter().map(|p| p.amount).sum::<u64>(), w.balance());
+
+    let selected = w.spend(32).unwrap();
+    let after = w.proofs();
+    assert_eq!(after.len(), 5, "view reflects the spend");
+    assert!(
+        !after.iter().any(|p| p.secret == selected[0].secret),
+        "spent proof no longer in the view"
+    );
+
+    w.add_proofs(selected).unwrap();
+    assert_eq!(w.proofs().len(), 6, "view reflects the re-add");
+}
+
+#[test]
 fn swap_deterministic_resplits_and_persists() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();

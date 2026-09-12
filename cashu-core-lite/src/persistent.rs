@@ -200,6 +200,12 @@ where
         self.proofs.len()
     }
 
+    /// Read-only view of the stored proofs (live — reflects `spend`,
+    /// `remove_proofs`, and credit operations).
+    pub fn proofs(&self) -> &[nut00::Proof] {
+        &self.proofs
+    }
+
     /// NUT-04 mint with NUT-13 deterministic outputs: secrets and blinders
     /// derive from the seed and `counter..counter+n`, so outputs survive
     /// crashes via [`Self::restore`].
