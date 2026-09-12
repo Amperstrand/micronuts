@@ -12,6 +12,7 @@ use rand_core::{OsRng, RngCore};
 use slint::{ComponentHandle, ModelRc, VecModel, Weak};
 
 use crate::engine::{HistoryEntry, HistoryKind, WalletEngine};
+use crate::flow;
 use crate::state::{MintEntry, WalletState};
 #[cfg(not(target_arch = "wasm32"))]
 use cashu_core_lite::transport::MintClient;
@@ -417,8 +418,13 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                             logic.set_invoice(request.clone().into());
                             logic.set_invoice_quote_id(quote_id.clone().into());
                             logic.set_invoice_state(state.clone().into());
+                            logic.set_invoice_status_text(
+                                flow::ReceiveLightningPhase::from_quote_state(&state, amount)
+                                    .user_line()
+                                    .into(),
+                            );
                             logic.set_invoice_amount(amount as i32);
-                            logic.set_invoice_amount_text(format!("{amount} sat").into());
+                            logic.set_invoice_amount_text(crate::format_amount(amount).into());
                             if let Some(image) = qr_image(logic.get_invoice().as_str()) {
                                 logic.set_invoice_qr(image);
                             }
@@ -450,6 +456,11 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                             logic.set_invoice(String::new().into());
                             logic.set_invoice_quote_id(String::new().into());
                             logic.set_invoice_state(String::new().into());
+                            logic.set_invoice_status_text(
+                                flow::ReceiveLightningPhase::Received { amount }
+                                    .user_line()
+                                    .into(),
+                            );
                             logic.set_invoice_amount_text(String::new().into());
                             logic.set_invoice_qr(slint::Image::default());
                         });
@@ -498,19 +509,19 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                 let Some(engine) = worker.engine.as_mut() else {
                     return;
                 };
-                let report = match engine.check_token_state(&token) {
-                    Ok(states) => {
-                        let spent = states.iter().filter(|s| s.state == "SPENT").count();
-                        let pending = states.iter().filter(|s| s.state == "PENDING").count();
-                        let unspent = states.iter().filter(|s| s.state == "UNSPENT").count();
-                        if spent == 0 && pending == 0 {
-                            format!("healthy: {unspent} unspent proofs")
+                // Inspect = parse + mint match + proof health, mapped onto
+                // the semantic Review/Failure phases (UX contract).
+                let phase = match engine.inspect_token(&token) {
+                    Ok(inspection) => {
+                        if inspection.all_spent() {
+                            flow::ReceiveEcashPhase::Failed(flow::FlowFailure::AlreadySpent)
                         } else {
-                            format!("{spent} spent, {pending} pending, {unspent} unspent — do not redeem spent tokens")
+                            flow::ReceiveEcashPhase::Review(inspection)
                         }
                     }
-                    Err(err) => format!("check failed: {err}"),
+                    Err(failure) => flow::ReceiveEcashPhase::Failed(failure),
                 };
+                let report = phase.user_line();
                 let _ = weak.upgrade_in_event_loop(move |ui| {
                     ui.global::<WalletLogic>()
                         .set_token_check_text(report.into());
@@ -739,8 +750,13 @@ fn post_current_poll(worker: &mut Worker, quote_id: String, weak: Weak<MainWindo
     match engine.poll_mint_quote(&quote_id) {
         Ok(quote) => {
             let state = quote.state.clone();
+            let amount = quote.amount;
+            let phase_line =
+                flow::ReceiveLightningPhase::from_quote_state(&state, amount).user_line();
             let _ = weak.upgrade_in_event_loop(move |ui| {
-                ui.global::<WalletLogic>().set_invoice_state(state.into());
+                let logic = ui.global::<WalletLogic>();
+                logic.set_invoice_state(state.into());
+                logic.set_invoice_status_text(phase_line.into());
             });
         }
         Err(err) => worker.status = format!("quote poll failed: {err}"),

@@ -473,3 +473,84 @@ fn history_and_seed_survive_engine_rebuild_over_same_store() {
     assert_eq!(reopened.history().len(), 1);
     assert_eq!(reopened.seed_hex(), hex::encode(SEED));
 }
+
+#[test]
+fn inspect_valid_token_reaches_review() {
+    let client = shared_mint();
+    let mut sender = engine(&client, [0x11; 32]);
+    sender.connect().unwrap();
+    fund(&mut sender, 63);
+    let token = sender.send_token(21, Some("tea")).unwrap();
+
+    let mut receiver = engine(&client, [0x22; 32]);
+    receiver.connect().unwrap();
+    let inspection = receiver.inspect_token(&token).unwrap();
+    assert_eq!(inspection.summary.amount, 21);
+    assert_eq!(inspection.summary.memo.as_deref(), Some("tea"));
+    assert_eq!(
+        inspection.summary.proof_count,
+        inspection.summary.amount.count_ones() as usize
+    );
+    assert_eq!(inspection.spent, 0, "fresh token has no spent proofs");
+    assert!(!inspection.all_spent());
+    // Review line follows the UX contract: amount + mint, no jargon.
+    let line = micronuts_wallet::flow::ReceiveEcashPhase::Review(inspection.clone()).user_line();
+    assert!(line.contains("21 sats"), "{line}");
+}
+
+#[test]
+fn inspect_after_receive_reports_already_spent() {
+    let client = shared_mint();
+    let mut sender = engine(&client, [0x31; 32]);
+    sender.connect().unwrap();
+    fund(&mut sender, 63);
+    let token = sender.send_token(21, None).unwrap();
+
+    let mut receiver = engine(&client, [0x32; 32]);
+    receiver.connect().unwrap();
+    receiver.receive_token(&token).unwrap();
+
+    // The same token again: the mint reports every proof spent.
+    let inspection = receiver.inspect_token(&token).unwrap();
+    assert!(inspection.all_spent(), "{inspection:?}");
+    let verdict = if inspection.all_spent() {
+        micronuts_wallet::flow::FlowFailure::AlreadySpent
+    } else {
+        micronuts_wallet::flow::FlowFailure::Recoverable(String::new())
+    };
+    assert!(verdict.user_line().contains("already"));
+}
+
+#[test]
+fn inspect_foreign_mint_token_is_classified() {
+    let client = shared_mint();
+    let mut sender = engine(&client, [0x41; 32]);
+    sender.connect().unwrap();
+    fund(&mut sender, 63);
+    let token = sender.send_token(21, None).unwrap();
+
+    // Re-address the token to a mint the receiver is not connected to.
+    let mut decoded = decode_token(token.as_bytes()).unwrap();
+    decoded.mint = String::from("https://elsewhere.example");
+    let foreign = encode_token_wire(&decoded).unwrap();
+
+    let mut receiver = engine(&client, [0x42; 32]);
+    receiver.connect().unwrap();
+    match receiver.inspect_token(&foreign) {
+        Err(micronuts_wallet::flow::FlowFailure::ForeignMint { mint }) => {
+            assert_eq!(mint, "https://elsewhere.example");
+        }
+        other => panic!("expected ForeignMint, got {other:?}"),
+    }
+}
+
+#[test]
+fn inspect_malformed_input_is_terminal() {
+    let client = shared_mint();
+    let mut wallet = engine(&client, [0x51; 32]);
+    wallet.connect().unwrap();
+    match wallet.inspect_token("cashuBnotarealtoken") {
+        Err(micronuts_wallet::flow::FlowFailure::InvalidToken) => {}
+        other => panic!("expected InvalidToken, got {other:?}"),
+    }
+}

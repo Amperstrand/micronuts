@@ -175,6 +175,49 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(minted)
     }
 
+    /// Semantic pre-receive inspection (UX contract): decode the token,
+    /// check it belongs to the active mint, and ask the mint for proof
+    /// health (NUT-07). Redeems nothing — the Review step's data.
+    pub fn inspect_token(
+        &mut self,
+        token_str: &str,
+    ) -> Result<crate::flow::TokenInspection, crate::flow::FlowFailure> {
+        let token = decode_token(token_str.as_bytes())
+            .map_err(|_| crate::flow::FlowFailure::InvalidToken)?;
+        if token.mint.trim_end_matches('/') != self.mint_url {
+            return Err(crate::flow::FlowFailure::ForeignMint { mint: token.mint });
+        }
+        let amount: u64 = token
+            .tokens
+            .iter()
+            .flat_map(|g| &g.proofs)
+            .map(|p| p.amount)
+            .sum();
+        let proof_count = token.tokens.iter().map(|g| g.proofs.len()).sum();
+        let states = self
+            .check_token_state(token_str)
+            .map_err(|e| crate::flow::classify(&e))?;
+        let spent = states
+            .iter()
+            .filter(|s| s.state == nut07::state::SPENT)
+            .count();
+        let pending = states
+            .iter()
+            .filter(|s| s.state == nut07::state::PENDING)
+            .count();
+        Ok(crate::flow::TokenInspection {
+            summary: crate::flow::TokenSummary {
+                mint: token.mint,
+                unit: token.unit,
+                memo: token.memo,
+                amount,
+                proof_count,
+            },
+            spent,
+            pending,
+        })
+    }
+
     /// Redeem an incoming ecash token: swap its proofs for fresh
     /// deterministic outputs (secret-rotation hygiene — the sender never
     /// learns the new secrets). Returns the received amount.

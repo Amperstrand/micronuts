@@ -142,8 +142,13 @@ fn main() {
     logic.set_invoice("lnbc1280u1psl9wmepp5yqzp3zx3q…".into());
     logic.set_invoice_quote_id("cmQx".into());
     logic.set_invoice_state("PAID".into());
+    logic.set_invoice_status_text(
+        micronuts_wallet::flow::ReceiveLightningPhase::from_quote_state("PAID", 128)
+            .user_line()
+            .into(),
+    );
     logic.set_invoice_amount(128);
-    logic.set_invoice_amount_text("128 sat".into());
+    logic.set_invoice_amount_text("128 sats".into());
     if let Some(image) = micronuts_wallet::ui::qr_image("lnbc1280u1demo") {
         logic.set_invoice_qr(image);
     }

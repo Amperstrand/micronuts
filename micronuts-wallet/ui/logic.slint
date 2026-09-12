@@ -36,7 +36,10 @@ export global WalletLogic {
     // receive: lightning invoice
     in-out property <string> invoice: "";
     in-out property <string> invoice-quote-id: "";
+    // Raw NUT-04 state ("UNPAID"/"PAID") — button logic only, never shown.
     in-out property <string> invoice-state: "";
+    // Phase-derived, user-facing (UX contract wording).
+    in-out property <string> invoice-status-text: "";
     in-out property <string> invoice-amount-text: "";
     in-out property <int> invoice-amount: 0;
     in-out property <image> invoice-qr;

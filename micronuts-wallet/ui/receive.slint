@@ -32,8 +32,8 @@ export component ReceiveScreen inherits Rectangle {
             if WalletLogic.invoice != "" : VerticalLayout {
                 spacing: 10px;
                 Text {
-                    text: "Invoice (" + WalletLogic.invoice-state + ") — " + WalletLogic.invoice-amount-text;
-                    color: WalletLogic.invoice-state == "PAID" ? Theme.ok : Theme.warn;
+                    text: WalletLogic.invoice-status-text != "" ? WalletLogic.invoice-status-text : WalletLogic.invoice-amount-text;
+                    color: WalletLogic.invoice-state == "PAID" ? Theme.ok : Theme.text-dim;
                     font-size: 14px;
                     wrap: word-wrap;
                 }

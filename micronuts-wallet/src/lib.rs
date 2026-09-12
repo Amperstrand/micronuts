@@ -10,6 +10,7 @@
 pub mod camera;
 pub mod demo_mint;
 pub mod engine;
+pub mod flow;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gm65;
 #[cfg(not(target_arch = "wasm32"))]
@@ -17,6 +18,21 @@ pub mod http;
 pub mod qr_decode;
 pub mod state;
 pub mod ui;
+
+/// The one amount formatter (UX contract): thousands-separated integer
+/// + " sats". Every surface renders amounts through this.
+pub fn format_amount(amount: u64) -> String {
+    let digits = amount.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    grouped.push_str(" sats");
+    grouped
+}
 
 /// Browser entry: same UI, embedded demo mint, no worker thread.
 #[cfg(target_arch = "wasm32")]

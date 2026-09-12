@@ -43,7 +43,32 @@ is the contract this work answers to.
   - Home: 4 buttons in one row incl. "Refresh balance" → M2.
 - Known limitations: none new.
 
-## Milestone 1 — domain state and UX contract — NOT STARTED
+## Milestone 1 — domain state and UX contract — PASS (2026-09-12)
+
+- New `micronuts-wallet/src/flow.rs`: the UX contract as code —
+  `ReceiveEcashPhase`, `ReceiveLightningPhase` (incl. `PaidNotIssued`),
+  `PayLightningPhase`, `SendEcashPhase` (incl. `AwaitingClaim`, M4
+  target), `FlowFailure` taxonomy (Offline / InvalidToken / AlreadySpent
+  / ForeignMint / InsufficientFunds / Expired / UntrustedSignature /
+  Recoverable) with `classify(&CashuError)`, and contract-wording
+  `user_line()` mappings. Pure + unit-tested; no I/O, no Slint.
+- Engine: `inspect_token` (decode → mint match → NUT-07 health →
+  `TokenInspection`); `lib::format_amount` is now the single amount
+  formatter ("12,450 sats").
+- UI (minimal, compiles against the model): check-token routes through
+  inspection + phases (foreign-mint and all-spent now surfaced at Check
+  with contract wording); invoice status line derives from
+  `ReceiveLightningPhase` (`invoice-state` stays raw for the Mint-button
+  logic — documented in logic.slint); receive.slint label uses the new
+  `invoice-status-text`. No other screen changes.
+- Tests: 9 flow unit tests (classifier, quote-state mapping,
+  PaidNotIssued ≠ failure, jargon-free user lines, "No fee" contract,
+  all-spent verdict) + 4 engine integration tests (inspect valid /
+  after-receive-spent / foreign / malformed). Full battery green:
+  wallet suites 29/14/7, core-lite 44+, clippy `-D warnings`, fmt,
+  thumbv7em no_std, firmware release, wasm32, 8 shots regenerated
+  (receive-lightning intentionally reworded — the only visual delta).
+- Checkpoint: `wallet: semantic flow states (ux contract, no visual change)`.
 
 ## Milestones 2–8 — NOT STARTED
 
