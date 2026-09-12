@@ -15,14 +15,16 @@ firmware + a backend-driven demo/prototype mint. Rust workspace; own git repo
 | `micronuts-app/` + `firmware/` | STM32F469I wallet hardware |
 | `host-mint-tool/` | USB-CDC demo signer |
 | `micronuts-fips-bridge/` | microfips service-boundary adapter |
+| `micronuts-wallet/` | Host Cashu wallet (Slint UI + REST `MintClient` + engine on `PersistentWallet`); `--demo` runs the full mint/send/receive/melt cycle |
 | `micronuts-esp32-mint/` | ESP32 esp-idf std mint front-end (standalone, house-style) |
 
 ## Commands (the sanctioned battery — mirrors `.github/workflows/rust-ci.yml`)
 
 ```bash
 cargo +stable test -p cashu-core-lite --features std -p walletport -p micronuts-mint -p micronuts-fips-bridge
+cargo +stable test -p micronuts-wallet
 cargo +stable test -p micronuts-mint --features backend-upstream
-cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter --all-targets -- -D warnings
+cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool -p micronuts-mint -p micronuts-fips-bridge -p micronuts-audit-adapter -p micronuts-wallet --all-targets -- -D warnings
 cargo build -p cashu-core-lite -p walletport --target thumbv7em-none-eabihf
 (cd firmware && cargo build --release)
 cargo fmt --all --check
@@ -55,6 +57,10 @@ Spec-quote drift: `greatspectate check` per `cashu-core-lite/specquotes.toml`
   run with `$INVOICE`), `SETTLE_POLL_TRIES`/`SETTLE_POLL_MS`, `MELT_INVOICE`
   + `MELT_AMOUNT`. Signut recipe: pay both the user quote and the printed
   bootstrap invoice via ssh → cln-hub nsenter lightning-cli.
+- Rust wallet (`micronuts-wallet --demo`): `MICRONUTS_WALLET_MINT` — mint
+  base URL for the demo cycle (default `http://127.0.0.1:3030`; needs
+  `micronuts-audit-adapter` running, which needs `MICRONUTS_MINT_BIN`
+  when the global cargo target dir hides `target/debug/mint_server`).
 
 
 ## QR rig (tools/hil, 2026-09-11)

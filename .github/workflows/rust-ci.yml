@@ -58,6 +58,12 @@ jobs:
         # Tests use std items; a bare build has no embassy-time tick-hz.
         run: cargo nextest run -p micronuts-app --features std
 
+      - name: Install wallet UI system deps (winit/fontconfig link deps)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev
+
+      - name: Test micronuts-wallet (engine + REST transport)
+        run: cargo nextest run -p micronuts-wallet
+
       - name: Demo smoke test
         run: |
           OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
@@ -92,14 +98,14 @@ jobs:
         with:
           components: clippy
 
-      - name: Install USB system deps (host-mint-tool -> rusb -> libudev)
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev libusb-1.0-0-dev
+      - name: Install USB system deps (host-mint-tool -> rusb -> libudev; wallet UI -> winit/fontconfig)
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev libusb-1.0-0-dev libxkbcommon-dev libfontconfig1-dev
 
       - name: Clippy (host crates, deny warnings)
         run: >
           cargo clippy -p cashu-core-lite -p walletport -p host-mint-tool
           -p micronuts-mint -p micronuts-fips-bridge -p micronuts-fips-responder
-          -p micronuts-audit-adapter
+          -p micronuts-audit-adapter -p micronuts-wallet
           --all-targets -- -D warnings
 
       - name: Clippy (micronuts-app, host std, deny warnings)
