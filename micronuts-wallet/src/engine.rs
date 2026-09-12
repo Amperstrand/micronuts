@@ -503,8 +503,8 @@ fn decompose_capped(total: u64, cap: u64) -> Vec<u64> {
     let mut coins = Vec::new();
     while remaining > 0 {
         let mut coin = cap.min(remaining);
-        while coin > remaining || coin & coin.wrapping_sub(1) != 0 {
-            coin >>= 1;
+        if coin & coin.wrapping_sub(1) != 0 {
+            coin = coin.next_power_of_two() >> 1;
         }
         coins.push(coin);
         remaining -= coin;
@@ -562,8 +562,9 @@ mod tests {
     #[test]
     fn input_fee_rounds_up_per_thousand_keys() {
         let ppk: u64 = 1200;
-        assert_eq!((ppk * 1).div_ceil(1000), 2);
         assert_eq!((ppk * 5).div_ceil(1000), 6);
-        assert_eq!((ppk * 0).div_ceil(1000), 0);
+        assert_eq!(ppk.div_ceil(1000), 2);
+        let zero: u64 = 0;
+        assert_eq!((ppk * zero).div_ceil(1000), 0);
     }
 }
