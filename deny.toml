@@ -13,6 +13,16 @@ ignore = [
   # embassy fork; folds into the newer embassy-usb line the fork does
   # not track yet.
   "RUSTSEC-2026-0173",
+  # paste 1.0.15: unmaintained (author archived it; pastey is the
+  # drop-in fork). Transitive dep of the slint toolchain pulled in by
+  # micronuts-wallet — not ours to swap inside slint's macro stack.
+  "RUSTSEC-2024-0436",
+  # rustybuzz: unmaintained. slint's (femtovg path) text shaper; no
+  # maintained replacement wired into slint yet. Same slint chain.
+  "RUSTSEC-2026-0206",
+  # ttf-parser: unmaintained. slint/rustybuzz font parsing layer, same
+  # chain. Revisit when slint upstream replaces the font stack.
+  "RUSTSEC-2026-0192",
 ]
 
 [bans]

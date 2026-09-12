@@ -12,7 +12,6 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 use embassy_executor::Spawner;
-use embassy_stm32::interrupt::InterruptExt;
 use embassy_stm32::{bind_interrupts, peripherals, usart, usb};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};

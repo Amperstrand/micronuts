@@ -13,7 +13,6 @@ use embedded_graphics::{
     pixelcolor::Rgb888,
     Pixel,
 };
-use embedded_hal_02::blocking::serial::Write as _;
 use sha2::Digest;
 
 use gm65_scanner::ScannerDriver;
@@ -267,7 +266,8 @@ impl Scanner for FirmwareHardware {
         // window outlasted a 2 s settle (soak 2026-09-11 — heal functioned
         // but reported ScannerNotConnected from the racing probe).
         embassy_time::Timer::after(embassy_time::Duration::from_secs(5)).await;
-        self.sc()
+        let _model = self
+            .sc()
             .init()
             .await
             .map_err(|_| ScanError::NotConnected)?;

@@ -1707,6 +1707,7 @@ dependencies = [
 name = "micronuts-mint"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "cashu",
  "cashu-core-lite",
  "hex",
