@@ -34,7 +34,7 @@ CYD_REGISTRY_KEY = "cyd-ch340"
 CYD_ID_PATH = "pci-0000:02:00.0-usb-0:1:1.0-port0"
 CYD_VIDPID = (0x1A86, 0x7523)
 
-STM32_REGISTRY_KEY = "stm32f469i-disco"
+STM32_REGISTRY_KEY = "stm32f469i-disco"  # gitleaks:allow board alias, not a credential
 STLINK_SERIAL = "066FFF515786534867184152"
 
 WALLET_CDC_VIDPID = (0x16C0, 0x27DD)  # micronuts wallet firmware
