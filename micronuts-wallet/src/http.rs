@@ -307,6 +307,12 @@ fn protocol(detail: impl Into<String>) -> CashuError {
     CashuError::Protocol(detail.into())
 }
 
+/// First 200 chars of a response body, for parse-error diagnostics.
+fn truncate_body(value: &Value) -> String {
+    let text = value.to_string();
+    text.chars().take(200).collect()
+}
+
 fn u64_field(value: &Value, field: &str, ctx: &str) -> Result<u64, CashuError> {
     value
         .get(field)
@@ -379,24 +385,33 @@ fn parse_signatures(value: &Value) -> Result<Vec<nut00::BlindSignature>, CashuEr
     let signatures = value
         .get("signatures")
         .and_then(Value::as_array)
-        .ok_or_else(|| protocol("signatures response: missing signatures array"))?;
+        .ok_or_else(|| {
+            protocol(format!(
+                "signatures response: missing signatures array (body: {})",
+                truncate_body(value)
+            ))
+        })?;
     let mut parsed = Vec::with_capacity(signatures.len());
     for sig in signatures {
-        let dleq = match sig.get("dleq") {
-            None | Some(Value::Null) => None,
-            Some(dleq) => Some(BlindSignatureDleq {
-                e: scalar_field(dleq, "e")?,
-                s: scalar_field(dleq, "s")?,
-            }),
-        };
-        parsed.push(nut00::BlindSignature {
-            amount: u64_field(sig, "amount", "blind signature")?,
-            id: str_field(sig, "id", "blind signature")?,
-            c: point_field(sig, "C_", "blind signature")?,
-            dleq,
-        });
+        parsed.push(parse_signature_entry(sig)?);
     }
     Ok(parsed)
+}
+
+fn parse_signature_entry(sig: &Value) -> Result<nut00::BlindSignature, CashuError> {
+    let dleq = match sig.get("dleq") {
+        None | Some(Value::Null) => None,
+        Some(dleq) => Some(BlindSignatureDleq {
+            e: scalar_field(dleq, "e")?,
+            s: scalar_field(dleq, "s")?,
+        }),
+    };
+    Ok(nut00::BlindSignature {
+        amount: u64_field(sig, "amount", "blind signature")?,
+        id: str_field(sig, "id", "blind signature")?,
+        c: point_field(sig, "C_", "blind signature")?,
+        dleq,
+    })
 }
 
 fn scalar_field(value: &Value, field: &str) -> Result<SecretKey, CashuError> {
@@ -406,15 +421,29 @@ fn scalar_field(value: &Value, field: &str) -> Result<SecretKey, CashuError> {
 }
 
 fn parse_mint_quote_response(value: &Value) -> Result<nut04::MintQuoteResponse, CashuError> {
+    let state = str_field(value, "state", "mint quote")?;
+    let paid = value
+        .get("paid")
+        .and_then(Value::as_bool)
+        .unwrap_or(matches!(state.as_str(), "PAID" | "ISSUED"));
     Ok(nut04::MintQuoteResponse {
         quote: str_field(value, "quote", "mint quote")?,
         request: str_field(value, "request", "mint quote")?,
-        paid: bool_field(value, "paid", "mint quote")?,
-        state: str_field(value, "state", "mint quote")?,
-        expiry: u64_field(value, "expiry", "mint quote")?,
-        amount: u64_field(value, "amount", "mint quote")?,
-        unit: str_field(value, "unit", "mint quote")?,
-        // Accounting extras (NUT-04 optional): absent on minimal mints.
+        paid,
+        state,
+        expiry: value
+            .get("expiry")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        amount: value
+            .get("amount")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        unit: value
+            .get("unit")
+            .and_then(Value::as_str)
+            .unwrap_or("sat")
+            .to_string(),
         amount_paid: value
             .get("amount_paid")
             .and_then(Value::as_u64)
@@ -434,13 +463,21 @@ fn parse_mint_quote_response(value: &Value) -> Result<nut04::MintQuoteResponse, 
 }
 
 fn parse_melt_quote_response(value: &Value) -> Result<nut05::MeltQuoteResponse, CashuError> {
+    let state = str_field(value, "state", "melt quote")?;
+    let paid = value
+        .get("paid")
+        .and_then(Value::as_bool)
+        .unwrap_or(state == "PAID");
     Ok(nut05::MeltQuoteResponse {
         quote: str_field(value, "quote", "melt quote")?,
         amount: u64_field(value, "amount", "melt quote")?,
         fee_reserve: u64_field(value, "fee_reserve", "melt quote")?,
-        paid: bool_field(value, "paid", "melt quote")?,
-        state: str_field(value, "state", "melt quote")?,
-        expiry: u64_field(value, "expiry", "melt quote")?,
+        paid,
+        state,
+        expiry: value
+            .get("expiry")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
         request: opt_str_field(value, "request").unwrap_or_default(),
         unit: value
             .get("unit")
@@ -458,7 +495,15 @@ fn parse_melt_quote_response(value: &Value) -> Result<nut05::MeltQuoteResponse, 
 fn parse_melt_response(value: &Value) -> Result<nut05::MeltResponse, CashuError> {
     let change = match value.get("change") {
         None | Some(Value::Null) => None,
-        Some(_) => Some(parse_signatures(value)?),
+        Some(Value::Array(entries)) if entries.is_empty() => None,
+        Some(Value::Array(entries)) => {
+            let mut parsed = Vec::with_capacity(entries.len());
+            for entry in entries {
+                parsed.push(parse_signature_entry(entry)?);
+            }
+            Some(parsed)
+        }
+        Some(_) => return Err(protocol("melt response: change must be an array")),
     };
     Ok(nut05::MeltResponse {
         paid: bool_field(value, "paid", "melt response")?,

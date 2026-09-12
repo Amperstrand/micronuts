@@ -34,10 +34,15 @@ fn run_demo() -> Result<(), String> {
     let dir = std::env::temp_dir().join("micronuts-wallet-demo");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| format!("demo dir: {e}"))?;
-
     let store = FileStore::new(dir.join("proofs.bin")).map_err(|e| format!("store: {e:?}"))?;
     let client = HttpMintClient::new(&mint_url);
-    let mut engine = WalletEngine::new(&mint_url, client, store, [0xd0; 32], Vec::new())
+    // Random seed per run: the local store is wiped, but the mint
+    // remembers secrets spent by previous demo runs — reusing a fixed
+    // seed would re-derive (and re-spend) them.
+    let mut seed = [0u8; 32];
+    use rand_core::RngCore;
+    rand_core::OsRng.fill_bytes(&mut seed);
+    let mut engine = WalletEngine::new(&mint_url, client, store, seed, Vec::new())
         .map_err(|e| format!("engine: {e}"))?;
 
     engine.connect().map_err(|e| format!("connect: {e}"))?;
@@ -51,14 +56,24 @@ fn run_demo() -> Result<(), String> {
     let quote = engine
         .mint_via_invoice(100)
         .map_err(|e| format!("mint quote: {e}"))?;
-    let quote = engine
+    let mut paid_quote = engine
         .poll_mint_quote(&quote.quote)
         .map_err(|e| format!("quote poll: {e}"))?;
-    if quote.state != "PAID" {
-        return Err(format!("quote not paid: {}", quote.state));
+    for attempt in 0..12 {
+        if matches!(paid_quote.state.as_str(), "PAID" | "ISSUED") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        paid_quote = engine
+            .poll_mint_quote(&quote.quote)
+            .map_err(|e| format!("quote poll: {e}"))?;
+        println!("  poll {attempt}: {}", paid_quote.state);
+    }
+    if paid_quote.state != "PAID" && paid_quote.state != "ISSUED" {
+        return Err(format!("quote not paid: {}", paid_quote.state));
     }
     let minted = engine
-        .mint_paid_quote(&quote.quote, 100)
+        .mint_paid_quote(&paid_quote.quote, 100)
         .map_err(|e| format!("mint: {e}"))?;
     println!(
         "STEP 2 OK: minted {minted} sat via invoice (balance {})",
@@ -82,14 +97,15 @@ fn run_demo() -> Result<(), String> {
         engine.balance()
     );
 
-    let (_quote, outcome) = engine
+    let (quote, outcome) = engine
         .melt("lnbcdemo30sat1micronuts")
         .map_err(|e| format!("melt: {e}"))?;
     if !outcome.paid {
         return Err(String::from("melt did not pay"));
     }
     println!(
-        "STEP 5 OK: paid 30-sat invoice (preimage {}) (balance {})",
+        "STEP 5 OK: paid {}-sat invoice (preimage {}) (balance {})",
+        quote.amount,
         outcome.preimage.as_deref().unwrap_or("-"),
         engine.balance()
     );

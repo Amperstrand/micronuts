@@ -196,9 +196,13 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 inputs.push(token_proof_to_wallet(proof, &group.keyset_id)?);
             }
             let group_total: u64 = inputs.iter().map(|p| p.amount).sum();
+            let swap_fee = (self.fee_ppk * inputs.len() as u64).div_ceil(1000);
+            let net = group_total
+                .checked_sub(swap_fee)
+                .ok_or(CashuError::InsufficientInputs)?;
             let fresh = self.wallet.swap_deterministic(
                 inputs,
-                &nut00::decompose_amount(group_total),
+                &nut00::decompose_amount(net),
                 &self.keyset_id,
                 &self.keys,
             )?;
@@ -206,7 +210,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 let _ = self.wallet.remove_proofs(&fresh);
                 return Err(err);
             }
-            total += group_total;
+            total += net;
         }
         self.record(HistoryKind::Receive, total, String::from("ecash token"));
         Ok(total)
@@ -287,9 +291,16 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             request: String::from(invoice),
             unit: self.unit.clone(),
         })?;
-        let target = quote
+        let base = quote
             .amount
             .checked_add(quote.fee_reserve)
+            .ok_or(CashuError::InvalidAmount)?;
+        // The mint charges the NUT-08 input fee on the melt's own inputs;
+        // the exact composition has decompose(target).len() proofs, so the
+        // fee is deterministic here.
+        let melt_fee = (self.fee_ppk * nut00::decompose_amount(base).len() as u64).div_ceil(1000);
+        let target = base
+            .checked_add(melt_fee)
             .ok_or(CashuError::InvalidAmount)?;
 
         let total = self.wallet.balance();
@@ -315,7 +326,11 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
 
         let outcome = self.wallet.melt_deterministic(
             &quote.quote,
-            quote.amount,
+            // Pass the input fee inside the invoice amount: the melt
+            // request itself carries no amounts, but the wallet's input
+            // selection covers `invoice_amount + fee_reserve` — which
+            // must include the mint's fee on those very inputs.
+            quote.amount + melt_fee,
             quote.fee_reserve,
             &self.keyset_id,
             &self.keys,
