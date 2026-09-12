@@ -16,6 +16,7 @@ type WalletState = {
   tokenOut: string;
   invoiceState: string;
   meltPreimage: string;
+  meltQuoteInfo: string;
   historyLen: number;
 };
 
@@ -138,6 +139,11 @@ test("melts ecash to pay an invoice (send → lightning → pay)", async ({
   await clickCanvas(page, 0.5, 218 / 800); // invoice box
   await page.keyboard.type("lnbcdemo30sat1demo", { delay: 10 });
   await clickCanvas(page, 0.5, 302 / 800); // Get quote
+  // Wait for the review card to lay out before aiming at Pay — clicking
+  // early hits Get quote again and the pay never fires.
+  await expect
+    .poll(() => state(page).then((s) => s.meltQuoteInfo), { timeout: 15_000 })
+    .toContain("30 sat");
 
   await clickCanvas(page, 0.5, 373 / 800); // Pay invoice
   await expect

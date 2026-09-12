@@ -428,6 +428,10 @@ fn mirror_state_to_window(logic: &WalletLogic) {
     set("invoiceState", logic.get_invoice_state().to_string().into());
     set("meltPreimage", logic.get_melt_preimage().to_string().into());
     set(
+        "meltQuoteInfo",
+        logic.get_melt_quote_info().to_string().into(),
+    );
+    set(
         "historyLen",
         (slint::Model::row_count(&logic.get_history()) as u32).into(),
     );
