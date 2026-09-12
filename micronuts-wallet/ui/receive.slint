@@ -1,8 +1,9 @@
 import { Button, LineEdit, TextEdit } from "std-widgets.slint";
-import { WalletLogic } from "logic.slint";
+import { Page, WalletLogic } from "logic.slint";
 import { TabBar, Theme } from "theme.slint";
 
 export component ReceiveScreen inherits Rectangle {
+    callback navigate(Page);
     in-out property <int> tab: WalletLogic.receive-tab;
     in-out property <string> amount-text: "";
     background: transparent;
@@ -88,6 +89,11 @@ export component ReceiveScreen inherits Rectangle {
                     primary: true;
                     enabled: WalletLogic.token-in != "" && !WalletLogic.busy;
                     clicked => { WalletLogic.receive-token(WalletLogic.token-in); }
+                }
+                Button {
+                    text: "Scan QR";
+                    enabled: !WalletLogic.busy;
+                    clicked => { root.navigate(Page.Scan); }
                 }
             }
             if WalletLogic.token-check-text != "" : Text {

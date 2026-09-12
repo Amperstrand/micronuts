@@ -45,6 +45,7 @@ slint = { version = "1.15", default-features = false, features = [
     "unstable-fontique-07",
 ] }
 web-sys = { version = "0.3", features = [
+    "CanvasRenderingContext2d",
     "CssStyleDeclaration",
     "Document",
     "Element",
@@ -56,9 +57,10 @@ web-sys = { version = "0.3", features = [
     "MediaStream",
     "MediaStreamConstraints",
     "MediaStreamTrack",
+    "MediaTrackConstraints",
     "Navigator",
     "Window",
-    "CanvasRenderingContext2d",
+    "console",
 ] }
 
 [dev-dependencies]

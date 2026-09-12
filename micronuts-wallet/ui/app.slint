@@ -8,6 +8,7 @@ import { SendScreen } from "send.slint";
 import { HistoryScreen } from "history.slint";
 import { MintsScreen } from "mints.slint";
 import { BackupScreen } from "backup.slint";
+import { ScannerScreen } from "scan.slint";
 
 export { WalletLogic, Page, HistoryItem, MintItem } from "logic.slint";
 
@@ -67,13 +68,18 @@ export component MainWindow inherits Window {
             if root.current-page == Page.Home && WalletLogic.has-active-mint : HomeScreen {
                 navigate(p) => { root.navigate(p); }
             }
-            if root.current-page == Page.Receive && WalletLogic.has-active-mint : ReceiveScreen { }
+            if root.current-page == Page.Receive && WalletLogic.has-active-mint : ReceiveScreen {
+                navigate(p) => { root.navigate(p); }
+            }
             if root.current-page == Page.Send && WalletLogic.has-active-mint : SendScreen { }
             if root.current-page == Page.History : HistoryScreen { }
             if root.current-page == Page.Mints : MintsScreen {
                 navigate(p) => { root.navigate(p); }
             }
             if root.current-page == Page.Backup : BackupScreen {
+                navigate(p) => { root.navigate(p); }
+            }
+            if root.current-page == Page.Scan : ScannerScreen {
                 navigate(p) => { root.navigate(p); }
             }
         }

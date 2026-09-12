@@ -1,0 +1,44 @@
+import { Button } from "std-widgets.slint";
+import { Page, WalletLogic } from "logic.slint";
+import { Theme } from "theme.slint";
+
+export component ScannerScreen inherits Rectangle {
+    callback navigate(Page);
+    background: transparent;
+    init => {
+        WalletLogic.scanning = true;
+        WalletLogic.scan-start();
+    }
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 12px;
+        alignment: start;
+        Rectangle { height: 460px; }
+        Text {
+            text: "Scan";
+            color: Theme.text;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        Text {
+            text: WalletLogic.scan-status == "" ? "starting scanner…" : WalletLogic.scan-status;
+            color: Theme.warn;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Browser: allow the camera, then hold a Cashu QR in view.\nDesktop: plug the GM65 module in (MICRONUTS_GM65_PORT to override).";
+            color: Theme.text-dim;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+        Button {
+            text: "Cancel";
+            clicked => {
+                WalletLogic.scan-stop();
+                WalletLogic.scanning = false;
+                root.navigate(Page.Receive);
+            }
+        }
+    }
+}

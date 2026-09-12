@@ -13,6 +13,7 @@ use slint::{ComponentHandle, ModelRc, VecModel, Weak};
 
 use crate::engine::{HistoryEntry, HistoryKind, WalletEngine};
 use crate::state::{MintEntry, WalletState};
+#[cfg(not(target_arch = "wasm32"))]
 use cashu_core_lite::transport::MintClient;
 
 #[cfg(target_arch = "wasm32")]
@@ -42,6 +43,7 @@ type Transport = DemoMintClient;
 #[cfg(target_arch = "wasm32")]
 type Store = MemoryStore;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(not(target_arch = "wasm32"))]
 type Job = Box<dyn FnOnce(&mut Worker) + Send + 'static>;
 #[cfg(target_arch = "wasm32")]
@@ -133,6 +135,7 @@ fn store_error_text(err: StoreError) -> String {
 }
 
 struct Worker {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     dir: PathBuf,
     state: WalletState,
     engine: Option<WalletEngine<Transport, Store>>,
@@ -697,7 +700,9 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
 
     {
         let tx = dispatcher.clone();
+        let weak = weak.clone();
         logic.on_reconcile(move || {
+            let weak = weak.clone();
             set_busy(&weak);
             tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
@@ -709,6 +714,20 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                     Err(err) => worker.status = format!("reconcile failed: {err}"),
                 }
             });
+        });
+    }
+
+    {
+        let weak = weak.clone();
+        logic.on_scan_start(move || {
+            let weak = weak.clone();
+            start_scanner(&weak);
+        });
+    }
+
+    {
+        logic.on_scan_stop(move || {
+            stop_scanner();
         });
     }
 }
@@ -726,6 +745,70 @@ fn post_current_poll(worker: &mut Worker, quote_id: String, weak: Weak<MainWindo
         }
         Err(err) => worker.status = format!("quote poll failed: {err}"),
     }
+}
+
+/// Start the platform scanner (GM65 serial on native, camera on wasm)
+/// and route decoded tokens into the Receive field.
+#[cfg(not(target_arch = "wasm32"))]
+fn start_scanner(weak: &Weak<MainWindow>) {
+    use crate::gm65;
+
+    thread_local! {
+        static GM65_STOP: std::cell::RefCell<Option<gm65::Gm65Stop>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    GM65_STOP.with(|slot| *slot.borrow_mut() = None);
+    let weak_for_status = weak.clone();
+    let weak_for_scan = weak.clone();
+    match gm65::spawn_gm65_reader(
+        move |token| {
+            let _ = weak_for_scan.upgrade_in_event_loop(move |ui| {
+                let logic = ui.global::<WalletLogic>();
+                logic.set_scanning(false);
+                logic.set_scan_status(String::new().into());
+                logic.set_token_in(token.into());
+                ui.invoke_navigate(Page::Receive);
+            });
+            stop_scanner();
+        },
+        move |status| {
+            let _ = weak_for_status.upgrade_in_event_loop(move |ui| {
+                (ui.global::<WalletLogic>()).set_scan_status(status.into());
+            });
+        },
+    ) {
+        Ok(stop) => GM65_STOP.with(|slot| *slot.borrow_mut() = Some(stop)),
+        Err(err) => {
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                (ui.global::<WalletLogic>()).set_scan_status(format!("gm65: {err}").into());
+            });
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn start_scanner(weak: &Weak<MainWindow>) {
+    crate::camera::start_camera(weak.clone());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn stop_scanner() {
+    use crate::gm65::Gm65Stop;
+    thread_local! {
+        static GM65_STOP: std::cell::RefCell<Option<Gm65Stop>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    GM65_STOP.with(|slot| {
+        if let Some(stop) = slot.borrow_mut().take() {
+            stop.stop();
+        }
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn stop_scanner() {
+    crate::camera::stop_camera();
 }
 
 fn start_quote_poller(ui: &MainWindow, dispatcher: Dispatcher) {

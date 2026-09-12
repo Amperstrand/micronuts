@@ -8,6 +8,7 @@ export enum Page {
     History,
     Mints,
     Backup,
+    Scan,
 }
 
 export struct HistoryItem {
@@ -69,6 +70,11 @@ export global WalletLogic {
     pure callback switch-mint(int);
     pure callback toggle-privacy();
     pure callback reconcile();
+    pure callback scan-start();
+    pure callback scan-stop();
+
+    in-out property <bool> scanning: false;
+    in-out property <string> scan-status: "";
 
     // Tab selection for the two-tab screens (0 = ecash, 1 = lightning);
     // bound at screen init — also drives the headless screenshot rig.

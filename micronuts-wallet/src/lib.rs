@@ -6,6 +6,8 @@
 //! - `state`: file-backed persistence (`ProofStore` + wallet metadata)
 //! - `ui`: Slint application wiring
 
+#[cfg(target_arch = "wasm32")]
+pub mod camera;
 pub mod demo_mint;
 pub mod engine;
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,10 +24,36 @@ pub mod ui;
 pub fn wasm_start() {
     console_error_panic_hook::set_once();
     register_embedded_fonts();
+    log_qr_self_test();
     let dir = std::path::PathBuf::from(":browser:");
     if let Err(err) = ui::run(dir) {
         wasm_bindgen::throw_str(&format!("micronuts-wallet: {err}"));
     }
+}
+
+/// Boot-time evidence that the in-wasm QR decoder works: encode →
+/// decode round-trip, logged to the browser console.
+#[cfg(target_arch = "wasm32")]
+fn log_qr_self_test() {
+    let token = format!(
+        "cashuB{}",
+        "pGFtdWh0dHA6Ly8xMjcuMC4wLjE6MzAzMHVpc2F0bQ"
+            .chars()
+            .cycle()
+            .take(90)
+            .collect::<String>()
+    );
+    let ok = match qr_decode::encode_luminance(&token, 4, 4) {
+        Some((dim, luma)) => {
+            qr_decode::decode_luminance(dim, dim, &luma).as_deref() == Some(token.as_str())
+        }
+        None => false,
+    };
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(if ok {
+        "micronuts-wallet qr self-test: ok"
+    } else {
+        "micronuts-wallet qr self-test: FAILED"
+    }));
 }
 
 /// The web sandbox exposes no system fonts to Slint's font database, so
