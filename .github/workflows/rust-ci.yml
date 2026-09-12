@@ -187,6 +187,13 @@ jobs:
           RESPONSE=$(curl -s http://localhost:3030/v1/keysets)
           echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'keysets' in d, 'missing keysets'; ks=d['keysets'][0]; assert 'input_fee_ppk' in ks, 'missing input_fee_ppk'; print(f'Keyset fee: {ks[\"input_fee_ppk\"]}')"
 
+      - name: Wallet demo ladder (mint → send → receive → melt)
+        run: |
+          OUTPUT=$(MICRONUTS_WALLET_MINT=http://localhost:3030 ./target/release/micronuts-wallet --demo 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep "STEP 6 OK" || (echo "wallet demo did not complete" && exit 1)
+          echo "$OUTPUT" | grep "Final balance: 70 sats" || (echo "wallet demo balance mismatch" && exit 1)
+
       - name: Stop adapter
         if: always()
         run: |
