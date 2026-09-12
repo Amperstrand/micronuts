@@ -15,6 +15,7 @@ pub mod flow;
 pub mod gm65;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http;
+pub mod payload;
 pub mod qr_decode;
 pub mod state;
 pub mod ui;
