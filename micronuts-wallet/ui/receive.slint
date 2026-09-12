@@ -3,7 +3,7 @@ import { WalletLogic } from "logic.slint";
 import { TabBar, Theme } from "theme.slint";
 
 export component ReceiveScreen inherits Rectangle {
-    in-out property <int> tab: 0;
+    in-out property <int> tab: WalletLogic.receive-tab;
     in-out property <string> amount-text: "";
     in-out property <string> token-text: "";
     background: transparent;

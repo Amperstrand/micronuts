@@ -598,7 +598,7 @@ fn report(weak: &Weak<MainWindow>, message: String) {
 
 /// Render `text` as a QR code image (white background, black modules,
 /// 4-module quiet zone) for on-screen display.
-fn qr_image(text: &str) -> Option<slint::Image> {
+pub fn qr_image(text: &str) -> Option<slint::Image> {
     use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
     let mut outbuffer = vec![0u8; Version::MAX.buffer_len()];
     let mut tempbuffer = vec![0u8; Version::MAX.buffer_len()];

@@ -3,7 +3,7 @@ import { WalletLogic } from "logic.slint";
 import { TabBar, Theme } from "theme.slint";
 
 export component SendScreen inherits Rectangle {
-    in-out property <int> tab: 0;
+    in-out property <int> tab: WalletLogic.send-tab;
     in-out property <string> amount-text: "";
     in-out property <string> memo-text: "";
     in-out property <string> invoice-text: "";
