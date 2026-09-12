@@ -145,9 +145,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build audit adapter + mint_server (release)
+      - name: Build audit adapter + mint_server + wallet (release)
         # The adapter spawns ./target/release/mint_server as a subprocess.
-        run: cargo build --release -p micronuts-audit-adapter -p micronuts-mint --bin micronuts-audit-adapter --bin mint_server
+        run: cargo build --release -p micronuts-audit-adapter -p micronuts-mint --bin micronuts-audit-adapter --bin mint_server -p micronuts-wallet --bin micronuts-wallet
 
       - name: Start adapter in background
         run: |
