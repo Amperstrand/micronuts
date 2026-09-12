@@ -46,3 +46,14 @@ is the contract this work answers to.
 ## Milestone 1 — domain state and UX contract — NOT STARTED
 
 ## Milestones 2–8 — NOT STARTED
+
+### M0 addendum (2026-09-12, post-checkpoint)
+
+- Deployed: `Wallet Pages` workflow dispatched; https://amperstrand.github.io/micronuts/ serving (200).
+- Pre-existing red found in remote CI (missed by the local battery):
+  gitleaks failed on the last 4 pre-M0 main commits —
+  `STM32_REGISTRY_KEY = "stm32f469i-disco"` (labgrid board alias) trips
+  generic-api-key. Fixed on main (`7c2c99b`+`c83d322`): inline allow for
+  future commits + `.gitleaks.toml` `regexes` allowlist for history.
+  gitleaks green at `c83d322`. Lesson recorded: milestone gates must
+  check remote CI, not only the local battery.
