@@ -35,6 +35,24 @@ use Receive (invoice or paste a `cashuB…` token) / Send. Data lives in
 `$XDG_DATA_HOME/micronuts-wallet` (`wallet.json` + one proof store per
 mint) — override with `--dir <path>`.
 
+## QR scanning
+
+**Browser**: Receive → Ecash tab → **Scan QR** opens the camera
+(getUserMedia, rear lens preferred). A decoded `cashuB…` token lands in
+the paste field — you tap Check/Redeem; nothing auto-spends. The boot
+console logs `micronuts-wallet qr self-test: ok` proving the in-wasm
+decoder round-trips.
+
+**Desktop + GM65 module**: plug the scanner's USB-serial adapter in and
+tap Scan QR — the wallet reads decoded lines straight off the serial
+port (auto-detects `/dev/ttyUSB*`/`/dev/ttyACM*`; animated `ur:` QR
+sequences are reassembled). Knobs:
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `MICRONUTS_GM65_PORT` | autodetect | serial device path |
+| `MICRONUTS_GM65_BAUD` | `115200` | GM65 baud rate |
+
 ## Headless checks
 
 ```bash
@@ -68,6 +86,7 @@ with the adapter, testnut, …).
 
 ## Non-goals (for now)
 
-Nostr/NWC, animated QR, cross-mint swaps, P2PK send UI, NUT-17
-websockets, wallet-wide spent-scan scheduling. See the design doc's
-follow-up list.
+Nostr/NWC, animated QR (NUT-16) emission, cross-mint swaps, P2PK send
+UI, NUT-17 websockets, wallet-wide spent-scan scheduling, camera-based
+animated-UR scanning (GM65 UR reassembly is supported; the camera
+decodes single-frame QRs). See the design doc's follow-up list.
