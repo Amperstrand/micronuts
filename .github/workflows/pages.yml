@@ -33,7 +33,7 @@ jobs:
           tool: trunk@0.21.4
 
       - name: Build the browser wallet (wasm)
-        run: trunk build
+        run: trunk build --public-url /micronuts/
         working-directory: micronuts-wallet
 
       - uses: actions/upload-pages-artifact@v3
