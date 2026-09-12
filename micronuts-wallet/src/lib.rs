@@ -5,3 +5,5 @@
 //! - `engine`: wallet operations on top of `PersistentWallet`
 //! - `state`: file-backed persistence (`ProofStore` + wallet metadata)
 //! - `ui`: Slint application wiring
+
+pub mod http;
