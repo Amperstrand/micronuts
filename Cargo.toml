@@ -6,7 +6,7 @@ members = [
     "host-mint-tool",
     "micronuts-app",
     "micronuts-mint", "micronuts-fips-bridge", "micronuts-fips-responder", "walletport",
-    "micronuts-audit-adapter",
+    "micronuts-audit-adapter", "micronuts-wallet",
 ]
 exclude = ["micronuts-esp32-mint"]
 default-members = ["firmware"]

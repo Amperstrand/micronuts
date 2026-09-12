@@ -1,0 +1,28 @@
+[package]
+name = "micronuts-wallet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host Cashu wallet with a Slint UI (prototype)"
+
+[dependencies]
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+hex = "0.4"
+qrcodegen-no-heap = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = { version = "1.13", default-features = false, features = [
+    "std",
+    "backend-winit",
+    "renderer-software",
+    "compat-1-2",
+] }
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+
+[dev-dependencies]
+micronuts-mint = { path = "../micronuts-mint" }
+png = "0.17"
+
+[build-dependencies]
+slint-build = "1.13"
