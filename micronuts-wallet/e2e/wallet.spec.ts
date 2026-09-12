@@ -81,3 +81,34 @@ test("settings navigates to mints and back with the header affordance", async ({
   await clickCanvas(page, 0.06, 0.04);
   await expect.poll(() => state(page).then((s) => s.page)).toBe("settings");
 });
+
+test("receive ecash: typing a token auto-inspects into a review state", async ({
+  page,
+}) => {
+  await open(page);
+
+  // Home → Receive (left primary button under the balance; center ≈ y264
+  // from the layout: pad20+28+chip20+balance66+status18+spacers → 230..298).
+  await clickCanvas(page, 0.3, 0.33);
+  await expect.poll(() => state(page).then((s) => s.page)).toBe("receive");
+
+  // Focus the paste field and type a syntactically valid token from a
+  // mint the wallet is not connected to — the embedded demo mint is.
+  // A genuinely decodable V4 token from an in-process demo mint
+  // (examples/print_token) — foreign to the wallet's embedded mint, so
+  // inspection must land on the foreign-mint review wording.
+  await clickCanvas(page, 0.5, 0.22);
+  await page.keyboard.type(
+    "cashuBpGFtdGh0dHBzOi8vbWludC5leGFtcGxlYXVjc2F0YWRjZTJlYXSBomFpSAAi4CWGd5PRYXCDpGFhEGFzeEA5ZDQ0MDc2ZTA0Y2Q1Yzc1OTIzNTQyMmZhNmNkNjkzZDhjMmViNGYwNzM3NDhjODIyNjhmMWY2NzI4NTNjYjNiYWNYIQOL4r5EO99Ar-WZVzHDjgjXTwlwzOxMk-qgdLxrwfLRoWFko2FlWCCQqXMzTHeGcZx65daAxrdMhsS1jJDPVhCGDkZdj9DVKGFzWCAU8nuXZgkYk6FCDBeGZhwXxeiaLJLkZpAPfU0HZnPlOmFyWCBYIFBKGJpoh3-1A23dK4Syask2Zn7Utf-wNTveekmxwqRhYQRhc3hANTQ4NmI5MDQ5OGY2OTg0ZDQwZTQzYzY2OTc0ZTdhZTQzZjY3MWEzNGY5OWRiM2E1MjU2OWUyNzA3MTk4NWMzOGFjWCEC8xJ040ab8opGfzJ7UbUshlYkKpk7jKyiKBipnwNHaRRhZKNhZVggD8cKpOCOk3KZZnBvSCaDvT1gCynVUH_iHtH5ecDoaW1hc1gg0pyVHH8_j3BFrxpBBDuusYKeLyBkFIR84FC5OfYYUKJhclggcyXhidi1Gj0-1vlUQvdmdrqaJKSHxVkt9qp2sjG5_u2kYWEBYXN4QGZlY2Y4ZGZkNDBhNzk3OWIyOWQyNmQzODdiOWY3Nzg5YmExMGQwZWY1OWZiYWZjZGI4NGE1YmNiOGU4NDczMTlhY1ghAnJZaoV4OtzKP0HI_7MrUGNRnlGlnHODS1EaujKREYQ1YWSjYWVYIHNdg5QlxdMT7ijHCcItRWQbJ_2fabr1O4XwC7YIodquYXNYIOWA42LcH5MmfI0vzg7fGLultXyQzHTwr1BSVRVdarJHYXJYIBcOwwmgbf9ar7lpZIIWYDfkurxeSCx3DJt7csNdxjg7",
+    { delay: 5 },
+  );
+
+  // The review machinery runs by itself: state must leave "input" and
+  // land on the foreign-mint failure wording (no auto-spend possible —
+  // there is no confirmation to press).
+  await expect
+    .poll(() => state(page).then((s) => s.receiveState), { timeout: 15_000 })
+    .toBe("failed");
+  const s = await state(page);
+  expect(s.receiveLine).toContain("different mint");
+});

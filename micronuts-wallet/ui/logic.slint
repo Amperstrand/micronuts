@@ -50,7 +50,12 @@ export global WalletLogic {
 
     // receive: ecash token
     in-out property <string> token-in: "";
-    in-out property <string> token-check-text: "";
+    // Receive-ecash review state, driven from flow::ReceiveEcashPhase
+    // (Rust): "input" | "inspecting" | "review" | "receiving" |
+    // "received" | "failed".
+    in-out property <string> receive-ecash-state: "input";
+    in-out property <string> receive-review-line: "";
+    in-out property <string> receive-review-fee: "";
 
     // send: ecash token
     in-out property <string> token-out: "";
@@ -59,6 +64,9 @@ export global WalletLogic {
     // send: lightning melt
     in-out property <string> melt-quote-info: "";
     in-out property <string> melt-preimage: "";
+    // Scan routing (universal scan): pre-filled intents from a scan.
+    in-out property <string> invoice-in: "";
+    in-out property <string> mint-add-url: "";
 
     // lists + backup
     in-out property <[HistoryItem]> history;
@@ -69,7 +77,7 @@ export global WalletLogic {
     pure callback mint-invoice(string);
     pure callback mint-paid(string, int);
     pure callback receive-token(string);
-    pure callback check-token(string);
+    pure callback token-edited(string);
     pure callback send-token(string, string);
     pure callback melt-quote(string);
     pure callback melt-confirm();

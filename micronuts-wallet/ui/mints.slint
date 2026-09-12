@@ -4,7 +4,7 @@ import { BackHeader, Theme } from "theme.slint";
 
 export component MintsScreen inherits Rectangle {
     callback navigate(Page);
-    in-out property <string> add-url: "";
+    in-out property <string> add-url: WalletLogic.mint-add-url;
     in-out property <bool> confirming: false;
     background: transparent;
     VerticalLayout {

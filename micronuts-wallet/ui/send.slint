@@ -7,7 +7,7 @@ export component SendScreen inherits Rectangle {
     in-out property <int> tab: WalletLogic.send-tab;
     in-out property <string> amount-text: "";
     in-out property <string> memo-text: "";
-    in-out property <string> invoice-text: "";
+    in-out property <string> invoice-text: WalletLogic.invoice-in;
     background: transparent;
     VerticalLayout {
         padding: Theme.pad;

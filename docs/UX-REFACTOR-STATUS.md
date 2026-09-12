@@ -103,7 +103,36 @@ is the contract this work answers to.
 - Known limitations: host disk pressure (external concurrent writer)
   interrupted builds repeatedly this session; milestone gates still met.
 
-## Milestones 3–8 — NOT STARTED
+## Milestone 3 — universal scan + ecash receive — PASS (2026-09-12)
+
+- Checkpoint: `ux: unify scanner and ecash receive` (see git log for
+  SHA). Payload router (`src/payload.rs`): bare `cashuB/A` tokens,
+  `?token=` URLs, `lightning:`-wrapped and bare BOLT11, mint URLs;
+  Unknown is inert. One routing point (`ui::route_scanned`) feeds
+  GM65 (native) and camera (wasm) decodes: token → Receive+auto-inspect,
+  invoice → Send/Lightning prefill, mint URL → Mints prefill. A scan
+  resolves an intent; nothing spends without the explicit Receive/Pay
+  press.
+- Receive ecash: "Check"/"Redeem" buttons gone. Input (typing, paste,
+  scan) auto-inspects (inspecting → review | failed); review card shows
+  amount+mint (format_amount), fee line per copy contract ("No fee"),
+  part-spent warning; single **Receive** confirm; receiving/received/
+  failed states from `flow::ReceiveEcashPhase`. `TokenInspection` gained
+  `fee` (engine-computed swap fee).
+- Tests: 8 payload-router unit tests; inspection integration tests
+  extended (fee); wallet suites 36/14/7 green; clippy/fmt/wasm/thumb
+  clean. **Browser e2e 4/4 × 3 runs**: typing a genuinely decodable V4
+  token (from the new `examples/print_token` against an in-process
+  DemoMint) auto-inspects to the foreign-mint failure wording — proving
+  decode + mint-match + no-auto-spend on the real surface.
+- Hardware: GM65 physical scan not re-exercised this session (module
+  path unchanged from 97b89e7's verified wiring; routing covered by
+  payload unit tests). Recorded as a gate carry-over for the next
+  hardware session alongside M7.
+- Deployed: Wallet Pages build → deploy → e2e green at the checkpoint
+  SHA (live suite includes the auto-inspect test).
+
+## Milestones 4–8 — NOT STARTED
 
 ### M0 addendum (2026-09-12, post-checkpoint)
 

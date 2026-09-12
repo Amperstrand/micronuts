@@ -205,6 +205,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             .iter()
             .filter(|s| s.state == nut07::state::PENDING)
             .count();
+        let fee = (self.fee_ppk * proof_count as u64).div_ceil(1000);
         Ok(crate::flow::TokenInspection {
             summary: crate::flow::TokenSummary {
                 mint: token.mint,
@@ -215,6 +216,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             },
             spent,
             pending,
+            fee,
         })
     }
 

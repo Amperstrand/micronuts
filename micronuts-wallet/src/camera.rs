@@ -10,7 +10,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::qr_decode::decode_rgba;
-use crate::ui::{MainWindow, Page, WalletLogic};
+use crate::ui::{MainWindow, WalletLogic};
 
 const FRAME_WIDTH: u32 = 320;
 const FRAME_HEIGHT: u32 = 240;
@@ -184,12 +184,6 @@ fn capture_frame(weak: &Weak<MainWindow>, canvas: &web_sys::HtmlCanvasElement) {
 
     if let Some(text) = decoded {
         stop_camera();
-        let _ = weak.upgrade_in_event_loop(move |ui| {
-            let logic = ui.global::<WalletLogic>();
-            logic.set_scanning(false);
-            logic.set_scan_status(String::new().into());
-            logic.set_token_in(text.into());
-            ui.invoke_navigate(Page::Receive);
-        });
+        crate::ui::route_scanned(&weak, crate::ui::Dispatcher::from_weak(weak.clone()), text);
     }
 }

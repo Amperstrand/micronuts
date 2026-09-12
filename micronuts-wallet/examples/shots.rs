@@ -135,11 +135,16 @@ fn main() {
     shot(&ui, Page::Mints, "mints", out_dir);
     shot(&ui, Page::Backup, "backup", out_dir);
 
-    logic.set_token_check_text("21 sats from https://mint.example".into());
+    logic.set_token_in("cashuBpGFtcGRvaHR0cHM6Ly9taW50LmV4YW1wbGU".into());
+    logic.set_receive_ecash_state("review".into());
+    logic.set_receive_review_line("21 sats from https://mint.example".into());
+    logic.set_receive_review_fee("No fee".into());
     shot(&ui, Page::Receive, "receive-token", out_dir);
 
     logic.set_receive_tab(1);
-    logic.set_token_check_text("".into());
+    logic.set_receive_ecash_state("input".into());
+    logic.set_receive_review_line(String::new().into());
+    logic.set_receive_review_fee(String::new().into());
     logic.set_invoice("lnbc1280u1psl9wmepp5yqzp3zx3q…".into());
     logic.set_invoice_quote_id("cmQx".into());
     logic.set_invoice_state("PAID".into());

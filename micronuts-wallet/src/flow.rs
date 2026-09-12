@@ -120,13 +120,16 @@ pub struct TokenSummary {
 }
 
 /// Inspect result: the summary plus per-proof health from the mint
-/// (NUT-07). `spent`/`pending` counts feed warnings and the AlreadySpent
-/// verdict without redeeming anything.
+/// (NUT-07) and the prospective receive fee (swap input fee). `spent`/
+/// `pending` counts feed warnings and the AlreadySpent verdict without
+/// redeeming anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenInspection {
     pub summary: TokenSummary,
     pub spent: usize,
     pub pending: usize,
+    /// Exact swap fee the receive would pay (fee_ppk × inputs / 1000).
+    pub fee: u64,
 }
 
 impl TokenInspection {
@@ -145,6 +148,16 @@ impl TokenInspection {
             line.push_str(&format!(" ({} part already received)", self.spent));
         }
         line
+    }
+
+    /// Prospective fee wording per the copy contract: "No fee" at zero,
+    /// numeric otherwise.
+    pub fn fee_line(&self) -> String {
+        if self.fee == 0 {
+            String::from("No fee")
+        } else {
+            format!("Fee: {}", crate::format_amount(self.fee))
+        }
     }
 }
 
@@ -430,6 +443,7 @@ mod tests {
             },
             spent: 3,
             pending: 0,
+            fee: 0,
         };
         assert!(inspection.all_spent());
         assert!(inspection.user_line().contains("already received"));

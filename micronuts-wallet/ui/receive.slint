@@ -68,7 +68,7 @@ export component ReceiveScreen inherits Rectangle {
         if root.tab == 0 : VerticalLayout {
             spacing: 12px;
             Text {
-                text: "Paste a Cashu token (cashuB…) or scan its QR with another wallet.";
+                text: "Paste ecash (cashuB…) or scan its QR.";
                 color: Theme.text-dim;
                 font-size: 13px;
                 wrap: word-wrap;
@@ -77,33 +77,57 @@ export component ReceiveScreen inherits Rectangle {
                 text: WalletLogic.token-in;
                 placeholder-text: "cashuB…";
                 font-size: 12px;
-                height: 110px;
-                edited(text) => { WalletLogic.token-in = text; }
-            }
-            HorizontalLayout {
-                spacing: 12px;
-                Button {
-                    text: "Check";
-                    enabled: WalletLogic.token-in != "" && !WalletLogic.busy;
-                    clicked => { WalletLogic.check-token(WalletLogic.token-in); }
-                }
-                Button {
-                    text: "Redeem";
-                    primary: true;
-                    enabled: WalletLogic.token-in != "" && !WalletLogic.busy;
-                    clicked => { WalletLogic.receive-token(WalletLogic.token-in); }
-                }
-                Button {
-                    text: "Scan QR";
-                    enabled: !WalletLogic.busy;
-                    clicked => { root.navigate(Page.Scan); }
+                height: 96px;
+                edited(text) => {
+                    WalletLogic.token-in = text;
+                    WalletLogic.token-edited(text);
                 }
             }
-            if WalletLogic.token-check-text != "" : Text {
-                text: WalletLogic.token-check-text;
-                color: Theme.warn;
-                font-size: 13px;
-                wrap: word-wrap;
+            Button {
+                text: "Scan";
+                enabled: !WalletLogic.busy;
+                clicked => { root.navigate(Page.Scan); }
+            }
+
+            // Review card: inspection is wallet machinery — it runs by
+            // itself when input arrives; the human confirms.
+            if WalletLogic.receive-ecash-state != "input" && WalletLogic.receive-ecash-state != "inspecting" : Rectangle {
+                border-radius: 12px;
+                background: Theme.card;
+                height: 168px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: WalletLogic.receive-review-line;
+                        color: WalletLogic.receive-ecash-state == "failed" ? Theme.danger : Theme.text;
+                        font-size: 15px;
+                        wrap: word-wrap;
+                    }
+                    if WalletLogic.receive-ecash-state == "review" : Text {
+                        text: WalletLogic.receive-review-fee;
+                        color: Theme.text-dim;
+                        font-size: 13px;
+                    }
+                    if WalletLogic.receive-ecash-state == "review" : Button {
+                        text: "Receive";
+                        primary: true;
+                        height: 60px;
+                        enabled: !WalletLogic.busy;
+                        clicked => { WalletLogic.receive-token(WalletLogic.token-in); }
+                    }
+                    if WalletLogic.receive-ecash-state == "receiving" : Text {
+                        text: "Receiving…";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                    }
+                }
+            }
+            if WalletLogic.receive-ecash-state == "inspecting" : Text {
+                text: "Checking this ecash…";
+                color: Theme.text-dim;
+                font-size: 14px;
             }
         }
     }

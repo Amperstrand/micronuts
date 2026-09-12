@@ -59,14 +59,19 @@ thread_local! {
 }
 
 #[derive(Clone)]
-struct Dispatcher {
+pub struct Dispatcher {
     #[cfg(not(target_arch = "wasm32"))]
     tx: mpsc::Sender<Job>,
     #[cfg(target_arch = "wasm32")]
-    weak: Weak<MainWindow>,
+    pub(crate) weak: Weak<MainWindow>,
 }
 
 impl Dispatcher {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn from_weak(weak: Weak<MainWindow>) -> Self {
+        Self { weak }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn post(&self, job: impl FnOnce(&mut Worker) + Send + 'static) {
         let _ = self.tx.send(Box::new(job));
@@ -412,6 +417,14 @@ fn mirror_state_to_window(logic: &WalletLogic) {
     set("connected", logic.get_connected().into());
     set("hasActiveMint", logic.get_has_active_mint().into());
     set(
+        "receiveState",
+        logic.get_receive_ecash_state().to_string().into(),
+    );
+    set(
+        "receiveLine",
+        logic.get_receive_review_line().to_string().into(),
+    );
+    set(
         "historyLen",
         (slint::Model::row_count(&logic.get_history()) as u32).into(),
     );
@@ -526,6 +539,11 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
         logic.on_receive_token(move |token: slint::SharedString| {
             let weak = weak.clone();
             set_busy(&weak);
+            let _ = weak.upgrade_in_event_loop(|ui| {
+                let logic = ui.global::<WalletLogic>();
+                logic.set_receive_ecash_state(String::from("receiving").into());
+                logic.set_receive_review_fee(String::new().into());
+            });
             let token = token.to_string();
             tx.post(move |worker| {
                 let Some(engine) = worker.engine.as_mut() else {
@@ -538,10 +556,23 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                         let _ = weak.upgrade_in_event_loop(move |ui| {
                             let logic = ui.global::<WalletLogic>();
                             logic.set_token_in(String::new().into());
-                            logic.set_token_check_text(String::new().into());
+                            logic.set_receive_ecash_state(String::from("received").into());
+                            logic.set_receive_review_line(
+                                flow::ReceiveEcashPhase::Received { amount: received }
+                                    .user_line()
+                                    .into(),
+                            );
                         });
                     }
-                    Err(err) => worker.status = format!("receive failed: {err}"),
+                    Err(err) => {
+                        worker.status = format!("receive failed: {err}");
+                        let line = flow::classify(&err).user_line();
+                        let _ = weak.upgrade_in_event_loop(move |ui| {
+                            let logic = ui.global::<WalletLogic>();
+                            logic.set_receive_ecash_state(String::from("failed").into());
+                            logic.set_receive_review_line(line.into());
+                        });
+                    }
                 }
             });
         });
@@ -550,32 +581,27 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
     {
         let tx = dispatcher.clone();
         let weak = weak.clone();
-        logic.on_check_token(move |token: slint::SharedString| {
-            let weak = weak.clone();
-            set_busy(&weak);
+        // Auto-inspect: input arriving (typing, paste, scan) drives the
+        // review machinery by itself — "Check" is not a user verb.
+        logic.on_token_edited(move |token: slint::SharedString| {
             let token = token.to_string();
-            tx.post(move |worker| {
-                let Some(engine) = worker.engine.as_mut() else {
-                    return;
-                };
-                // Inspect = parse + mint match + proof health, mapped onto
-                // the semantic Review/Failure phases (UX contract).
-                let phase = match engine.inspect_token(&token) {
-                    Ok(inspection) => {
-                        if inspection.all_spent() {
-                            flow::ReceiveEcashPhase::Failed(flow::FlowFailure::AlreadySpent)
-                        } else {
-                            flow::ReceiveEcashPhase::Review(inspection)
-                        }
-                    }
-                    Err(failure) => flow::ReceiveEcashPhase::Failed(failure),
-                };
-                let report = phase.user_line();
-                let _ = weak.upgrade_in_event_loop(move |ui| {
-                    ui.global::<WalletLogic>()
-                        .set_token_check_text(report.into());
+            if token.trim().is_empty() {
+                let _ = weak.upgrade_in_event_loop(|ui| {
+                    let logic = ui.global::<WalletLogic>();
+                    logic.set_receive_ecash_state(String::from("input").into());
+                    logic.set_receive_review_line(String::new().into());
+                    logic.set_receive_review_fee(String::new().into());
                 });
-            });
+                return;
+            }
+            if !matches!(
+                crate::payload::classify(&token),
+                crate::payload::ScannedPayload::CashuToken { .. }
+            ) {
+                // Not a token (yet, while typing) — no mint chatter.
+                return;
+            }
+            inspect_for_review(&weak, &tx, token);
         });
     }
 
@@ -760,9 +786,11 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
 
     {
         let weak = weak.clone();
+        let tx = dispatcher.clone();
         logic.on_scan_start(move || {
             let weak = weak.clone();
-            start_scanner(&weak);
+            let tx = tx.clone();
+            start_scanner(&weak, tx);
         });
     }
 
@@ -794,9 +822,9 @@ fn post_current_poll(worker: &mut Worker, quote_id: String, weak: Weak<MainWindo
 }
 
 /// Start the platform scanner (GM65 serial on native, camera on wasm)
-/// and route decoded tokens into the Receive field.
+/// and route decoded payloads through the universal scan router.
 #[cfg(not(target_arch = "wasm32"))]
-fn start_scanner(weak: &Weak<MainWindow>) {
+fn start_scanner(weak: &Weak<MainWindow>, dispatcher: Dispatcher) {
     use crate::gm65;
 
     thread_local! {
@@ -807,15 +835,10 @@ fn start_scanner(weak: &Weak<MainWindow>) {
     GM65_STOP.with(|slot| *slot.borrow_mut() = None);
     let weak_for_status = weak.clone();
     let weak_for_scan = weak.clone();
+    let tx_for_scan = dispatcher;
     match gm65::spawn_gm65_reader(
         move |token| {
-            let _ = weak_for_scan.upgrade_in_event_loop(move |ui| {
-                let logic = ui.global::<WalletLogic>();
-                logic.set_scanning(false);
-                logic.set_scan_status(String::new().into());
-                logic.set_token_in(token.into());
-                ui.invoke_navigate(Page::Receive);
-            });
+            route_scanned(&weak_for_scan, tx_for_scan.clone(), token);
             stop_scanner();
         },
         move |status| {
@@ -834,7 +857,7 @@ fn start_scanner(weak: &Weak<MainWindow>) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn start_scanner(weak: &Weak<MainWindow>) {
+fn start_scanner(weak: &Weak<MainWindow>, _dispatcher: Dispatcher) {
     crate::camera::start_camera(weak.clone());
 }
 
@@ -892,6 +915,79 @@ fn start_quote_poller(ui: &MainWindow, dispatcher: Dispatcher) {
 fn set_busy(weak: &Weak<MainWindow>) {
     let _ = weak.upgrade_in_event_loop(move |ui| {
         ui.global::<WalletLogic>().set_busy(true);
+    });
+}
+
+/// Inspect a token and drive the receive-review state from the semantic
+/// phases (UX contract: inspection is wallet machinery, not a button).
+fn inspect_for_review(weak: &Weak<MainWindow>, tx: &Dispatcher, token: String) {
+    let weak = weak.clone();
+    let tx = tx.clone();
+    let _ = weak.upgrade_in_event_loop(|ui| {
+        ui.global::<WalletLogic>()
+            .set_receive_ecash_state(String::from("inspecting").into());
+    });
+    tx.post(move |worker| {
+        let Some(engine) = worker.engine.as_mut() else {
+            return;
+        };
+        let phase = match engine.inspect_token(&token) {
+            Ok(inspection) => {
+                if inspection.all_spent() {
+                    flow::ReceiveEcashPhase::Failed(flow::FlowFailure::AlreadySpent)
+                } else {
+                    flow::ReceiveEcashPhase::Review(inspection)
+                }
+            }
+            Err(failure) => flow::ReceiveEcashPhase::Failed(failure),
+        };
+        let (line, fee) = match &phase {
+            flow::ReceiveEcashPhase::Review(inspection) => {
+                (phase.user_line(), inspection.fee_line())
+            }
+            _ => (phase.user_line(), String::new()),
+        };
+        let state = match phase {
+            flow::ReceiveEcashPhase::Review(_) => "review",
+            flow::ReceiveEcashPhase::Failed(_) => "failed",
+            _ => "input",
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            let logic = ui.global::<WalletLogic>();
+            logic.set_receive_ecash_state(state.into());
+            logic.set_receive_review_line(line.into());
+            logic.set_receive_review_fee(fee.into());
+        });
+    });
+}
+
+/// Universal scan routing (UX contract): a decode resolves an intent and
+/// pre-populates its screen — it never authorizes anything.
+pub fn route_scanned(weak: &Weak<MainWindow>, tx: Dispatcher, text: String) {
+    use crate::payload::ScannedPayload;
+    let _ = weak.upgrade_in_event_loop(move |ui| {
+        let logic = ui.global::<WalletLogic>();
+        logic.set_scanning(false);
+        logic.set_scan_status(String::new().into());
+        match crate::payload::classify(&text) {
+            ScannedPayload::CashuToken { token } => {
+                logic.set_token_in(token.clone().into());
+                ui.invoke_navigate(Page::Receive);
+                inspect_for_review(&ui.as_weak(), &tx, token);
+            }
+            ScannedPayload::LightningInvoice { invoice } => {
+                logic.set_invoice_in(invoice.into());
+                logic.set_send_tab(1);
+                ui.invoke_navigate(Page::Send);
+            }
+            ScannedPayload::MintUrl { url } => {
+                logic.set_mint_add_url(url.into());
+                ui.invoke_navigate(Page::Mints);
+            }
+            ScannedPayload::Unknown => {
+                logic.set_scan_status(String::from("Not recognized — try a Cashu QR").into());
+            }
+        }
     });
 }
 
