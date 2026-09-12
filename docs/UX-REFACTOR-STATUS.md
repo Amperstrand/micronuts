@@ -70,7 +70,40 @@ is the contract this work answers to.
   (receive-lightning intentionally reworded — the only visual delta).
 - Checkpoint: `wallet: semantic flow states (ux contract, no visual change)`.
 
-## Milestones 2–8 — NOT STARTED
+## Milestone 2 — wallet shell, home, navigation — PASS (2026-09-12)
+
+- Checkpoint `9a74dfd` (+ e2e infra `a822b10`, merged to main): nav
+  contract — Home/Activity/Settings tabs; Receive/Send/Scan as Home
+  intents (BackHeader back affordance); Mints+Backup under Settings;
+  first-run still lands on Mints. Home per contract: 54px balance +
+  privacy eye-toggle, mint chip, calm status, 68px Receive/Send, Scan,
+  three most-recent rows. "Refresh balance" removed — reconciliation
+  already automatic on connect. 9 shots regenerated.
+- **Browser e2e (new capability)**: Slint-wasm renders to canvas →
+  Playwright drives canvas-geometry clicks and asserts through a
+  `window.__micronuts` mirror (page/balance/mint/flags; no secrets;
+  250 ms timer + snapshot hook). 3 tests (boot+amount-format contract,
+  tab nav, settings→mints→back). **First run caught a real violation**
+  (snapshot hand-formatted "0 sat"; fixed to `format_amount`). 3× green
+  locally; `pages.yml` now runs the suite post-deploy against the live
+  URL — CI: build ✓ deploy ✓ e2e ✓ (39 s); local run vs live: 3 passed.
+  Rust CI + gitleaks green at `a822b10`.
+- Hardware note: the Slint wallet is not on firmware yet (M7), so M2's
+  physical gate is approximated by fixed 480×800 canvas geometry
+  (deterministic targets ≥ 68px) + real-browser verification; on-device
+  evaluation lands with M7.
+- **Real-mint feasibility (probed)**: signut.cashu.exchange (signet,
+  Nutshell-CF/0.0.1) and testnut.cashu.space (cdk-mintd, FakeWallet)
+  both send `access-control-allow-origin: *` with POST — a wasm wallet
+  can talk to them directly from the browser. Plan: wasm HTTP
+  `MintClient` (fetch-based, replaces the embedded DemoMint when a real
+  mint URL is added), testnut first (auto-paid invoices = no external
+  payer needed), signut for real signet Lightning (money taxonomy:
+  signet = free rein; external payer via the ssh→cln-hub recipe).
+- Known limitations: host disk pressure (external concurrent writer)
+  interrupted builds repeatedly this session; milestone gates still met.
+
+## Milestones 3–8 — NOT STARTED
 
 ### M0 addendum (2026-09-12, post-checkpoint)
 
