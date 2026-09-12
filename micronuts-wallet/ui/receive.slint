@@ -5,7 +5,6 @@ import { TabBar, Theme } from "theme.slint";
 export component ReceiveScreen inherits Rectangle {
     in-out property <int> tab: WalletLogic.receive-tab;
     in-out property <string> amount-text: "";
-    in-out property <string> token-text: "";
     background: transparent;
     VerticalLayout {
         padding: Theme.pad;
@@ -71,24 +70,24 @@ export component ReceiveScreen inherits Rectangle {
                 wrap: word-wrap;
             }
             TextEdit {
-                text: root.token-text;
+                text: WalletLogic.token-in;
                 placeholder-text: "cashuB…";
                 font-size: 12px;
                 height: 110px;
-                edited(text) => { root.token-text = text; }
+                edited(text) => { WalletLogic.token-in = text; }
             }
             HorizontalLayout {
                 spacing: 12px;
                 Button {
                     text: "Check";
-                    enabled: root.token-text != "" && !WalletLogic.busy;
-                    clicked => { WalletLogic.check-token(root.token-text); }
+                    enabled: WalletLogic.token-in != "" && !WalletLogic.busy;
+                    clicked => { WalletLogic.check-token(WalletLogic.token-in); }
                 }
                 Button {
                     text: "Redeem";
                     primary: true;
-                    enabled: root.token-text != "" && !WalletLogic.busy;
-                    clicked => { WalletLogic.receive-token(root.token-text); }
+                    enabled: WalletLogic.token-in != "" && !WalletLogic.busy;
+                    clicked => { WalletLogic.receive-token(WalletLogic.token-in); }
                 }
             }
             if WalletLogic.token-check-text != "" : Text {

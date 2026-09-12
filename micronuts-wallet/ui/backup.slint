@@ -9,6 +9,7 @@ export component BackupScreen inherits Rectangle {
     VerticalLayout {
         padding: Theme.pad;
         spacing: 12px;
+        alignment: start;
         Text { text: "Backup"; color: Theme.text; font-size: 24px; font-weight: 700; }
         Text {
             text: "This seed derives every ecash secret deterministically (NUT-13). Write it down offline — with it, a restored wallet re-fetches every unspent proof from the mint (NUT-09).";

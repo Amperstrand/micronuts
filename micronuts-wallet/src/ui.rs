@@ -314,6 +314,7 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
         let tx = tx.clone();
         let weak = weak.clone();
         logic.on_mint_paid(move |quote_id: slint::SharedString, amount: i32| {
+            let weak = weak.clone();
             set_busy(&weak);
             let quote_id = quote_id.to_string();
             let amount = u64::try_from(amount).unwrap_or(0);
@@ -322,7 +323,17 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
                     return;
                 };
                 match engine.mint_paid_quote(&quote_id, amount) {
-                    Ok(minted) => worker.status = format!("minted {minted} sat"),
+                    Ok(minted) => {
+                        worker.status = format!("minted {minted} sat");
+                        let _ = weak.upgrade_in_event_loop(move |ui| {
+                            let logic = ui.global::<WalletLogic>();
+                            logic.set_invoice(String::new().into());
+                            logic.set_invoice_quote_id(String::new().into());
+                            logic.set_invoice_state(String::new().into());
+                            logic.set_invoice_amount_text(String::new().into());
+                            logic.set_invoice_qr(slint::Image::default());
+                        });
+                    }
                     Err(err) => worker.status = format!("mint failed: {err}"),
                 }
             });
@@ -333,6 +344,7 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
         let tx = tx.clone();
         let weak = weak.clone();
         logic.on_receive_token(move |token: slint::SharedString| {
+            let weak = weak.clone();
             set_busy(&weak);
             let token = token.to_string();
             post(&tx, move |worker| {
@@ -341,7 +353,14 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
                     return;
                 };
                 match engine.receive_token(&token) {
-                    Ok(received) => worker.status = format!("received {received} sat"),
+                    Ok(received) => {
+                        worker.status = format!("received {received} sat");
+                        let _ = weak.upgrade_in_event_loop(move |ui| {
+                            let logic = ui.global::<WalletLogic>();
+                            logic.set_token_in(String::new().into());
+                            logic.set_token_check_text(String::new().into());
+                        });
+                    }
                     Err(err) => worker.status = format!("receive failed: {err}"),
                 }
             });

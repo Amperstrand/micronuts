@@ -503,7 +503,7 @@ fn decompose_capped(total: u64, cap: u64) -> Vec<u64> {
     let mut coins = Vec::new();
     while remaining > 0 {
         let mut coin = cap.min(remaining);
-        while coin > remaining {
+        while coin > remaining || coin & coin.wrapping_sub(1) != 0 {
             coin >>= 1;
         }
         coins.push(coin);
@@ -526,4 +526,44 @@ fn token_proof_to_wallet(proof: &TokenProof, keyset_id: &str) -> Result<nut00::P
         dleq: proof.dleq.clone(),
         witness: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompose_capped_sums_and_respects_cap() {
+        for total in 0u64..=1000 {
+            for cap in [1u64, 2, 4, 8, 16, 32, 64, 128] {
+                let coins = decompose_capped(total, cap);
+                assert_eq!(coins.iter().sum::<u64>(), total, "total {total} cap {cap}");
+                assert!(
+                    coins
+                        .iter()
+                        .all(|&c| c <= cap && c & c.wrapping_sub(1) == 0),
+                    "coins must be powers of two: {coins:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn decompose_capped_zero_is_empty() {
+        assert!(decompose_capped(0, 4).is_empty());
+    }
+
+    #[test]
+    fn decompose_capped_prefers_the_cap() {
+        assert_eq!(decompose_capped(70, 16), vec![16, 16, 16, 16, 4, 2]);
+        assert_eq!(decompose_capped(3, 4), vec![2, 1]);
+    }
+
+    #[test]
+    fn input_fee_rounds_up_per_thousand_keys() {
+        let ppk: u64 = 1200;
+        assert_eq!((ppk * 1).div_ceil(1000), 2);
+        assert_eq!((ppk * 5).div_ceil(1000), 6);
+        assert_eq!((ppk * 0).div_ceil(1000), 0);
+    }
 }
