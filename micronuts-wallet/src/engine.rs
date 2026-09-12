@@ -281,7 +281,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             (self.fee_ppk * all.len() as u64).div_ceil(1000)
         };
         let rest = total - swap_fee - target;
-        let cap = target & target.wrapping_neg();
+        let cap = target.isolate_lowest_one();
         let mut amounts = nut00::decompose_amount(target);
         amounts.extend(decompose_capped(rest, cap));
 
