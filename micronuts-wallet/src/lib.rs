@@ -6,4 +6,6 @@
 //! - `state`: file-backed persistence (`ProofStore` + wallet metadata)
 //! - `ui`: Slint application wiring
 
+pub mod engine;
 pub mod http;
+pub mod state;
