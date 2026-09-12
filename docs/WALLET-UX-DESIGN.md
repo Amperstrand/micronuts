@@ -44,6 +44,10 @@ history, mints (+ trust confirmation), backup. Navigation: bottom bar,
 - **Receive ecash:** paste token → optional NUT-07 health check
   (SPENT proofs flagged before redemption) → redeem via NUT-03 swap into
   fresh deterministic outputs (secret rotation — sender can't track).
+  QR entry: browser camera (getUserMedia + in-wasm rqrr decode) or GM65
+  USB-serial module (native; consumes the gm65-scanner crate's core,
+  reassembles animated `ur:` sequences). Scans fill the field — the
+  human taps Redeem.
 - **Send ecash:** amount (+memo) → exact-denomination swap → NUT-00 V4
   token (`cashuB…`) as text + QR.
 - **Pay invoice:** paste → NUT-05 quote (amount + fee_reserve shown
