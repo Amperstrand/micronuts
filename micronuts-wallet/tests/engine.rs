@@ -255,6 +255,42 @@ fn fund<S: ProofStore>(engine: &mut WalletEngine<SharedMintClient, S>, amount: u
 }
 
 #[test]
+fn reconcile_prunes_proofs_spent_elsewhere() {
+    let client = shared_mint();
+
+    let mut original = engine(&client, SEED);
+    original.connect().unwrap();
+    fund(&mut original, 63);
+
+    // A second device restores the same seed into its own store.
+    let mut restored = engine(&client, SEED);
+    restored.connect().unwrap();
+    let count = restored.restore().unwrap();
+    assert!(count > 0, "restore re-fetches the minted outputs");
+    assert_eq!(restored.balance(), 63);
+
+    // The original device spends everything — the mint marks those
+    // secrets spent; the restored copy still counts them.
+    let token = original.send_token(63, None).unwrap();
+    assert_eq!(original.balance(), 0);
+    let _ = token;
+
+    let pruned = restored.reconcile_spent().unwrap();
+    assert!(pruned > 0, "stale proofs must be pruned");
+    assert_eq!(restored.balance(), 0);
+    assert_eq!(restored.reconcile_spent().unwrap(), 0, "idempotent");
+}
+
+#[test]
+fn reconcile_on_empty_wallet_is_free() {
+    let client = shared_mint();
+    let mut wallet = engine(&client, SEED);
+    wallet.connect().unwrap();
+    assert_eq!(wallet.reconcile_spent().unwrap(), 0);
+    assert_eq!(wallet.balance(), 0);
+}
+
+#[test]
 fn full_cycle_mint_send_receive_melt() {
     let client = shared_mint();
     let mut wallet = engine(&client, SEED);

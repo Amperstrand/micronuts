@@ -45,10 +45,15 @@ export component HomeScreen inherits Rectangle {
                 text: "Send";
                 clicked => { root.navigate(Page.Send); }
             }
-            Button {
-                text: WalletLogic.privacy-hide ? "Show" : "Hide";
-                clicked => { WalletLogic.toggle-privacy(); }
-            }
+        Button {
+            text: WalletLogic.privacy-hide ? "Show balance" : "Hide balance";
+            clicked => { WalletLogic.toggle-privacy(); }
+        }
+        Button {
+            text: "Refresh balance";
+            enabled: WalletLogic.has-active-mint && !WalletLogic.busy;
+            clicked => { WalletLogic.reconcile(); }
+        }
         }
         Rectangle { height: 12px; }
         Text {

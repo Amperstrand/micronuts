@@ -67,6 +67,7 @@ export global WalletLogic {
     pure callback add-mint(string);
     pure callback switch-mint(int);
     pure callback toggle-privacy();
+    pure callback reconcile();
 
     // Tab selection for the two-tab screens (0 = ecash, 1 = lightning);
     // bound at screen init — also drives the headless screenshot rig.

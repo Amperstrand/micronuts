@@ -144,6 +144,15 @@ impl Worker {
             Ok(()) => self.status = String::from("connected"),
             Err(err) => self.status = format!("mint unreachable: {err}"),
         }
+        // NUT-07 reconciliation on connect (non-fatal): drop proofs the
+        // mint already reports spent so the balance is honest from boot.
+        if let Some(engine) = self.engine.as_mut() {
+            match engine.reconcile_spent() {
+                Ok(0) => {}
+                Ok(pruned) => self.status = format!("pruned {pruned} spent proofs"),
+                Err(_) => {}
+            }
+        }
     }
 
     fn persist_state(&mut self) {
@@ -530,6 +539,23 @@ fn wire_callbacks(ui: &MainWindow, tx: mpsc::Sender<Job>) {
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 let logic = ui.global::<WalletLogic>();
                 logic.set_privacy_hide(!logic.get_privacy_hide());
+            });
+        });
+    }
+
+    {
+        let tx = tx.clone();
+        logic.on_reconcile(move || {
+            set_busy(&weak);
+            post(&tx, move |worker| {
+                let Some(engine) = worker.engine.as_mut() else {
+                    return;
+                };
+                match engine.reconcile_spent() {
+                    Ok(0) => worker.status = String::from("no spent proofs"),
+                    Ok(pruned) => worker.status = format!("pruned {pruned} spent proofs"),
+                    Err(err) => worker.status = format!("reconcile failed: {err}"),
+                }
             });
         });
     }

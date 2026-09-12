@@ -329,6 +329,48 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok((quote, outcome))
     }
 
+    /// NUT-07 reconciliation: check every stored proof against the mint
+    /// and remove the ones it reports SPENT, so the balance never counts
+    /// ecash redeemed elsewhere (e.g. an old device spent after a
+    /// restore). PENDING proofs are left alone. Returns the pruned count.
+    pub fn reconcile_spent(&mut self) -> Result<u64, CashuError> {
+        self.ensure_connected()?;
+        if self.wallet.proofs().is_empty() {
+            return Ok(0);
+        }
+        let mut y_to_secret = std::collections::HashMap::new();
+        let mut ys = Vec::with_capacity(self.wallet.proofs().len());
+        for proof in self.wallet.proofs() {
+            let y = hash_to_curve(proof.secret.as_bytes())
+                .map_err(|_| CashuError::Crypto(String::from("hash_to_curve failed")))?;
+            y_to_secret.insert(hex::encode(y.to_bytes()), proof.secret.clone());
+            ys.push(y);
+        }
+        let response = self
+            .meta
+            .post_check_state(nut07::CheckStateRequest { ys })?;
+        let spent: Vec<String> = response
+            .states
+            .iter()
+            .filter(|state| state.state == nut07::state::SPENT)
+            .filter_map(|state| y_to_secret.get(&hex::encode(state.y.to_bytes())))
+            .cloned()
+            .collect();
+        if spent.is_empty() {
+            return Ok(0);
+        }
+        let spent_proofs: Vec<nut00::Proof> = self
+            .wallet
+            .proofs()
+            .iter()
+            .filter(|p| spent.contains(&p.secret))
+            .cloned()
+            .collect();
+        let pruned = spent_proofs.len() as u64;
+        self.wallet.remove_proofs(&spent_proofs)?;
+        Ok(pruned)
+    }
+
     /// NUT-09 restore from the deterministic seed. Restored proofs are
     /// verified like every other credit path.
     pub fn restore(&mut self) -> Result<u64, CashuError> {
