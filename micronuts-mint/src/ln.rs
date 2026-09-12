@@ -83,11 +83,15 @@ impl MintClock for SystemClock {
 
 /// Test clock: a settable/advancable unix-seconds cell. Clones share the
 /// same clock, so a test can hand one to the mint and advance time later.
+// Host-only: xtensa std has no 64-bit atomics, and the esp32 front-end
+// never uses a mock clock.
+#[cfg(not(target_arch = "xtensa"))]
 #[derive(Clone)]
 pub struct MockClock {
     now: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
+#[cfg(not(target_arch = "xtensa"))]
 impl MockClock {
     /// Create a clock pinned to `start` unix seconds.
     pub fn new(start: u64) -> Self {
@@ -108,6 +112,7 @@ impl MockClock {
     }
 }
 
+#[cfg(not(target_arch = "xtensa"))]
 impl MintClock for MockClock {
     fn now_secs(&self) -> u64 {
         self.now.load(std::sync::atomic::Ordering::Relaxed)

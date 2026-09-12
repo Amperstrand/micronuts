@@ -58,8 +58,8 @@ jobs:
         # Tests use std items; a bare build has no embassy-time tick-hz.
         run: cargo nextest run -p micronuts-app --features std
 
-      - name: Install wallet UI system deps (winit/fontconfig link deps)
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev
+      - name: Install wallet UI system deps (winit/fontconfig link deps; serialport -> libudev)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev libudev-dev
 
       - name: Test micronuts-wallet (engine + REST transport)
         run: cargo nextest run -p micronuts-wallet

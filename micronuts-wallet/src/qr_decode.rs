@@ -24,7 +24,9 @@ pub fn decode_rgba(width: usize, height: usize, rgba: &[u8]) -> Option<String> {
         return None;
     }
     let luma: Vec<u8> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|px| {
             ((u32::from(px[0]) * 299 + u32::from(px[1]) * 587 + u32::from(px[2]) * 114) / 1000)
                 as u8
