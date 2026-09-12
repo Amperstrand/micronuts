@@ -16,7 +16,7 @@ embedded-graphics = { workspace = true }
 embedded-io = { workspace = true }
 embedded-io-async = { workspace = true }
 heapless = { workspace = true }
-gm65-scanner = { workspace = true, features = ["async"] }
+gm65-scanner = { workspace = true, features = ["sync", "async"] }
 qrcodegen-no-heap = { workspace = true }
 embedded-hal-02 = { workspace = true }
 nb = { workspace = true }

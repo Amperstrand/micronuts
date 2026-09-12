@@ -9,7 +9,10 @@
 pub mod demo_mint;
 pub mod engine;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod gm65;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod http;
+pub mod qr_decode;
 pub mod state;
 pub mod ui;
 

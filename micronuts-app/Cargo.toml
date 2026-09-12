@@ -12,7 +12,7 @@ embedded-graphics = { workspace = true }
 rand_core = { workspace = true }
 sha2 = { workspace = true }
 heapless = { workspace = true }
-gm65-scanner = { workspace = true }
+gm65-scanner = { workspace = true, features = ["sync"] }
 qrcodegen-no-heap = { workspace = true }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 embassy-time = { workspace = true }
