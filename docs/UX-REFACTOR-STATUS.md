@@ -306,3 +306,15 @@ is the contract this work answers to.
 - **Next step (manual)**: unplug both USB cables + ST-Link from the
   F469 board for 10 s, replug, then `python3 tools/hil/physical_loop.py
   --skip-flash` — everything else is ready.
+
+### B29 applied (2026-09-13)
+
+- bolty-rs `docs/lessons-learned.md` B29: the three-class GM65 wedge
+  taxonomy + heal-ladder ceiling (0x14 is the deepest software fix) +
+  the check-in/check-out bench protocol.
+- gm65-scanner `AGENTS.md`: the recovery matrix table (class → symptom
+  → fix → proven-by), owning all module lore.
+- micronuts `AGENTS.md`: bench session protocol referencing B29.
+- `tollgate-lab/tollgate_lab/bench_health.py`: shared check-in/check-out
+  probe (CYD ID + GM65 status + disk headroom), importable by every
+  Amperstrand project — no more per-repo copies.

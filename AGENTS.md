@@ -112,3 +112,21 @@ was the first removal of this audit).
 - `docs/PERSISTENCE-DESIGN.md` — durable state (phases 1-3)
 - `docs/STATUS-AND-TEST-PLAN.md` — hardware verification plan
 - `docs/MINT-WALLET-DEMO.md` — RPC/wallet demo architecture
+
+## Bench session protocol (B29, 2026-09-13 — full lesson: bolty-rs lessons-learned B29)
+
+Shared-bench hardware (CYD, GM65, F469) is a commons. Every session that
+acquires the rig:
+
+1. **Check-in probe** (before any test work): `python3 tools/hil/bringup.py
+   --skip-flash` F1+F2 — CYD answers ID, GM65 reports connected=1.
+   Record the result; a degraded bench is named in session notes, never
+   silently absorbed.
+2. **Classify wedges before healing**: GM65 ACKs + no decodes = class 1
+   (idle/deep-sleep); init VERIFY fails = class 2 (factory-heal 0x14);
+   init fails after factory-heal = class 3 (physical board power-cycle
+   — unplug both USB + ST-Link 10 s; no software fix proven).
+3. **Check-out**: re-run the probe; leave the bench in a known state.
+
+The GM65 wedge recovery matrix lives in gm65-scanner's AGENTS.md —
+that crate owns all module lore (modularity rule).
