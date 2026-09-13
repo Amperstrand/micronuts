@@ -64,6 +64,12 @@ jobs:
       - name: Test micronuts-wallet (engine + REST transport)
         run: cargo nextest run -p micronuts-wallet
 
+      - name: Wallet screen fixtures (UI regression hashes)
+        # Trezor-style: hash every rendered screen and compare against the
+        # committed screens.fixtures.tsv. Intentional UI change? Re-record
+        # with SHOTS_RECORD=1 and commit the new hashes.
+        run: cargo run -p micronuts-wallet --example shots
+
       - name: Demo smoke test
         run: |
           OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
