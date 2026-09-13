@@ -56,10 +56,11 @@ export component ReceiveScreen inherits Rectangle {
                     font-size: 11px;
                     height: 72px;
                 }
-                Button {
-                    text: "Mint ecash";
+                if WalletLogic.invoice-state == "PAID" : Button {
+                    // Paid but issuance failed — the money-safety retry.
+                    text: "Try again";
                     primary: true;
-                    enabled: WalletLogic.invoice-state == "PAID" && !WalletLogic.busy;
+                    enabled: !WalletLogic.busy;
                     clicked => { WalletLogic.mint-paid(WalletLogic.invoice-quote-id, WalletLogic.invoice-amount); }
                 }
             }

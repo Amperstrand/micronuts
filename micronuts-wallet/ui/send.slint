@@ -84,29 +84,40 @@ export component SendScreen inherits Rectangle {
             }
             TextEdit {
                 text: root.invoice-text;
-                placeholder-text: "lnbc…";
+                placeholder-text: "lnbc… or scan";
                 font-size: 12px;
                 height: 110px;
-                edited(text) => { root.invoice-text = text; }
+                edited(text) => {
+                    root.invoice-text = text;
+                    WalletLogic.invoice-edited(text);
+                }
             }
-            Button {
-                text: "Get quote";
-                enabled: root.invoice-text != "" && !WalletLogic.busy;
-                clicked => { WalletLogic.melt-quote(root.invoice-text); }
-            }
+            // Quote acquisition is wallet machinery: an invoice in the
+            // field produces the review by itself.
             if WalletLogic.melt-quote-info != "" : VerticalLayout {
                 spacing: 10px;
-                Text {
-                    text: WalletLogic.melt-quote-info;
-                    color: Theme.text;
-                    font-size: 14px;
-                    wrap: word-wrap;
-                }
-                Button {
-                    text: "Pay invoice";
-                    primary: true;
-                    enabled: !WalletLogic.busy;
-                    clicked => { WalletLogic.melt-confirm(); }
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.card;
+                    height: 132px;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: WalletLogic.melt-quote-info;
+                            color: Theme.text;
+                            font-size: 15px;
+                            wrap: word-wrap;
+                        }
+                        Button {
+                            text: "Pay";
+                            primary: true;
+                            height: 60px;
+                            enabled: !WalletLogic.busy;
+                            clicked => { WalletLogic.melt-confirm(); }
+                        }
+                    }
                 }
             }
             if WalletLogic.melt-preimage != "" : Text {

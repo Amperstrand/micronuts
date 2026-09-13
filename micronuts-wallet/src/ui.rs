@@ -504,6 +504,9 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                         let quote_id = quote.quote.clone();
                         let request = quote.request.clone();
                         let state = quote.state.clone();
+                        let already_paid = state == "PAID";
+                        let weak_clone = weak.clone();
+                        let quote_id_for_mint = quote_id.clone();
                         let _ = weak.upgrade_in_event_loop(move |ui| {
                             let logic = ui.global::<WalletLogic>();
                             logic.set_invoice(request.clone().into());
@@ -520,6 +523,12 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                                 logic.set_invoice_qr(image);
                             }
                         });
+                        // Fast-settling mints answer PAID at creation —
+                        // the poller would skip (it only watches
+                        // transitions), so issue from here too.
+                        if already_paid {
+                            drop_mint_paid(worker, quote_id_for_mint, amount, weak_clone);
+                        }
                     }
                     Err(err) => worker.status = format!("quote failed: {err}"),
                 }
@@ -536,28 +545,7 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
             let quote_id = quote_id.to_string();
             let amount = u64::try_from(amount).unwrap_or(0);
             tx.post(move |worker| {
-                let Some(engine) = worker.engine.as_mut() else {
-                    return;
-                };
-                match engine.mint_paid_quote(&quote_id, amount) {
-                    Ok(minted) => {
-                        worker.status = format!("minted {minted} sat");
-                        let _ = weak.upgrade_in_event_loop(move |ui| {
-                            let logic = ui.global::<WalletLogic>();
-                            logic.set_invoice(String::new().into());
-                            logic.set_invoice_quote_id(String::new().into());
-                            logic.set_invoice_state(String::new().into());
-                            logic.set_invoice_status_text(
-                                flow::ReceiveLightningPhase::Received { amount }
-                                    .user_line()
-                                    .into(),
-                            );
-                            logic.set_invoice_amount_text(String::new().into());
-                            logic.set_invoice_qr(slint::Image::default());
-                        });
-                    }
-                    Err(err) => worker.status = format!("mint failed: {err}"),
-                }
+                drop_mint_paid(worker, quote_id, amount, weak);
             });
         });
     }
@@ -737,6 +725,27 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
     {
         let tx = dispatcher.clone();
         let weak = weak.clone();
+        // Auto-quote: an invoice in the field produces the review by
+        // itself; typing anything else clears it. No "Get quote" verb.
+        logic.on_invoice_edited(move |invoice: slint::SharedString| {
+            let invoice = invoice.to_string();
+            if !matches!(
+                crate::payload::classify(&invoice),
+                crate::payload::ScannedPayload::LightningInvoice { .. }
+            ) {
+                let _ = weak.upgrade_in_event_loop(|ui| {
+                    ui.global::<WalletLogic>()
+                        .set_melt_quote_info(String::new().into());
+                });
+                return;
+            }
+            quote_for_review(&weak, &tx, invoice);
+        });
+    }
+
+    {
+        let tx = dispatcher.clone();
+        let weak = weak.clone();
         logic.on_melt_quote(move |invoice: slint::SharedString| {
             let weak = weak.clone();
             set_busy(&weak);
@@ -898,15 +907,65 @@ fn post_current_poll(worker: &mut Worker, quote_id: String, weak: Weak<MainWindo
         Ok(quote) => {
             let state = quote.state.clone();
             let amount = quote.amount;
-            let phase_line =
-                flow::ReceiveLightningPhase::from_quote_state(&state, amount).user_line();
+            let phase = flow::ReceiveLightningPhase::from_quote_state(&state, amount);
+            let phase_line = phase.user_line();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 let logic = ui.global::<WalletLogic>();
                 logic.set_invoice_state(state.into());
                 logic.set_invoice_status_text(phase_line.into());
             });
+            // Auto-issuance (UX contract): when the invoice settles, the
+            // ecash is added without a "Mint" verb. PaidNotIssued is a
+            // money-safety state — surface it for a retry, never as a
+            // generic failure.
+            if matches!(phase, flow::ReceiveLightningPhase::PaidNotIssued { .. }) {
+                drop_mint_paid(worker, quote_id, amount, weak);
+            }
         }
         Err(err) => worker.status = format!("quote poll failed: {err}"),
+    }
+}
+
+/// Shared issuance path for auto-mint (poll) and Try-again (button).
+fn drop_mint_paid(worker: &mut Worker, quote_id: String, amount: u64, weak: Weak<MainWindow>) {
+    let Some(engine) = worker.engine.as_mut() else {
+        return;
+    };
+    let issuing_line = flow::ReceiveLightningPhase::Issuing { amount }.user_line();
+    let _ = weak.upgrade_in_event_loop(|ui| {
+        let logic = ui.global::<WalletLogic>();
+        logic.set_invoice_state(String::from("ISSUING").into());
+        logic.set_invoice_status_text(issuing_line.into());
+    });
+    match engine.mint_paid_quote(&quote_id, amount) {
+        Ok(minted) => {
+            worker.status = format!("minted {minted} sat");
+            let line = flow::ReceiveLightningPhase::Received { amount: minted }.user_line();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                let logic = ui.global::<WalletLogic>();
+                logic.set_invoice(String::new().into());
+                logic.set_invoice_quote_id(String::new().into());
+                logic.set_invoice_state(String::new().into());
+                logic.set_invoice_status_text(line.into());
+                logic.set_invoice_amount_text(String::new().into());
+                logic.set_invoice_qr(slint::Image::default());
+            });
+        }
+        Err(err) => {
+            // The invoice is paid but issuance failed: keep the quote id
+            // so Try again can resume; show the safety-state wording.
+            worker.status = format!("issuance failed after payment: {err}");
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                let logic = ui.global::<WalletLogic>();
+                logic.set_invoice_state(String::from("PAID").into());
+                logic.set_invoice_status_text(
+                    String::from(
+                        "Payment received — adding your ecash didn't finish. Tap Try again.",
+                    )
+                    .into(),
+                );
+            });
+        }
     }
 }
 
@@ -1001,6 +1060,39 @@ fn start_quote_poller(ui: &MainWindow, dispatcher: Dispatcher) {
     KEEP_ALIVE.with(|timers| timers.borrow_mut().push(timer));
 }
 
+/// Quote an invoice and populate the pay review (UX contract: quote
+/// acquisition is machinery, not a verb). Shared by typing and scanning.
+fn quote_for_review(weak: &Weak<MainWindow>, tx: &Dispatcher, invoice: String) {
+    let weak = weak.clone();
+    let tx = tx.clone();
+    set_busy(&weak);
+    tx.post(move |worker| {
+        let Some(engine) = worker.engine.as_mut() else {
+            return;
+        };
+        match engine.quote_melt(&invoice) {
+            Ok(quote) => {
+                worker.pending_melt = Some(invoice.clone());
+                let phase = flow::PayLightningPhase::Review {
+                    amount: quote.amount,
+                    fee_reserve: quote.fee_reserve,
+                };
+                let line = phase.user_line();
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    ui.global::<WalletLogic>().set_melt_quote_info(line.into());
+                });
+            }
+            Err(err) => {
+                worker.status = format!("quote failed: {err}");
+                let line = flow::classify(&err).user_line();
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    ui.global::<WalletLogic>().set_melt_quote_info(line.into());
+                });
+            }
+        }
+    });
+}
+
 fn set_busy(weak: &Weak<MainWindow>) {
     let _ = weak.upgrade_in_event_loop(move |ui| {
         ui.global::<WalletLogic>().set_busy(true);
@@ -1065,9 +1157,10 @@ pub fn route_scanned(weak: &Weak<MainWindow>, tx: Dispatcher, text: String) {
                 inspect_for_review(&ui.as_weak(), &tx, token);
             }
             ScannedPayload::LightningInvoice { invoice } => {
-                logic.set_invoice_in(invoice.into());
+                logic.set_invoice_in(invoice.clone().into());
                 logic.set_send_tab(1);
                 ui.invoke_navigate(Page::Send);
+                quote_for_review(&ui.as_weak(), &tx, invoice);
             }
             ScannedPayload::MintUrl { url } => {
                 logic.set_mint_add_url(url.into());

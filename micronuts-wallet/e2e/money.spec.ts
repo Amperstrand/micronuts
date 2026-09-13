@@ -52,10 +52,8 @@ async function mint(page: Page, amount: number): Promise<void> {
   await clickCanvas(page, 0.5, 0.19); // amount field
   await page.keyboard.type(String(amount), { delay: 20 });
   await clickCanvas(page, 0.5, 0.24); // Create invoice
-  await expect
-    .poll(() => state(page).then((s) => s.invoiceState), { timeout: 15_000 })
-    .toBe("PAID");
-  await clickCanvas(page, 0.5, 0.78); // Mint ecash
+  // Auto-issuance: PAID is transient (settle → issue clears it) — wait
+  // for the balance directly.
   await expectBalance(page, `${amount} sats`);
   await clickCanvas(page, BOTTOM_NAV_HOME.fx, BOTTOM_NAV_HOME.fy);
   await expect.poll(() => state(page).then((s) => s.page)).toBe("home");
@@ -81,11 +79,7 @@ test("mints ecash from a paid invoice (receive → lightning → mint)", async (
   await clickCanvas(page, 0.5, 0.24); // Create invoice
 
   // The embedded mint auto-pays; the mirror exposes the quote state.
-  await expect
-    .poll(() => state(page).then((s) => s.invoiceState), { timeout: 15_000 })
-    .toBe("PAID");
-
-  await clickCanvas(page, 0.5, 0.78); // Mint ecash
+  // Auto-issuance: PAID is transient — wait for the balance directly.
   await expectBalance(page, "100 sats");
 });
 
@@ -138,14 +132,12 @@ test("melts ecash to pay an invoice (send → lightning → pay)", async ({
   await clickCanvas(page, TAB_PILL_RIGHT.fx, TAB_PILL_RIGHT.fy); // Lightning
   await clickCanvas(page, 0.5, 218 / 800); // invoice box
   await page.keyboard.type("lnbcdemo30sat1demo", { delay: 10 });
-  await clickCanvas(page, 0.5, 302 / 800); // Get quote
-  // Wait for the review card to lay out before aiming at Pay — clicking
-  // early hits Get quote again and the pay never fires.
+  // Auto-quote: the review appears by itself.
   await expect
     .poll(() => state(page).then((s) => s.meltQuoteInfo), { timeout: 15_000 })
-    .toContain("30 sat");
+    .toContain("30 sats");
 
-  await clickCanvas(page, 0.5, 373 / 800); // Pay invoice
+  await clickCanvas(page, 0.5, 0.47); // Pay
   await expect
     .poll(() => state(page).then((s) => s.meltPreimage), { timeout: 20_000 })
     .not.toBe("");

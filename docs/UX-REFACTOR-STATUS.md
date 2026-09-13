@@ -132,7 +132,24 @@ is the contract this work answers to.
 - Deployed: Wallet Pages build → deploy → e2e green at the checkpoint
   SHA (live suite includes the auto-inspect test).
 
-## Milestones 4–8 — NOT STARTED
+## Milestone 5 — Lightning receive + pay — PASS (2026-09-13)
+
+- Checkpoint: `ux: simplify lightning flows` (SHA in git log). "Mint
+  ecash" removed — issuance is automatic when the invoice settles
+  (creation-PAID fast path + poll-transition path; `drop_mint_paid`
+  shared with a "Try again" button for the PaidNotIssued money-safety
+  state, which keeps the quote id and says exactly what happened).
+  "Get quote" removed — invoice input (typing or scan routing) produces
+  the pay review by itself (`quote_for_review`; `invoice-edited`
+  callback; review card via `PayLightningPhase::Review` wording incl.
+  "No fee" contract); Pay is the single confirm.
+- money.spec mint helper + melt test updated for auto-issuance (PAID is
+  transient; balance is the wait target). e2e 9/9 ×3 locally.
+- Engine suites 36/20/7 green; clippy/fmt/wasm/shots green.
+- Paid-not-issued modeled per contract; expiry inherits the phase
+  wording (invoice expiry surfaces via quote errors → FlowFailure).
+
+## Milestones 6–8 — NOT STARTED
 
 ### M0 addendum (2026-09-12, post-checkpoint)
 
