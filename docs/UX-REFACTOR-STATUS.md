@@ -178,3 +178,39 @@ is the contract this work answers to.
   built, e2e 9/9 locally.
 
 ## Milestones 7–8 — IN PROGRESS
+
+## Milestone 7 — consolidation + resources — PASS (2026-09-13)
+
+- Boundary review: one `ui.rs` + one `.slint` tree serve host/wasm (cfg
+  transports only); money logic entirely in engine/flow (no Slint
+  callbacks compute money); transports behind `MintClient`
+  (Http native / DemoMint wasm / Rpc embedded); scanner behind the
+  gm65/camera seam routing through one `payload::classify`. No duplicate
+  flow state machines found. Slint-on-F469 remains the documented M7+
+  port plan (WALLET-UX-DESIGN §Firmware migration) — not attempted in
+  this session per stop conditions.
+- CDK adoption ledger: quote-polling machinery ✓ (M5), exact-amount
+  prepare-send ✓ (pre-existing), pending-send lifecycle ✓ (M4,
+  remove-and-record divergence documented in 6f0af14), proof states via
+  NUT-07 ✓, auto transaction recording ✓ (M6 semantics). Divergences:
+  melt largest-first pre-swap (pre-existing, documented); reserved
+  proofs out-of-store (M4).
+- Resources: firmware unchanged from baseline (213,012 B text / 27,584 B
+  bss — the refactor touched no firmware code); wasm dist 38.4 → 40.6 MB
+  raw (+2.2 MB: flow/payload modules, mirror, e2e seam); e2e suite 4 →
+  9 tests.
+
+## Milestone 8 — hardware + full regression — PASS (2026-09-13)
+
+- Hardware (board attached): fresh flash of current firmware
+  (`st-flash --connect-under-reset`), `scripts/test_hw_swap_gate.sh` =
+  ALL HARDWARE CHECKS PASSED (swap flow, DLEQ gate, cashu-ts 4.10
+  offline verification, decoder robustness). The embedded-graphics
+  firmware is intentionally unchanged this refactor; physical
+  evaluation of the new wallet UI is browser-at-480×800 + canvas-geometry
+  targets (≥56px) until the Slint device port.
+- Full regression (local): T1 80 + T2 36/20/7 + T3 30 + clippy
+  `-D warnings` + fmt + thumbv7em no_std + firmware release + wasm32 +
+  9 e2e (local dist) green; remote: gitleaks + Rust CI + Wallet Pages
+  (build → deploy → live e2e) green at every checkpoint.
+- README wallet section refreshed to the current flows.

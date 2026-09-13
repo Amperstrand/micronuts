@@ -37,11 +37,12 @@ mint) — override with `--dir <path>`.
 
 ## QR scanning
 
-**Browser**: Receive → Ecash tab → **Scan QR** opens the camera
-(getUserMedia, rear lens preferred). A decoded `cashuB…` token lands in
-the paste field — you tap Check/Redeem; nothing auto-spends. The boot
-console logs `micronuts-wallet qr self-test: ok` proving the in-wasm
-decoder round-trips.
+**Browser**: Receive → **Scan** opens the camera (getUserMedia, rear
+lens preferred). A decoded payload is classified and routed — a Cashu
+token lands in Receive with its review by itself (amount, mint, fee, no
+auto-spend); a Lightning invoice prefills the pay review; a mint URL
+opens Mints. The boot console logs `micronuts-wallet qr self-test: ok`
+proving the in-wasm decoder round-trips.
 
 **Desktop + GM65 module**: plug the scanner's USB-serial adapter in and
 tap Scan QR — the wallet reads decoded lines straight off the serial
@@ -81,8 +82,15 @@ with the adapter, testnut, …).
 - HTTP client wire shapes vs a mock mint (`B_`/`C_`/`C`/`Ys`, dleq,
   error-code mapping).
 - NUT-07 reconciliation prunes proofs spent elsewhere.
-- `cargo nextest run -p micronuts-wallet` + clippy `-D warnings` +
-  fmt are blocking in CI; the adapter-test job runs the `--demo` ladder.
+- Send lifecycle: pending sends persist across restart, claim detection
+  via NUT-07, reclaim rotates the handed-out token dead, lost claim
+  races finalize truthfully.
+- Browser e2e (Playwright against the deployed Pages build, canvas
+  driven via the `window.__micronuts` mirror): full money cycle —
+  auto-issuance, send→receive round trip, melt, scan routing, honest
+  failures.
+- `cargo test -p micronuts-wallet` + clippy `-D warnings` + fmt are
+  blocking in CI; the adapter-test job runs the `--demo` ladder.
 
 ## Non-goals (for now)
 
