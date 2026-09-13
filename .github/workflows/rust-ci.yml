@@ -90,6 +90,31 @@ jobs:
           name: screen-fixtures
           path: /tmp/screen-fixtures/
 
+      - name: Device journey fixtures (UI regression hashes, command-path driven)
+        # Same Trezor model, driven through handle_command on a
+        # deterministic in-process device: the screen each command renders
+        # is hashed. Fully deterministic (compiled-in fonts, fixed seeds)
+        # — no CI-canonical environment needed. On drift the re-recorded
+        # fixtures + PNGs upload as the 'journey-fixtures' artifact.
+        run: |
+          set +e
+          cargo run -p micronuts-app --example journey --features std
+          STATUS=$?
+          set -e
+          SHOTS_RECORD=1 cargo run -q -p micronuts-app --example journey --features std > /dev/null
+          mkdir -p /tmp/journey-fixtures
+          cp micronuts-app/screens.fixtures.tsv /tmp/journey-fixtures/
+          cp target/shots/journey-*.png /tmp/journey-fixtures/ 2>/dev/null || true
+          echo "JOURNEY_FIXTURES_STATUS=$STATUS" >> "$GITHUB_ENV"
+          exit $STATUS
+
+      - name: Upload journey fixtures artifact (on drift)
+        if: always() && env.JOURNEY_FIXTURES_STATUS != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-fixtures
+          path: /tmp/journey-fixtures/
+
       - name: Demo smoke test
         run: |
           OUTPUT=$(cargo run -p micronuts-mint --bin demo 2>&1)
@@ -124,6 +149,56 @@ jobs:
         run: |
           cargo build -p cashu-core-lite --no-default-features
           cargo build -p walletport --features std
+
+  wallet-e2e:
+    # PR-time browser e2e: build the wasm wallet, serve it locally, run
+    # the SAME Playwright specs the Wallet Pages workflow runs post-deploy
+    # (specs take WALLET_URL; the real-mint suite self-skips without
+    # WALLET_E2E_REAL_MINT). This is the TDD feedback loop for user
+    # stories; the Pages post-deploy run stays the release gate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+        working-directory: micronuts-wallet/e2e
+
+      - run: npx playwright install --with-deps chromium
+        working-directory: micronuts-wallet/e2e
+
+      - name: Build the browser wallet (wasm)
+        run: trunk build
+        working-directory: micronuts-wallet
+
+      # python3.12 on ubuntu-latest serves .wasm as application/wasm.
+      - name: Serve the build and run the e2e suite
+        working-directory: micronuts-wallet/e2e
+        env:
+          WALLET_URL: http://127.0.0.1:8099/
+        run: |
+          python3 -m http.server 8099 --directory ../dist &
+          SERVER=$!
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8099/ >/dev/null && break
+            sleep 1
+          done
+          npx playwright test
+          STATUS=$?
+          kill $SERVER
+          exit $STATUS
 
   clippy:
     # Host-buildable crates. firmware pulls the embassy BSP (cortex-m
