@@ -96,6 +96,12 @@ jobs:
           echo "$OUTPUT" | grep "Demo complete" || (echo "Demo did not complete successfully" && exit 1)
           echo "$OUTPUT" | grep "Remaining balance: 36 sats" || (echo "Demo output mismatch" && exit 1)
 
+      - name: Swap script selftest (same script as the hardware leg)
+        # The Trezor device-test pattern: the identical swap script runs
+        # in CI against an in-process device; `mint-tool swap --port` runs
+        # it against real silicon (exit 77 without a CDC device).
+        run: cargo run -q -p host-mint-tool -- swap --selftest
+
       - name: Transport feature matrix
         run: |
           cargo build -p cashu-core-lite --no-default-features --features transport-serial

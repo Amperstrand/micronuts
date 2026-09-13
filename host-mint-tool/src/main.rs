@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use base64::Engine;
-use cashu_core_lite::PublicKey;
 use clap::Parser;
 use std::path::PathBuf;
 
 mod mint;
 mod protocol;
+mod swapscript;
 mod usb;
 
 use mint::DemoMint;
@@ -48,6 +48,18 @@ enum Commands {
     Monitor,
     ScannerStatus,
     Scan,
+    /// One swap script, two runners (Trezor device-test pattern):
+    /// --selftest runs an in-process device; --port runs the wire leg.
+    Swap {
+        #[arg(long)]
+        selftest: bool,
+        #[arg(short, long)]
+        port: Option<PathBuf>,
+        #[arg(short, long, default_value = "21")]
+        amount: u64,
+        #[arg(short, long, default_value = "115200")]
+        baud: u32,
+    },
 }
 
 fn main() -> Result<()> {
@@ -72,7 +84,7 @@ fn main() -> Result<()> {
             let mut usb = UsbConnection::open(&port, cli.baud)?;
 
             let mint = DemoMint::new();
-            let token = generate_test_token(&mint, amount)?;
+            let token = swapscript::generate_test_token(&mint, amount)?;
 
             let frame = Frame::new(CMD_IMPORT_TOKEN, token.clone());
             let response = usb.send_and_receive(&frame)?;
@@ -114,7 +126,7 @@ fn main() -> Result<()> {
                 );
             }
 
-            let signatures = sign_blinded_outputs(&mint, &blinded_response.payload)?;
+            let signatures = swapscript::sign_blinded_outputs(&mint, &blinded_response.payload)?;
 
             let sign_frame = Frame::new(CMD_SEND_SIGNATURES, signatures);
             let response = usb.send_and_receive(&sign_frame)?;
@@ -294,78 +306,15 @@ fn main() -> Result<()> {
                 std::io::stdout().flush().ok();
             }
         }
+        Commands::Swap {
+            selftest,
+            port,
+            amount,
+            baud,
+        } => {
+            swapscript::run_swap(selftest, port.as_deref(), amount, baud)?;
+        }
     }
 
     Ok(())
-}
-
-fn generate_test_token(mint: &DemoMint, amount: u64) -> Result<Vec<u8>> {
-    use cashu_core_lite::{blind_message, Proof, TokenV4, TokenV4Token};
-    use rand::RngCore;
-
-    let mut proofs = Vec::new();
-    let mut remaining = amount;
-
-    let keyset_id = "00".to_string();
-
-    while remaining > 0 {
-        let value = 2u64.pow(remaining.ilog2());
-        remaining -= value;
-
-        // NUT-00 secret is a STRING: hex-encoded random bytes, hashed as
-        // ASCII — hex-decoding first yields a plausible but wrong Y
-        // (cross_vectors.rs hex-looking-secret trap).
-        let mut secret_bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut secret_bytes);
-        let secret = hex::encode(secret_bytes);
-
-        let blinded = blind_message(secret.as_bytes(), None)?;
-        let blinded_sig = mint.sign(&blinded.blinded);
-        let sig =
-            cashu_core_lite::unblind_signature(&blinded_sig, &blinded.blinder, &mint.public_key())
-                .map_err(|_| anyhow::anyhow!("Failed to unblind signature"))?;
-
-        let c = sig.to_bytes().to_vec();
-
-        proofs.push(Proof {
-            amount: value,
-            keyset_id: keyset_id.clone(),
-            secret,
-            c,
-            dleq: None,
-        });
-    }
-
-    let token = TokenV4 {
-        mint: "demo://micronuts".to_string(),
-        unit: "sat".to_string(),
-        memo: Some("Generated test token".to_string()),
-        tokens: vec![TokenV4Token { keyset_id, proofs }],
-    };
-
-    let encoded = cashu_core_lite::encode_token(&token)?;
-    Ok(encoded)
-}
-
-fn sign_blinded_outputs(mint: &DemoMint, payload: &[u8]) -> Result<Vec<u8>> {
-    if !payload.len().is_multiple_of(33) {
-        anyhow::bail!("Invalid blinded outputs payload: length not multiple of 33");
-    }
-
-    let mut signatures = Vec::new();
-
-    for chunk in payload.chunks(33) {
-        let blinded = PublicKey::from_sec1_bytes(chunk).context("Invalid blinded public key")?;
-        let sig = mint.sign(&blinded);
-        signatures.extend_from_slice(sig.to_encoded_point(true).as_bytes());
-        // #54: each entry is [C' 33B || e 32B || s 32B] — the wallet
-        // verifies the NUT-12 DLEQ against its pinned demo key.
-        let dleq = mint
-            .prove_dleq(&blinded)
-            .context("Failed to produce NUT-12 DLEQ proof")?;
-        signatures.extend_from_slice(&dleq.e.to_secret_bytes());
-        signatures.extend_from_slice(&dleq.s.to_secret_bytes());
-    }
-
-    Ok(signatures)
 }

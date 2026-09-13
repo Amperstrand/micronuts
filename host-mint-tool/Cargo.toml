@@ -11,6 +11,9 @@ path = "src/main.rs"
 
 [dependencies]
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+micronuts-app = { path = "../micronuts-app", features = ["std"] }
+embassy-futures = { workspace = true }
+embedded-graphics = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 serialport = "4"
 anyhow = "1"
