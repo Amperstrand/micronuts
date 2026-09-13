@@ -276,3 +276,33 @@ is the contract this work answers to.
   count flowing through Snapshot so Home/e2e see it live.
 - Local: 13/13 e2e (incl. real-mint pair); engine suites 36/20/7,
   clippy, fmt green.
+
+## Follow-up: physical QR loop — READY, hardware blocker on GM65 — 2026-09-13
+
+- **Live token mint** (`examples/print_live_token.rs`): engine over real
+  HTTPS against testnut (fund-above-send for the NUT-08 fee; fresh
+  random seed per run — a fixed seed re-spends deterministic secret
+  slots the mint already signed). Verified: 21-sat testnut token
+  minted and exported.
+- **`tools/hil/physical_loop.py`**: complete capstone harness — live
+  mint over HTTPS → CYD QR (UR fragments) → GM65 laser scan → F469
+  reassemble + import → GetTokenInfo amount/proofs assertion; same
+  safety pattern as bringup (BenchLock, labgrid place, backup/restore,
+  clean-slate reboot).
+- **CYD recovered**: the shared bench CYD had been reflashed with
+  foreign firmware (wifi console debris); re-flashed cyd-qr 1.0.0 from
+  gm65-scanner (their rig module, `espflash` on ttyUSB0) — answers ID
+  again.
+- **BLOCKER — GM65 deep wedge** (documented module state, QR-RIG
+  session plan 2026-09-11 §7 + "Open"): the module fails `init()` at
+  every boot across 3 ST resets (boot-heal ran each time), 60+s of idle
+  polls; ScannerStatus connected=0 persistently. Notably `ScannerTrigger`
+  (raw UART set_aim) returns OK — the UART and module power are fine;
+  the decode/init engine is wedged. Documented recovery: whole-board
+  power-cycle (physical unplug — GM65 rides the board 3.3V rail, ST
+  resets don't depower it) or long idle recovery. The 2026-09-11
+  session left the module in exactly this state and expected
+  overnight recovery; it did not recover.
+- **Next step (manual)**: unplug both USB cables + ST-Link from the
+  F469 board for 10 s, replug, then `python3 tools/hil/physical_loop.py
+  --skip-flash` — everything else is ready.
