@@ -26,7 +26,7 @@ use embedded_graphics::{mono_font::MonoTextStyle, pixelcolor::Rgb888, prelude::*
 use firmware::boot_splash;
 use firmware::hardware_impl::{FirmwareHardware, RawFramebuffer, UsbDriverType};
 use firmware::self_test;
-use gm65_scanner::{Gm65ScannerAsync, ScannerDriver};
+use gm65_scanner::Gm65ScannerAsync;
 use linked_list_allocator::LockedHeap;
 
 use static_cell::StaticCell;
