@@ -351,7 +351,7 @@ impl Worker {
                     .rev()
                     .map(|entry| HistoryItem {
                         line1: history_line1(entry).into(),
-                        line2: entry.detail.clone().into(),
+                        line2: history_line2(entry).into(),
                     })
                     .collect::<Vec<_>>(),
             ),
@@ -391,14 +391,76 @@ impl Worker {
     }
 }
 
+/// Kind-first rail labels per the copy contract (cashubtc/wallet
+/// display-title convention: "Ecash received", "Lightning received"…).
 fn history_line1(entry: &HistoryEntry) -> String {
-    let (arrow, label) = match entry.kind {
-        HistoryKind::Mint => ("↓", "mint"),
-        HistoryKind::Send => ("↑", "send"),
-        HistoryKind::Receive => ("↓", "receive"),
-        HistoryKind::Melt => ("↑", "melt"),
+    use crate::engine::HistoryStatus;
+    let amount = crate::format_amount(entry.amount);
+    let base = match entry.kind {
+        HistoryKind::Mint => format!("↓ {amount} · Lightning received"),
+        HistoryKind::Send => format!("↑ {amount} · Ecash sent"),
+        HistoryKind::Receive => format!("↓ {amount} · Ecash received"),
+        HistoryKind::Melt => format!("↑ {amount} · Lightning paid"),
     };
-    format!("{arrow} {amount} sat · {label}", amount = entry.amount)
+    match entry.status {
+        HistoryStatus::Complete | HistoryStatus::Reclaimed => base,
+        HistoryStatus::Pending => format!("{base} — waiting for recipient"),
+    }
+}
+
+/// Secondary line: time (Today HH:MM / Mon DD) then the stored detail.
+fn history_line2(entry: &HistoryEntry) -> String {
+    use crate::engine::HistoryStatus;
+    let time = format_ts(entry.ts_secs);
+    match entry.status {
+        HistoryStatus::Reclaimed => format!("{time} · taken back"),
+        _ => format!("{time} · {}", entry.detail),
+    }
+}
+
+/// Local-time "Today 14:32" / "Sep 12" (web_time keeps this working in
+/// the browser build).
+fn format_ts(ts_secs: u64) -> String {
+    use web_time::SystemTime;
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let secs_of_day = |ts: u64| ts % 86_400;
+    let (year, month, day, hour, minute) = civil_from_unix(ts_secs as i64);
+    if now.saturating_sub(ts_secs) < 86_400 && secs_of_day(now) >= secs_of_day(ts_secs) {
+        format!("Today {hour:02}:{minute:02}")
+    } else if now.saturating_sub(ts_secs) < 172_800 {
+        format!("Yesterday {hour:02}:{minute:02}")
+    } else {
+        let month_name = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ][(month.clamp(1, 12) - 1) as usize];
+        format!("{month_name} {day}, {year}")
+    }
+}
+
+/// Days-to-civil (Howard Hinnant's algorithm, no std time plumbing).
+fn civil_from_unix(ts: i64) -> (i64, u32, u32, u32, u32) {
+    let days = ts.div_euclid(86_400);
+    let secs = ts.rem_euclid(86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let year = if m <= 2 { y + 1 } else { y };
+    (
+        year,
+        m,
+        d,
+        (secs / 3600) as u32,
+        ((secs % 3600) / 60) as u32,
+    )
 }
 
 fn apply_snapshot(ui: &MainWindow, snapshot: &Snapshot) {

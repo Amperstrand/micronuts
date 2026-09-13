@@ -161,3 +161,20 @@ is the contract this work answers to.
   future commits + `.gitleaks.toml` `regexes` allowlist for history.
   gitleaks green at `c83d322`. Lesson recorded: milestone gates must
   check remote CI, not only the local battery.
+
+## Milestone 6 — Activity, copy, backup — PASS (2026-09-13)
+
+- Checkpoint: `ux: refine activity settings and recovery`. Activity rows
+  are semantic (kind-first rail labels per the copy contract: "Ecash
+  sent", "Lightning received"…; amounts via format_amount; pending rows
+  say "waiting for recipient"; reclaimed marked; line2 = Today/Yesterday
+  or date + detail via Hinnant civil conversion, web_time for wasm).
+- Backup copy: plain-language primary ("These words recover your
+  ecash…anyone with these words can spend your ecash") + honest limits
+  line (cannot recover handed-over tokens or post-backup spends); NUT
+  jargon removed from the flow. Mint trust copy already conformed.
+  Amount formatting stays centralized in format_amount.
+- Battery: 36/20/7 green, clippy/fmt green, shots regenerated, wasm
+  built, e2e 9/9 locally.
+
+## Milestones 7–8 — IN PROGRESS

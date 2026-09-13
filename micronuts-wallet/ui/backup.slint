@@ -15,9 +15,15 @@ export component BackupScreen inherits Rectangle {
             back => { root.navigate(Page.Settings); }
         }
         Text {
-            text: "This seed derives every ecash secret deterministically (NUT-13). Write it down offline — with it, a restored wallet re-fetches every unspent proof from the mint (NUT-09).";
+            text: "These words recover your ecash if this device is lost or damaged. Write them down offline and keep them safe — anyone with these words can spend your ecash.";
+            color: Theme.text;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Restoring re-fetches your unspent ecash from each mint you used. It cannot recover tokens you already handed over, or ecash spent elsewhere after the backup.";
             color: Theme.text-dim;
-            font-size: 13px;
+            font-size: 12px;
             wrap: word-wrap;
         }
         Rectangle {
