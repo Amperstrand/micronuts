@@ -89,6 +89,11 @@ with the adapter, testnut, …).
   driven via the `window.__micronuts` mirror): full money cycle —
   auto-issuance, send→receive round trip, melt, scan routing, honest
   failures.
+- QR handoff to the device: the demo keyset is THE pinned device keyset
+  (one key for every amount) — a browser-engine token clears the F469
+  DLEQ gate and its device export opens the walletport offline gate
+  (`scripts/test_qr_handoff.sh`; CI leg in host-tests, `--wire` on
+  silicon — see docs/QR-HANDOFF-DEMO.md).
 - `cargo test -p micronuts-wallet` + clippy `-D warnings` + fmt are
   blocking in CI; the adapter-test job runs the `--demo` ladder.
 

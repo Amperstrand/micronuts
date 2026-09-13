@@ -217,11 +217,10 @@ pub struct SwapReport {
 fn run_swap_script(
     transport: &mut dyn SwapTransport,
     mint: &DemoMint,
+    token_bytes: &[u8],
     amount: u64,
 ) -> Result<SwapReport> {
-    let token_bytes = generate_test_token(mint, amount)?;
-
-    let (status, _) = transport.exchange(Command::ImportToken, &token_bytes)?;
+    let (status, _) = transport.exchange(Command::ImportToken, token_bytes)?;
     if status != Status::Ok {
         bail!("import failed: {status:?}");
     }
@@ -394,6 +393,36 @@ pub fn sign_blinded_outputs(mint: &DemoMint, payload: &[u8]) -> Result<Vec<u8>> 
     Ok(signatures)
 }
 
+/// Load a wallet-minted cashuB token (one token line, as printed by
+/// `micronuts-wallet --example mint_demo_token`). Returns the import
+/// payload and the token's total amount.
+fn load_token_file(path: &Path) -> Result<(Vec<u8>, u64)> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read token file {}", path.display()))?;
+    let text = text.trim();
+    anyhow::ensure!(
+        text.starts_with("cashuB"),
+        "not a cashuB token: {}…",
+        &text[..text.len().min(12)]
+    );
+    let bytes = text.as_bytes().to_vec();
+    let total = decode_token(&bytes)
+        .context("token file does not decode")?
+        .total_amount();
+    Ok((bytes, total))
+}
+
+/// The device export as a cashuB line so host scripts (the offline-gate
+/// leg of the QR handoff) can consume swap output directly.
+fn print_export(report: &SwapReport) {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+    println!(
+        "EXPORT: cashuB{}",
+        URL_SAFE_NO_PAD.encode(&report.export_token)
+    );
+}
+
 fn find_cdc_port() -> Option<String> {
     const VID: u16 = 0x16C0;
     const PID: u16 = 0x27DD;
@@ -408,18 +437,39 @@ fn find_cdc_port() -> Option<String> {
 }
 
 /// CLI entry: selftest | wire (port or autodetect, exit 77 when absent).
-pub fn run_swap(selftest: bool, port: Option<&Path>, amount: u64, baud: u32) -> Result<()> {
+/// `token_file` hands off a wallet-minted cashuB token instead of a
+/// harness-generated one (the browser→device QR-handoff path).
+pub fn run_swap(
+    selftest: bool,
+    port: Option<&Path>,
+    amount: u64,
+    baud: u32,
+    token_file: Option<&Path>,
+) -> Result<()> {
     let mint = DemoMint::new();
+
+    let (token_bytes, expected, source) = match token_file {
+        Some(path) => {
+            let (bytes, total) = load_token_file(path)?;
+            (bytes, total, format!("wallet token {}", path.display()))
+        }
+        None => (
+            generate_test_token(&mint, amount)?,
+            amount,
+            String::from("harness token"),
+        ),
+    };
 
     if selftest {
         let mut transport = InProcessTransport::new();
-        let report = run_swap_script(&mut transport, &mint, amount)?;
+        let report = run_swap_script(&mut transport, &mint, &token_bytes, expected)?;
         println!(
-            "SWAP SELFTEST PASS: {} sats, {} proofs, export {} bytes (in-process device)",
+            "SWAP SELFTEST PASS: {} sats, {} proofs, export {} bytes (in-process device, {source})",
             report.amount,
             report.proof_count,
             report.export_token.len()
         );
+        print_export(&report);
 
         // Negative leg: a corrupted signature must fail the DLEQ gate,
         // never produce proofs (the #54 forgery class).
@@ -463,12 +513,13 @@ pub fn run_swap(selftest: bool, port: Option<&Path>, amount: u64, baud: u32) -> 
     };
 
     let mut transport = SerialTransport::open(Path::new(&port_name), baud)?;
-    let report = run_swap_script(&mut transport, &mint, amount)?;
+    let report = run_swap_script(&mut transport, &mint, &token_bytes, expected)?;
     println!(
         "SWAP WIRE PASS on {port_name}: {} sats, {} proofs, export {} bytes",
         report.amount,
         report.proof_count,
         report.export_token.len()
     );
+    print_export(&report);
     Ok(())
 }

@@ -102,6 +102,14 @@ jobs:
         # it against real silicon (exit 77 without a CDC device).
         run: cargo run -q -p host-mint-tool -- swap --selftest
 
+      - name: QR handoff selftest (browser-engine token → device → offline gate)
+        # The full browser→device handoff chain, CI leg: the wasm wallet's
+        # engine + embedded mint mint a real token, the in-process device
+        # swaps it through the pinned-key DLEQ gate, and the export opens
+        # the walletport offline gate. `--wire` runs the same script
+        # against real silicon.
+        run: bash scripts/test_qr_handoff.sh
+
       - name: Transport feature matrix
         run: |
           cargo build -p cashu-core-lite --no-default-features --features transport-serial

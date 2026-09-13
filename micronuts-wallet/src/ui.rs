@@ -169,8 +169,6 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static MIRROR_TIMER: std::cell::RefCell<Option<slint::Timer>> =
         const { std::cell::RefCell::new(None) };
-    static DEMO_MINT_SEED: std::cell::RefCell<[u8; 32]> =
-        const { std::cell::RefCell::new([0u8; 32]) };
     static DISPATCHER: std::cell::RefCell<Option<Dispatcher>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -437,7 +435,7 @@ impl Worker {
             return;
         };
         let client = if active == crate::demo_mint::DEMO_MINT_URL {
-            ClientForMint::Demo(crate::demo_mint::DemoMintClient::new(self.demo_mint_seed()))
+            ClientForMint::Demo(crate::demo_mint::DemoMintClient::new())
         } else {
             ClientForMint::Fetch(crate::wasm_http::FetchMintClient::new(&active))
         };
@@ -456,17 +454,20 @@ impl Worker {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn demo_mint_seed(&self) -> [u8; 32] {
-        // The demo mint instance must live as long as the engine: keep a
-        // per-worker seed so rebuilds share the mint's keyset.
-        DEMO_MINT_SEED.with(|slot| *slot.borrow())
-    }
-
-    #[cfg(target_arch = "wasm32")]
     fn new(_dir: &Path) -> Result<Self, String> {
         // Persisted wallet (real mints + seed survive reloads); a fresh
         // demo wallet is only created when nothing is stored yet.
         if let Some(mut state) = crate::browser_store::load_wallet_state() {
+            // Demo-mint identity migration: the URL is now the device
+            // trust anchor (demo://micronuts).
+            for mint in &mut state.mints {
+                if mint.url == crate::demo_mint::LEGACY_DEMO_MINT_URL {
+                    mint.url = crate::demo_mint::DEMO_MINT_URL.to_string();
+                }
+            }
+            if state.active_mint.as_deref() == Some(crate::demo_mint::LEGACY_DEMO_MINT_URL) {
+                state.active_mint = Some(crate::demo_mint::DEMO_MINT_URL.to_string());
+            }
             if let Some(seed_hex) = state.seed_hex.clone() {
                 if let Ok(bytes) = hex::decode(&seed_hex) {
                     if bytes.len() == 32 {
@@ -489,8 +490,6 @@ impl Worker {
         }
         let mut wallet_seed = [0u8; 32];
         OsRng.fill_bytes(&mut wallet_seed);
-        let mut mint_seed = [0u8; 32];
-        OsRng.fill_bytes(&mut mint_seed);
         let mut state = WalletState::default();
         state.mints.push(MintEntry {
             url: String::from(crate::demo_mint::DEMO_MINT_URL),
@@ -499,10 +498,9 @@ impl Worker {
         });
         state.active_mint = Some(String::from(crate::demo_mint::DEMO_MINT_URL));
         state.seed_hex = Some(hex::encode(wallet_seed));
-        DEMO_MINT_SEED.with(|slot| *slot.borrow_mut() = mint_seed);
         let engine = WalletEngine::with_pending(
             crate::demo_mint::DEMO_MINT_URL,
-            ClientForMint::Demo(DemoMintClient::new(mint_seed)),
+            ClientForMint::Demo(DemoMintClient::new()),
             crate::browser_store::BrowserStore::for_mint(crate::demo_mint::DEMO_MINT_URL),
             wallet_seed,
             Vec::new(),

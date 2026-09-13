@@ -59,6 +59,10 @@ enum Commands {
         amount: u64,
         #[arg(short, long, default_value = "115200")]
         baud: u32,
+        /// Wallet-minted cashuB token file to hand off (one token line);
+        /// omit to generate a harness token instead.
+        #[arg(long)]
+        token_file: Option<PathBuf>,
     },
 }
 
@@ -311,8 +315,15 @@ fn main() -> Result<()> {
             port,
             amount,
             baud,
+            token_file,
         } => {
-            swapscript::run_swap(selftest, port.as_deref(), amount, baud)?;
+            swapscript::run_swap(
+                selftest,
+                port.as_deref(),
+                amount,
+                baud,
+                token_file.as_deref(),
+            )?;
         }
     }
 

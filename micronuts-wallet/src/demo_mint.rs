@@ -1,10 +1,14 @@
 //! Embedded demo mint for the browser build: a complete in-process
 //! `MintClient` (sign + DLEQ-prove + spent tracking + restore) with zero
 //! network, so the wasm wallet runs every flow client-side. Also usable
-//! on native for tests. Keys are deterministic per instance seed; the
-//! DLEQ prover mirrors `cashu-core-lite`'s NUT-12 verifier transcript
-//! (`R1 = t·G`, `R2 = t·B'`, `e = hash_e(R1, R2, A, C')`,
-//! `s = t + e·a mod n`).
+//! on native for tests.
+//!
+//! The keyset is THE pinned device keyset (#54 trust root): every amount
+//! is signed by the single key SHA256("demo://micronuts") — the same key
+//! as `host-mint-tool`'s `DemoMint` and the device's
+//! `pinned_demo_mint_key` gate — so browser-minted tokens pass the
+//! hardware wallet's SendSignatures DLEQ check. The derivation is
+//! public: never custody value with it (cf. #56).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -13,14 +17,16 @@ use std::rc::Rc;
 use cashu_core_lite::crypto::{hash_to_curve, sign_message, verify_signature_with_privkey};
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::keypair::{PublicKey, SecretKey};
-use cashu_core_lite::nuts::nut12::{hash_e, BlindSignatureDleq};
-use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut09, nut12};
 use cashu_core_lite::transport::MintClient;
-use k256::ProjectivePoint;
-use rand_core::RngCore;
+use sha2::{Digest, Sha256};
 
-pub const DEMO_MINT_URL: &str = "https://demo.micronuts.invalid";
+pub const DEMO_MINT_URL: &str = "demo://micronuts";
+/// Pre-handoff demo mint URL; persisted browser wallets are migrated to
+/// [`DEMO_MINT_URL`] on load (one identity for the demo mint).
+pub const LEGACY_DEMO_MINT_URL: &str = "https://demo.micronuts.invalid";
 const DEMO_MINT_NAME: &str = "Browser Demo Mint";
+const DEMO_KEYSET_ID: &str = "00";
 const EXPIRY_FAR_FUTURE: u64 = 4_102_444_800;
 
 #[derive(Clone)]
@@ -40,34 +46,29 @@ struct Inner {
 }
 
 impl DemoMintClient {
-    pub fn new(seed: [u8; 32]) -> Self {
+    pub fn new() -> Self {
+        let key = SecretKey::from_slice(&Sha256::digest(b"demo://micronuts"))
+            .expect("valid demo mint scalar");
+
         let mut privkeys = BTreeMap::new();
         let mut keys = Vec::new();
-        let mut mint_key_bytes = [0u8; 32];
-        mint_key_bytes.copy_from_slice(&blakeish_subkey(&seed, b"browser-demo-mint-identity", 0));
-        let mint_key = SecretKey::from_slice(&mint_key_bytes).expect("valid identity scalar");
-
         for exp in 0..8u32 {
             let amount = 1u64 << exp;
-            let material = blakeish_subkey(&seed, b"browser-demo-mint-amount", amount);
-            let privkey = SecretKey::from_slice(&material).expect("valid scalar");
-            privkeys.insert(amount, privkey.clone());
+            privkeys.insert(amount, key.clone());
             keys.push(nut01::KeyPair {
                 amount,
-                pubkey: privkey.public_key(),
+                pubkey: key.public_key(),
             });
         }
-        let pubkeys: Vec<PublicKey> = keys.iter().map(|kp| kp.pubkey).collect();
-        let keyset_id = nut02::derive_keyset_id(&pubkeys);
         Self {
             inner: Rc::new(RefCell::new(Inner {
                 keys: nut01::KeySet {
-                    id: keyset_id,
+                    id: DEMO_KEYSET_ID.to_string(),
                     unit: String::from("sat"),
                     keys,
                 },
                 privkeys,
-                mint_pubkey: mint_key.public_key(),
+                mint_pubkey: key.public_key(),
                 quotes: HashMap::new(),
                 melt_quotes: HashMap::new(),
                 spent_ys: HashSet::new(),
@@ -82,43 +83,9 @@ impl DemoMintClient {
     }
 }
 
-/// Deterministic 32-byte subkey (SHA-256(label || index_be64 || seed)).
-fn blakeish_subkey(seed: &[u8; 32], label: &[u8], index: u64) -> [u8; 32] {
-    use sha2::digest::Digest;
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(label);
-    hasher.update(index.to_be_bytes());
-    hasher.update(seed);
-    hasher.finalize().into()
-}
-
-/// NUT-12 mint-side DLEQ prover over the same transcript the verifier
-/// checks: pick nonce t, publish R1 = t·G and R2 = t·B', derive
-/// e = hash_e(R1, R2, A, C'), answer s = t + e·a.
-fn dleq_prove(
-    amount_key: &SecretKey,
-    blinded_message: &PublicKey,
-    blinded_signature: &PublicKey,
-    rng: &mut dyn RngCore,
-) -> Option<BlindSignatureDleq> {
-    loop {
-        let mut nonce_bytes = [0u8; 32];
-        rng.fill_bytes(&mut nonce_bytes);
-        let Ok(nonce) = SecretKey::from_slice(&nonce_bytes) else {
-            continue;
-        };
-        let t = nonce.to_scalar();
-        let r1 = PublicKey::from_affine((ProjectivePoint::GENERATOR * t).into())?;
-        let r2 = PublicKey::from_affine((ProjectivePoint::from(blinded_message) * t).into())?;
-        let e_bytes = hash_e(&r1, &r2, &amount_key.public_key(), blinded_signature);
-        let Ok(e) = SecretKey::from_slice(&e_bytes) else {
-            continue;
-        };
-        let s = t + e.to_scalar() * amount_key.to_scalar();
-        let Ok(answer) = SecretKey::from_slice(&s.to_bytes()) else {
-            continue;
-        };
-        return Some(BlindSignatureDleq { e, s: answer });
+impl Default for DemoMintClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -126,7 +93,6 @@ impl Inner {
     fn sign_outputs(
         &mut self,
         outputs: &[nut00::BlindedMessage],
-        rng: &mut dyn RngCore,
     ) -> Result<Vec<nut00::BlindSignature>, CashuError> {
         let mut signatures = Vec::with_capacity(outputs.len());
         for output in outputs {
@@ -135,7 +101,7 @@ impl Inner {
                 .get(&output.amount)
                 .ok_or(CashuError::KeysetNotFound)?;
             let c = sign_message(privkey, &output.b);
-            let dleq = dleq_prove(privkey, &output.b, &c, rng);
+            let dleq = nut12::prove_dleq(&output.b, privkey, None).ok();
             let signature = nut00::BlindSignature {
                 amount: output.amount,
                 id: self.keys.id.clone(),
@@ -257,7 +223,7 @@ impl MintClient for DemoMintClient {
         if outputs_total > quote.amount {
             return Err(CashuError::AmountMismatch);
         }
-        let signatures = inner.sign_outputs(&request.outputs, &mut rand_core::OsRng)?;
+        let signatures = inner.sign_outputs(&request.outputs)?;
         Ok(nut04::MintResponse { signatures })
     }
 
@@ -331,7 +297,7 @@ impl MintClient for DemoMintClient {
         if output_total > input_total {
             return Err(CashuError::AmountMismatch);
         }
-        let signatures = inner.sign_outputs(&request.outputs, &mut rand_core::OsRng)?;
+        let signatures = inner.sign_outputs(&request.outputs)?;
         Ok(nut03::SwapResponse { signatures })
     }
 
@@ -383,13 +349,80 @@ mod tests {
     use super::*;
     use crate::engine::{HistoryKind, WalletEngine};
     use cashu_core_lite::store::MemoryStore;
-    use rand_core::RngCore;
+
+    /// The demo mint's keyset must be THE pinned device keyset: one key —
+    /// SHA256("demo://micronuts") — for every amount (mirrors
+    /// micronuts-app `pinned_demo_mint_key`, the #54 trust root, and
+    /// host-mint-tool's `DemoMint`). Browser-minted tokens then pass the
+    /// device's SendSignatures DLEQ gate.
+    #[test]
+    fn demo_mint_keyset_is_the_pinned_device_keyset() {
+        let pinned =
+            SecretKey::from_slice(&Sha256::digest(b"demo://micronuts")).expect("valid scalar");
+        let client = DemoMintClient::new();
+        let inner = client.inner.borrow();
+        // The demo mint has ONE identity everywhere: URL, keyset id, and
+        // signing key must all equal the device/gate trust anchor —
+        // host-mint-tool tokens use `demo://micronuts` + "00" + the
+        // pinned key, and walletport's gate pins exactly that triple.
+        assert_eq!(DEMO_MINT_URL, "demo://micronuts");
+        assert_eq!(inner.keys.id, "00");
+        assert!(!inner.keys.keys.is_empty());
+        for kp in &inner.keys.keys {
+            assert_eq!(
+                kp.pubkey.to_bytes(),
+                pinned.public_key().to_bytes(),
+                "amount {} key must be the pinned demo key",
+                kp.amount
+            );
+        }
+        assert_eq!(inner.mint_pubkey.to_bytes(), pinned.public_key().to_bytes());
+    }
+
+    /// The exact device gate (`command_handler::handle_send_signatures`):
+    /// every blind signature must NUT-12 DLEQ-verify against the pinned
+    /// key. Browser tokens reach the device by QR; this is the check they
+    /// must survive.
+    #[test]
+    fn demo_mint_signatures_pass_device_dleq_gate() {
+        let mut client = DemoMintClient::new();
+        let quote = client
+            .post_mint_quote(nut04::MintQuoteRequest {
+                amount: 1,
+                unit: String::from("sat"),
+                pubkey: None,
+            })
+            .unwrap();
+        let blinded = cashu_core_lite::blind_message(b"device-gate-probe", None).unwrap();
+        let minted = client
+            .post_mint(nut04::MintRequest {
+                quote: quote.quote,
+                outputs: vec![nut00::BlindedMessage {
+                    amount: 1,
+                    id: client.keyset_id(),
+                    b: blinded.blinded,
+                }],
+                signature: None,
+            })
+            .unwrap();
+        let sig = &minted.signatures[0];
+        let dleq = sig
+            .dleq
+            .as_ref()
+            .expect("demo mint must attach NUT-12 dleq");
+        let pinned_pk = SecretKey::from_slice(&Sha256::digest(b"demo://micronuts"))
+            .unwrap()
+            .public_key();
+        assert!(
+            nut12::verify_dleq(&blinded.blinded, &sig.c, &dleq.e, &dleq.s, &pinned_pk)
+                .unwrap_or(false),
+            "blind signature must DLEQ-verify against the pinned device key"
+        );
+    }
 
     #[test]
     fn browser_mint_full_cycle_with_dleq_verification() {
-        let mut seed = [0u8; 32];
-        rand_core::OsRng.fill_bytes(&mut seed);
-        let client = DemoMintClient::new(seed);
+        let client = DemoMintClient::new();
         let mut engine = WalletEngine::new(
             DEMO_MINT_URL,
             client.clone(),
@@ -431,9 +464,7 @@ mod tests {
 
     #[test]
     fn browser_mint_rejects_double_spend() {
-        let mut seed = [0u8; 32];
-        rand_core::OsRng.fill_bytes(&mut seed);
-        let client = DemoMintClient::new(seed);
+        let client = DemoMintClient::new();
         let mut wallet = WalletEngine::new(
             DEMO_MINT_URL,
             client.clone(),
