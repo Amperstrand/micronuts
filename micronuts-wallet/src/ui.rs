@@ -128,9 +128,99 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
             },
         );
         MIRROR_TIMER.with(|slot| *slot.borrow_mut() = Some(mirror_timer));
+
+        install_action_api(ui.as_weak());
     }
 
     ui.run()
+}
+
+/// Semantic action API for browser e2e: `window.__micronutsAct(name, arg)`
+/// invokes the exact `WalletLogic` callbacks the on-screen buttons fire —
+/// the flows run through the real async pipeline and state machine with
+/// zero coordinate coupling. Slint-on-wasm has no DOM/a11y surface and
+/// layout-computed geometry (`absolute-position`) does not propagate into
+/// the binding graph, so coordinate clicking was the only alternative —
+/// this replaces it for money-flow tests (pointer plumbing stays covered
+/// by the nav/boot pointer tests).
+#[cfg(target_arch = "wasm32")]
+fn install_action_api(weak: Weak<MainWindow>) {
+    use wasm_bindgen::prelude::Closure;
+    use wasm_bindgen::JsCast;
+
+    let closure = move |name: String, arg: String| {
+        let Some(ui) = weak.clone().upgrade() else {
+            return js_sys::JsString::from("error: ui gone");
+        };
+        let logic = ui.global::<WalletLogic>();
+        match name.as_str() {
+            "navigate" => {
+                let page = match arg.as_str() {
+                    "home" => Some(Page::Home),
+                    "receive" => Some(Page::Receive),
+                    "send" => Some(Page::Send),
+                    "scan" => Some(Page::Scan),
+                    "activity" => Some(Page::Activity),
+                    "settings" => Some(Page::Settings),
+                    "mints" => Some(Page::Mints),
+                    "backup" => Some(Page::Backup),
+                    _ => None,
+                };
+                match page {
+                    Some(page) => {
+                        ui.invoke_navigate(page);
+                        js_sys::JsString::from("ok")
+                    }
+                    None => js_sys::JsString::from("error: unknown page"),
+                }
+            }
+            "mint-invoice" => {
+                logic.invoke_mint_invoice(arg.into());
+                js_sys::JsString::from("ok")
+            }
+            "token-edited" => {
+                logic.set_token_in(arg.clone().into());
+                logic.invoke_token_edited(arg.into());
+                js_sys::JsString::from("ok")
+            }
+            "receive-token" => {
+                logic.invoke_receive_token(arg.into());
+                js_sys::JsString::from("ok")
+            }
+            "send-token" => {
+                // arg = "<amount> <memo>" (memo optional)
+                let mut parts = arg.splitn(2, ' ');
+                let amount = parts.next().unwrap_or("").to_string();
+                let memo = parts.next().unwrap_or("").to_string();
+                logic.invoke_send_token(amount.into(), memo.into());
+                js_sys::JsString::from("ok")
+            }
+            "invoice-edited" => {
+                logic.invoke_invoice_edited(arg.into());
+                js_sys::JsString::from("ok")
+            }
+            "melt-confirm" => {
+                logic.invoke_melt_confirm();
+                js_sys::JsString::from("ok")
+            }
+            "snapshot" => {
+                mirror_state_to_window(&logic);
+                js_sys::JsString::from("ok")
+            }
+            other => js_sys::JsString::from(format!("error: unknown action {other}").as_str()),
+        }
+    };
+    let closure =
+        Closure::wrap(Box::new(closure) as Box<dyn FnMut(String, String) -> js_sys::JsString>);
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let _ = js_sys::Reflect::set(
+        window.as_ref(),
+        &wasm_bindgen::JsValue::from_str("__micronutsAct"),
+        closure.as_ref().unchecked_ref::<js_sys::Function>(),
+    );
+    closure.forget();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
