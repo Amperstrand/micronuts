@@ -66,9 +66,29 @@ jobs:
 
       - name: Wallet screen fixtures (UI regression hashes)
         # Trezor-style: hash every rendered screen and compare against the
-        # committed screens.fixtures.tsv. Intentional UI change? Re-record
-        # with SHOTS_RECORD=1 and commit the new hashes.
-        run: cargo run -p micronuts-wallet --example shots
+        # committed screens.fixtures.tsv — recorded ON THE CI RUNNER (the
+        # canonical environment: rendering uses its system fonts). On
+        # mismatch the re-recorded fixtures + PNG diff are uploaded as the
+        # 'screen-fixtures' artifact; commit it if the change is
+        # intentional.
+        run: |
+          set +e
+          cargo run -p micronuts-wallet --example shots
+          STATUS=$?
+          set -e
+          SHOTS_RECORD=1 cargo run -q -p micronuts-wallet --example shots > /dev/null
+          mkdir -p /tmp/screen-fixtures
+          cp micronuts-wallet/screens.fixtures.tsv /tmp/screen-fixtures/
+          cp target/shots/wallet-*.png /tmp/screen-fixtures/ 2>/dev/null || true
+          echo "SCREEN_FIXTURES_STATUS=$STATUS" >> "$GITHUB_ENV"
+          exit $STATUS
+
+      - name: Upload screen fixtures artifact (on drift)
+        if: always() && env.SCREEN_FIXTURES_STATUS != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-fixtures
+          path: /tmp/screen-fixtures/
 
       - name: Demo smoke test
         run: |

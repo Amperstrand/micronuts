@@ -7,11 +7,12 @@
 //! artifacts). Default mode compares and exits non-zero on drift;
 //! `SHOTS_RECORD=1` re-records after an intentional UI change.
 //!
-//! Font caveat: rendering uses the host's system fonts (DejaVu on this
-//! box and on CI's ubuntu runners). A font-package bump can shift every
-//! hash — review the PNG diff and re-record. The deterministic upgrade
-//! path is enabling slint's `unstable-fontique-07` natively and
-//! registering the bundled DejaVu (as the wasm build already does).
+//! Font caveat: rendering uses the host's system fonts, so hashes are
+//! environment-dependent — fixtures are recorded on the CI runner (the
+//! canonical environment). A local mismatch is expected on other
+//! machines; compare the PNGs in target/shots visually. A fontique
+//! generic-family pin was tried and does not engage the software
+//! renderer's font selection (verified via a bold-only probe).
 
 use std::cell::RefCell;
 use std::rc::Rc;
