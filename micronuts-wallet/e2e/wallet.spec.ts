@@ -122,11 +122,12 @@ test("send ecash with empty balance fails honestly, not silently", async ({
   await clickCanvas(page, 0.7, 0.33);
   await expect.poll(() => state(page).then((s) => s.page)).toBe("send");
 
-  // Amount field (below back-header + tab bar + hint) → 21 → Create
-  // token. Zero balance must land in the honest failed state.
-  await clickCanvas(page, 0.5, 0.25);
+  // Amount field → 21 → Create token (CI-calibrated geometry shared
+  // with money.spec.ts). Zero balance must land in the honest failed
+  // state.
+  await clickCanvas(page, 0.5, 0.175);
   await page.keyboard.type("21", { delay: 20 });
-  await clickCanvas(page, 0.3, 0.34);
+  await clickCanvas(page, 0.5, 0.3);
   await expect
     .poll(() => state(page).then((s) => s.sendState), { timeout: 15_000 })
     .toBe("failed");
