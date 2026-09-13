@@ -257,3 +257,22 @@ is the contract this work answers to.
   (9 screens) and the compare mode passes.
 - Battery: 36/20/7 engine suites, clippy -D warnings, fmt, thumbv7em
   no_std, wasm build green.
+
+## Follow-up: wallet-to-wallet over QR + claim auto-detection — PASS (2026-09-13)
+
+- **QR pixel round-trip e2e (hermetic)**: fund → send → screenshot the
+  wallet's actual rendered QR pixels → host-side PNG→jsQR decode →
+  byte-identical with tokenOut. The wallet's qrcodegen rendering is
+  machine-scannable, proven.
+- **Wallet-to-wallet on a real mint (gated e2e)**: two separate browser
+  contexts (own seeds + storage), both on testnut — A mints 64 over
+  live HTTPS, sends 21, its rendered QR pixels decode on the host, B
+  pastes → auto-inspect review (amount+mint+memo, fee-aware — testnut
+  charges 1 sat NUT-08 input fee) → Receive → B holds 20–21 sats. A's
+  pending send auto-resolves to claimed.
+- **Product fix that fell out**: pending-send claim detection was
+  connect-only; now a 10 s lifecycle checker re-checks in-flight sends
+  while any exist (UX contract: reconciliation is machinery), with the
+  count flowing through Snapshot so Home/e2e see it live.
+- Local: 13/13 e2e (incl. real-mint pair); engine suites 36/20/7,
+  clippy, fmt green.

@@ -3,5 +3,9 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.49.0"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0"
   }
 }

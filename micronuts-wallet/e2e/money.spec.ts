@@ -183,3 +183,37 @@ test("browser wallet persists across reloads (seed + ecash + mints)", async ({
     .toBe("12 sats");
   await page2.close();
 });
+
+
+test("the rendered send-QR pixels decode back to the token", async ({
+  page,
+}) => {
+  await open(page);
+  await act(page, "navigate", "receive");
+  await act(page, "mint-invoice", "64");
+  await expectBalance(page, "64 sats");
+  await act(page, "navigate", "send");
+  await act(page, "send-token", "21");
+  await expect
+    .poll(() => state(page).then((s) => s.tokenOut.length), { timeout: 15_000 })
+    .toBeGreaterThan(20);
+
+  // Decode the ACTUAL rendered pixels on the host (PNG → jsQR): the
+  // wallet's own qrcodegen rendering must be machine-scannable.
+  const box = await page.locator("#canvas").boundingBox();
+  const shot = await page.screenshot({
+    clip: {
+      x: box.x,
+      y: box.y + box.height * 0.35,
+      width: box.width,
+      height: box.height * 0.55,
+    },
+  });
+  const { PNG } = require("pngjs");
+  const jsQR = require("jsqr");
+  const png = PNG.sync.read(shot);
+  const qr = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+  expect(qr, "send-QR pixels must decode").toBeTruthy();
+  expect(qr!.data.startsWith("cashuB")).toBe(true);
+  expect(qr!.data).toBe((await state(page)).tokenOut);
+});

@@ -219,6 +219,7 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
         let dispatcher = Dispatcher { tx };
         wire_callbacks(&ui, dispatcher.clone());
         start_quote_poller(&ui, dispatcher.clone());
+        start_pending_checker(&ui, dispatcher.clone());
         dispatcher.post(|worker| worker.connect_active());
     }
 
@@ -229,6 +230,7 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
         let dispatcher = Dispatcher { weak: ui.as_weak() };
         wire_callbacks(&ui, dispatcher.clone());
         start_quote_poller(&ui, dispatcher.clone());
+        start_pending_checker(&ui, dispatcher.clone());
         dispatcher.post(|worker| worker.connect_active());
 
         // Keep the e2e/tooling mirror fresh between snapshots (page
@@ -402,6 +404,7 @@ struct Snapshot {
     seed: String,
     history: Vec<HistoryItem>,
     mints: Vec<MintItem>,
+    pending_send_count: i32,
 }
 
 impl Worker {
@@ -656,6 +659,11 @@ impl Worker {
                 active: Some(&mint.url) == self.state.active_mint.as_ref(),
             })
             .collect::<Vec<_>>();
+        let pending_send_count = self
+            .engine
+            .as_ref()
+            .map(|engine| engine.pending_sends().len() as i32)
+            .unwrap_or(0);
         Snapshot {
             connected,
             has_active_mint: self.state.active_mint.is_some(),
@@ -666,6 +674,7 @@ impl Worker {
             seed: self.seed_hex(),
             history,
             mints,
+            pending_send_count,
         }
     }
 
@@ -758,6 +767,7 @@ fn apply_snapshot(ui: &MainWindow, snapshot: &Snapshot) {
     logic.set_seed(snapshot.seed.clone().into());
     logic.set_history(ModelRc::new(VecModel::from(snapshot.history.clone())));
     logic.set_mints(ModelRc::new(VecModel::from(snapshot.mints.clone())));
+    logic.set_pending_send_count(snapshot.pending_send_count);
     #[cfg(target_arch = "wasm32")]
     mirror_state_to_window(&logic);
 }
@@ -1370,6 +1380,38 @@ fn stop_scanner() {
 #[cfg(target_arch = "wasm32")]
 fn stop_scanner() {
     crate::camera::stop_camera();
+}
+
+/// Periodic lifecycle check of in-flight sends (UX contract:
+/// reconciliation is wallet machinery): while pending sends exist, ask
+/// the mint every ~10 s whether the recipient claimed. Non-fatal —
+/// offline mints just retry next tick.
+fn start_pending_checker(ui: &MainWindow, dispatcher: Dispatcher) {
+    thread_local! {
+        static KEEP_ALIVE: std::cell::RefCell<Vec<slint::Timer>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let weak = ui.as_weak();
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_secs(10),
+        move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let logic = ui.global::<WalletLogic>();
+            if logic.get_busy() || logic.get_pending_send_count() == 0 {
+                return;
+            }
+            dispatcher.post(move |worker| {
+                if let Some(engine) = worker.engine.as_mut() {
+                    let _ = engine.check_all_pending();
+                }
+            });
+        },
+    );
+    KEEP_ALIVE.with(|timers| timers.borrow_mut().push(timer));
 }
 
 fn start_quote_poller(ui: &MainWindow, dispatcher: Dispatcher) {
