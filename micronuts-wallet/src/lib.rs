@@ -7,6 +7,8 @@
 //! - `ui`: Slint application wiring
 
 #[cfg(target_arch = "wasm32")]
+pub mod browser_store;
+#[cfg(target_arch = "wasm32")]
 pub mod camera;
 pub mod demo_mint;
 pub mod engine;

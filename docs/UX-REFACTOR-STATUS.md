@@ -237,3 +237,23 @@ is the contract this work answers to.
   passing; engine suites 36/20/7; clippy/fmt/wasm green.
 - Money taxonomy: testnut = FakeWallet test money (free rein); signut
   (real signet Lightning) is one URL away with the same code path.
+
+## Follow-up: browser persistence — PASS (2026-09-13)
+
+- `browser_store.rs` (wasm): `BrowserStore` implements the core-lite
+  `ProofStore` over localStorage (hex envelope, one key per mint —
+  full-replace writes keep the FileStore atomicity contract), plus
+  `load/save_wallet_state` for the metadata. Boot restores seed, mints,
+  history, and pending sends; a fresh demo wallet is only created when
+  nothing is stored. Previously a fresh seed per boot made the browser
+  wallet a money-destroyer once real mints arrived — closed.
+- e2e: persistence test in the hermetic suite (fund 12 → reload →
+  "12 sats"; second tab in the same profile reads the same storage).
+  Local: 10 passed hermetic + 11 with the real-mint gate (testnut live
+  receive included).
+- Concurrent-session work preserved and completed: shots.rs
+  screen-hash fixtures (Trezor `--ui=record` model) had a type error
+  in flight — fixed forward (`unwrap_or_default`), fixtures recorded
+  (9 screens) and the compare mode passes.
+- Battery: 36/20/7 engine suites, clippy -D warnings, fmt, thumbv7em
+  no_std, wasm build green.

@@ -52,6 +52,7 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "HtmlElement",
     "HtmlVideoElement",
+    "Storage",
     "XmlHttpRequest",
     "ImageData",
     "MediaDevices",

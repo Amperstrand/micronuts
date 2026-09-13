@@ -149,3 +149,37 @@ test("console contract: qr self-test ok and no unexpected errors", async ({
   expect(unexpected).toEqual([]);
   expect(pageErrors.filter((text) => !benign(text))).toEqual([]);
 });
+
+test("browser wallet persists across reloads (seed + ecash + mints)", async ({
+  page,
+  context,
+}) => {
+  await page.goto(WALLET_URL, { waitUntil: "domcontentloaded" });
+  await expect
+    .poll(() => state(page).then((s) => s?.page ?? ""), { timeout: 30_000 })
+    .not.toBe("");
+
+  // Fresh context: fund the demo mint, then reload the page.
+  await act(page, "navigate", "receive");
+  await act(page, "mint-invoice", "12");
+  await expect
+    .poll(() => state(page).then((s) => s.balance), { timeout: 60_000 })
+    .toBe("12 sats");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect
+    .poll(() => state(page).then((s) => s?.page ?? ""), { timeout: 30_000 })
+    .not.toBe("");
+  // The seed, mint, and proofs all came back from localStorage.
+  await expect
+    .poll(() => state(page).then((s) => s.balance))
+    .toBe("12 sats");
+
+  // A second tab in the same browser profile shares the storage.
+  const page2 = await context.newPage();
+  await page2.goto(WALLET_URL, { waitUntil: "domcontentloaded" });
+  await expect
+    .poll(() => state(page2).then((s) => s?.balance ?? ""), { timeout: 30_000 })
+    .toBe("12 sats");
+  await page2.close();
+});

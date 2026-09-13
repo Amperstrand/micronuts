@@ -23,8 +23,6 @@ use crate::demo_mint::DemoMintClient;
 use crate::http::HttpMintClient;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::state::FileStore;
-#[cfg(target_arch = "wasm32")]
-use cashu_core_lite::store::MemoryStore;
 #[cfg(not(target_arch = "wasm32"))]
 use cashu_core_lite::store::StoreError;
 #[cfg(not(target_arch = "wasm32"))]
@@ -42,7 +40,7 @@ type Store = FileStore;
 #[cfg(target_arch = "wasm32")]
 type Transport = ClientForMint;
 #[cfg(target_arch = "wasm32")]
-type Store = MemoryStore;
+type Store = crate::browser_store::BrowserStore;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(not(target_arch = "wasm32"))]
@@ -443,7 +441,7 @@ impl Worker {
         let engine = WalletEngine::with_pending(
             &active,
             client,
-            MemoryStore::new(),
+            crate::browser_store::BrowserStore::for_mint(&active),
             self.seed(),
             self.state.history.clone(),
             self.state.pending_sends.clone(),
@@ -463,6 +461,29 @@ impl Worker {
 
     #[cfg(target_arch = "wasm32")]
     fn new(_dir: &Path) -> Result<Self, String> {
+        // Persisted wallet (real mints + seed survive reloads); a fresh
+        // demo wallet is only created when nothing is stored yet.
+        if let Some(mut state) = crate::browser_store::load_wallet_state() {
+            if let Some(seed_hex) = state.seed_hex.clone() {
+                if let Ok(bytes) = hex::decode(&seed_hex) {
+                    if bytes.len() == 32 {
+                        let mut seed = [0u8; 32];
+                        seed.copy_from_slice(&bytes);
+                        let mut worker = Self {
+                            dir: PathBuf::new(),
+                            state,
+                            engine: None,
+                            pending_melt: None,
+                            status: String::from("restored wallet"),
+                        };
+                        worker.build_engine();
+                        return Ok(worker);
+                    }
+                }
+            }
+            // Corrupt/seedless state: fall through to a fresh wallet.
+            state.mints.clear();
+        }
         let mut wallet_seed = [0u8; 32];
         OsRng.fill_bytes(&mut wallet_seed);
         let mut mint_seed = [0u8; 32];
@@ -479,7 +500,7 @@ impl Worker {
         let engine = WalletEngine::with_pending(
             crate::demo_mint::DEMO_MINT_URL,
             ClientForMint::Demo(DemoMintClient::new(mint_seed)),
-            MemoryStore::new(),
+            crate::browser_store::BrowserStore::for_mint(crate::demo_mint::DEMO_MINT_URL),
             wallet_seed,
             Vec::new(),
             state.pending_sends.clone(),
@@ -490,7 +511,7 @@ impl Worker {
             state,
             engine: Some(engine),
             pending_melt: None,
-            status: String::from("browser demo — embedded mint, state lives in this tab only"),
+            status: String::from("browser wallet — demo mint; add a real mint in Settings"),
         })
     }
 
@@ -595,6 +616,9 @@ impl Worker {
             .unwrap_or_default();
         self.state.history = history;
         self.state.pending_sends = pending;
+        if let Err(err) = crate::browser_store::save_wallet_state(&self.state) {
+            self.status = format!("browser persistence failed: {err:?}");
+        }
     }
 
     fn snapshot(&self) -> Snapshot {
