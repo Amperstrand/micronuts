@@ -148,9 +148,39 @@ impl OriginDimensions for RawFramebuffer {
     }
 }
 
+/// Newtype so this crate can implement the crate-owned baud hook for the
+/// embassy UART (orphan rule: neither BaudSwitch nor BufferedUart is local).
+pub struct BaudUart(pub embassy_stm32::usart::BufferedUart<'static>);
+
+impl embedded_io_async::ErrorType for BaudUart {
+    type Error = embassy_stm32::usart::Error;
+}
+
+impl embedded_io_async::Read for BaudUart {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        self.0.read(buf).await
+    }
+}
+
+impl embedded_io_async::Write for BaudUart {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.0.write(buf).await
+    }
+
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        self.0.flush().await
+    }
+}
+
+impl gm65_scanner::driver::BaudSwitch for BaudUart {
+    fn set_baud(&mut self, baud: u32) -> bool {
+        self.0.set_baudrate(baud).is_ok()
+    }
+}
+
 pub struct FirmwareHardware {
     pub fb: RawFramebuffer,
-    pub scanner: Option<Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>>,
+    pub scanner: Option<Gm65ScannerAsync<BaudUart>>,
     pub usb_receiver: Receiver<'static, UsbDriverType>,
     pub usb_sender: Sender<'static, UsbDriverType>,
     pub decoder: FrameDecoder,
@@ -163,7 +193,7 @@ pub struct FirmwareHardware {
 
 impl FirmwareHardware {
     /// Borrow the scanner; only absent transiently inside factory_heal.
-    fn sc(&mut self) -> &mut Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>> {
+    fn sc(&mut self) -> &mut Gm65ScannerAsync<BaudUart> {
         self.scanner
             .as_mut()
             .expect("scanner present outside factory_heal")
@@ -175,7 +205,7 @@ impl FirmwareHardware {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         fb: RawFramebuffer,
-        scanner: Option<Gm65ScannerAsync<embassy_stm32::usart::BufferedUart<'static>>>,
+        scanner: Option<Gm65ScannerAsync<BaudUart>>,
         usb_receiver: Receiver<'static, UsbDriverType>,
         usb_sender: Sender<'static, UsbDriverType>,
         touch_ctrl: TouchCtrl,
@@ -278,54 +308,35 @@ impl Scanner for FirmwareHardware {
     }
 
     async fn factory_heal(&mut self) -> Result<(), ScanError> {
-        // Factory reset at the CURRENT baud, settle, then the crate's full
-        // init (which restores operating state — the boot ladder proves it
-        // recovers a factory-fresh module) + policy restart. Panic-safe:
-        // whatever happens, a scanner object is always rebuilt so the
-        // firmware keeps answering CDC (the earlier Err path left None and
-        // the next sc() panicked the run loop dead).
+        // Class-2 annihilation (B29): factory reset clears the corrupted
+        // registers; the module then sits at factory-default 9600 — init
+        // there and STAY (2026-09-13 bench: returning to 115200 loses a
+        // freshly-reset module; stay-at-discovered keeps it). Panic-safe:
+        // a scanner object is always rebuilt.
         let mut scanner = self
             .scanner
             .take()
             .expect("factory_heal reentry is not supported");
-        let mut uart;
         let mut ok = false;
-        // Factory reset (module may land at 9600 — the init below and the
-        // boot ladder both recover from either baud).
         let _ = scanner.factory_reset().await;
-        let (u, ..) = scanner.into_parts();
-        uart = u;
-        embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
-        let mut scanner = Gm65ScannerAsync::with_default_config(uart);
-        match scanner.init().await {
-            Ok(_) => {
-                if scanner
+        let (mut uart, ..) = scanner.into_parts();
+        if uart.0.set_baudrate(9600).is_ok() {
+            embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
+            let mut s9600 = Gm65ScannerAsync::with_default_config(uart);
+            if s9600.init().await.is_ok() {
+                ok = s9600
                     .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
                     .await
-                    .is_ok()
-                {
-                    ok = true;
-                }
-            }
-            Err(_) => {
-                // init failed (baud mismatch class): deep-sleep heal, then
-                // one more init + policy attempt before giving up.
-                let _ = scanner.deep_sleep_reboot().await;
-                embassy_time::Timer::after(embassy_time::Duration::from_secs(5)).await;
-                if scanner.init().await.is_ok() {
-                    ok = scanner
-                        .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
-                        .await
-                        .is_ok();
-                }
+                    .is_ok();
+                uart = s9600.into_parts().0;
+            } else {
+                uart = s9600.into_parts().0;
             }
         }
-        let (u, ..) = scanner.into_parts();
-        uart = u;
-        // ALWAYS leave a live scanner (115200 host side); the CDC layer
-        // must survive a failed heal.
-        let scanner = Gm65ScannerAsync::with_default_config(uart);
-        self.scanner = Some(scanner);
+        // Always leave a live scanner handle (at 9600 — the module's
+        // proven-reachable rate after a reset).
+        let _ = uart.0.set_baudrate(9600);
+        self.scanner = Some(Gm65ScannerAsync::with_default_config(uart));
         if ok {
             Ok(())
         } else {

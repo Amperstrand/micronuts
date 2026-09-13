@@ -402,33 +402,28 @@ async fn main(spawner: Spawner) {
         firmware::uart_log::init(dbg_uart);
     }
 
-    let mut scanner = Gm65ScannerAsync::with_default_config(async_uart);
-
-    // Boot heal (gm65-scanner #100 Tier A): init failures from module
-    // state carry-over get ONE deep-sleep reboot — it keeps settings and
-    // baud, so the fixed-115200 UART stays valid — then a re-init.
+    // Boot ladder (crate-owned, gm65-scanner #104/#105): init at 115200,
+    // fall to the factory-default 9600 through the host baud hook, land
+    // back at 115200. Classifies the wedge: answered-at-9600 = class 2
+    // (healed), nothing-at-either = class 3 (physical power cycle, B29).
     let mut scanner_connected = false;
-    for attempt in 0..2 {
-        match scanner.init().await {
-            Ok(model) => {
-                crate::log_info!("QR scanner ready: {} (attempt {})", model, attempt + 1);
-                // Crate-owned policy: silent continuous mode via the
-                // proven sequence — no module lore in this firmware.
-                let started = scanner
-                    .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
-                    .await;
-                crate::log_info!("start_scanning(SilentContinuous): {:?}", started);
-                scanner_connected = true;
-                break;
-            }
-            Err(e) if attempt == 0 => {
-                crate::log_warn!("scanner init failed ({}) — deep-sleep heal + retry", e);
-                let _ = scanner.deep_sleep_reboot().await;
-                embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
-            }
-            Err(e) => {
-                crate::log_warn!("QR scanner init failed after heal: {}", e);
-            }
+    let mut scanner: Option<Gm65ScannerAsync<_>> = None;
+    let baud_uart = firmware::hardware_impl::BaudUart(async_uart);
+    match gm65_scanner::driver::baud::init_scanner_multi_baud(baud_uart).await {
+        Ok((mut s, model)) => {
+            crate::log_info!("QR scanner ready via multi-baud ladder: {}", model);
+            let started = s
+                .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
+                .await;
+            crate::log_info!("start_scanning(SilentContinuous): {:?}", started);
+            scanner_connected = started.is_ok();
+            scanner = Some(s);
+        }
+        Err(e) => {
+            crate::log_warn!(
+                "scanner ladder failed at BOTH bauds ({}) — B29 class 3? physical cycle needed",
+                e
+            );
         }
     }
 
@@ -436,7 +431,7 @@ async fn main(spawner: Spawner) {
 
     let mut hw = FirmwareHardware::new(
         fb,
-        Some(scanner),
+        scanner,
         usb_receiver,
         usb_sender,
         touch_ctrl,

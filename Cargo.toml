@@ -39,7 +39,7 @@ embedded-io-async = "0.7"
 # defmt must stay opt-in — it is a link-contract feature (needs a logger
 # on the target), so forcing it breaks host consumers (the 2026-09-12
 # wallet link failure).
-gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "7ee4d33", default-features = false }
+gm65-scanner = { git = "https://github.com/Amperstrand/gm65-scanner", rev = "57e8fe40b5172d586c5807c82e46d00e1eefd93b", default-features = false }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
 nb = "1.1"
