@@ -135,10 +135,13 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         self.mint_name = info.name;
 
         let keysets = self.meta.get_keysets()?;
+        // Multi-unit mints list several active keysets (testnut: eur +
+        // sat); the wallet is sats-denominated, so prefer the sat one.
         let active = keysets
             .keysets
             .iter()
-            .find(|k| k.active)
+            .find(|k| k.active && k.unit == "sat")
+            .or_else(|| keysets.keysets.iter().find(|k| k.active))
             .ok_or_else(|| CashuError::Protocol(String::from("mint has no active keyset")))?;
         self.fee_ppk = active.input_fee_ppk;
         self.unit = active.unit.clone();

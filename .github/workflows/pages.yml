@@ -68,3 +68,7 @@ jobs:
         working-directory: micronuts-wallet/e2e
         env:
           WALLET_URL: ${{ needs.deploy.outputs.page_url }}
+          # Real-mint flow against testnut (auto-settling FakeWallet,
+          # test money only) — the deployed wallet must genuinely talk
+          # to a real Cashu mint.
+          WALLET_E2E_REAL_MINT: "1"

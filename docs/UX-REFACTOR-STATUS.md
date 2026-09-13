@@ -214,3 +214,26 @@ is the contract this work answers to.
   9 e2e (local dist) green; remote: gitleaks + Rust CI + Wallet Pages
   (build → deploy → live e2e) green at every checkpoint.
 - README wallet section refreshed to the current flows.
+
+## Follow-up: real mints in the browser — PASS (2026-09-13)
+
+- Refactor: the Cashu wire protocol moved to `mint_wire.rs` as one
+  transport-neutral `MintClient` impl over a 2-method `JsonTransport`
+  trait; native `http.rs` is now just the ureq transport, and the new
+  `wasm_http.rs` supplies a synchronous-XHR transport (rationale in the
+  module doc: the trait is deliberately blocking for the embedded RPC
+  path; sync XHR avoids an engine-wide async refactor — UI blocks per
+  small JSON round-trip while `busy` is set).
+- Browser wallets now add and use REAL mints: `ClientForMint` enum
+  (demo | fetch), wasm add/switch-mint jobs share the native worker
+  fns, engine `connect()` prefers the sats keyset on multi-unit mints
+  (testnut lists eur first — the 400 "Unit unsupported" it caused is
+  fixed).
+- Evidence: live session added testnut.cashu.space and received 11 sats
+  over HTTPS (invoice → FakeWallet auto-settle → auto-issuance);
+  `realmint.spec.ts` encodes that flow, env-gated
+  (`WALLET_E2E_REAL_MINT=1`, CI Pages e2e sets it) so the hermetic
+  suite stays network-independent. Local: 9 passed + real-mint 10th
+  passing; engine suites 36/20/7; clippy/fmt/wasm green.
+- Money taxonomy: testnut = FakeWallet test money (free rein); signut
+  (real signet Lightning) is one URL away with the same code path.

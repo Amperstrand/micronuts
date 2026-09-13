@@ -40,7 +40,7 @@ type Transport = HttpMintClient;
 #[cfg(not(target_arch = "wasm32"))]
 type Store = FileStore;
 #[cfg(target_arch = "wasm32")]
-type Transport = DemoMintClient;
+type Transport = ClientForMint;
 #[cfg(target_arch = "wasm32")]
 type Store = MemoryStore;
 
@@ -50,11 +50,130 @@ type Job = Box<dyn FnOnce(&mut Worker) + Send + 'static>;
 #[cfg(target_arch = "wasm32")]
 type Job = Box<dyn FnOnce(&mut Worker) + 'static>;
 
+/// The wasm engine's transport: the in-process demo mint or a real mint
+/// over XHR — one concrete type so `Worker.engine` stays uniform.
+#[cfg(target_arch = "wasm32")]
+mod wasm_mint_types {
+    pub use cashu_core_lite::error::CashuError;
+    pub use cashu_core_lite::nuts::{nut02, nut04, nut05, nut06, nut07, nut09};
+}
+
+#[cfg(target_arch = "wasm32")]
+use wasm_mint_types::{nut02, nut04, nut05, nut06, nut07, nut09, CashuError};
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub(crate) enum ClientForMint {
+    Demo(crate::demo_mint::DemoMintClient),
+    Fetch(crate::wasm_http::FetchMintClient),
+}
+
+#[cfg(target_arch = "wasm32")]
+impl cashu_core_lite::transport::MintClient for ClientForMint {
+    fn get_info(&mut self) -> Result<nut06::MintInfo, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.get_info(),
+            ClientForMint::Fetch(c) => c.get_info(),
+        }
+    }
+    fn get_keys(&mut self) -> Result<cashu_core_lite::nuts::nut01::KeysResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.get_keys(),
+            ClientForMint::Fetch(c) => c.get_keys(),
+        }
+    }
+    fn get_keysets(&mut self) -> Result<nut02::KeysetsResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.get_keysets(),
+            ClientForMint::Fetch(c) => c.get_keysets(),
+        }
+    }
+    fn post_mint_quote(
+        &mut self,
+        request: nut04::MintQuoteRequest,
+    ) -> Result<nut04::MintQuoteResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_mint_quote(request),
+            ClientForMint::Fetch(c) => c.post_mint_quote(request),
+        }
+    }
+    fn get_mint_quote(&mut self, quote_id: &str) -> Result<nut04::MintQuoteResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.get_mint_quote(quote_id),
+            ClientForMint::Fetch(c) => c.get_mint_quote(quote_id),
+        }
+    }
+    fn post_mint(
+        &mut self,
+        request: nut04::MintRequest,
+    ) -> Result<nut04::MintResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_mint(request),
+            ClientForMint::Fetch(c) => c.post_mint(request),
+        }
+    }
+    fn post_melt_quote(
+        &mut self,
+        request: nut05::MeltQuoteRequest,
+    ) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_melt_quote(request),
+            ClientForMint::Fetch(c) => c.post_melt_quote(request),
+        }
+    }
+    fn get_melt_quote(&mut self, quote_id: &str) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.get_melt_quote(quote_id),
+            ClientForMint::Fetch(c) => c.get_melt_quote(quote_id),
+        }
+    }
+    fn post_melt(
+        &mut self,
+        request: nut05::MeltRequest,
+    ) -> Result<nut05::MeltResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_melt(request),
+            ClientForMint::Fetch(c) => c.post_melt(request),
+        }
+    }
+    fn post_swap(
+        &mut self,
+        request: cashu_core_lite::nuts::nut03::SwapRequest,
+    ) -> Result<cashu_core_lite::nuts::nut03::SwapResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_swap(request),
+            ClientForMint::Fetch(c) => c.post_swap(request),
+        }
+    }
+    fn post_check_state(
+        &mut self,
+        request: nut07::CheckStateRequest,
+    ) -> Result<nut07::CheckStateResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_check_state(request),
+            ClientForMint::Fetch(c) => c.post_check_state(request),
+        }
+    }
+    fn post_restore(
+        &mut self,
+        request: nut09::RestoreRequest,
+    ) -> Result<nut09::RestoreResponse, CashuError> {
+        match self {
+            ClientForMint::Demo(c) => c.post_restore(request),
+            ClientForMint::Fetch(c) => c.post_restore(request),
+        }
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static WORKER: std::cell::RefCell<Option<Worker>> =
         const { std::cell::RefCell::new(None) };
     static MIRROR_TIMER: std::cell::RefCell<Option<slint::Timer>> =
+        const { std::cell::RefCell::new(None) };
+    static DEMO_MINT_SEED: std::cell::RefCell<[u8; 32]> =
+        const { std::cell::RefCell::new([0u8; 32]) };
+    static DISPATCHER: std::cell::RefCell<Option<Dispatcher>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -129,7 +248,7 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
         );
         MIRROR_TIMER.with(|slot| *slot.borrow_mut() = Some(mirror_timer));
 
-        install_action_api(ui.as_weak());
+        install_action_api(ui.as_weak(), dispatcher.clone());
     }
 
     ui.run()
@@ -144,7 +263,8 @@ pub fn run(dir: PathBuf) -> Result<(), slint::PlatformError> {
 /// this replaces it for money-flow tests (pointer plumbing stays covered
 /// by the nav/boot pointer tests).
 #[cfg(target_arch = "wasm32")]
-fn install_action_api(weak: Weak<MainWindow>) {
+fn install_action_api(weak: Weak<MainWindow>, dispatcher: Dispatcher) {
+    DISPATCHER.with(|slot| *slot.borrow_mut() = Some(dispatcher));
     use wasm_bindgen::prelude::Closure;
     use wasm_bindgen::JsCast;
 
@@ -201,6 +321,23 @@ fn install_action_api(weak: Weak<MainWindow>) {
             }
             "melt-confirm" => {
                 logic.invoke_melt_confirm();
+                js_sys::JsString::from("ok")
+            }
+            "add-mint" => {
+                if let Some(tx) = DISPATCHER.with(|d| d.borrow().clone()) {
+                    tx.post(move |worker| {
+                        worker_add_mint(worker, arg);
+                    });
+                }
+                js_sys::JsString::from("ok")
+            }
+            "switch-mint" => {
+                let index = arg.parse::<i32>().unwrap_or(-1);
+                if let Some(tx) = DISPATCHER.with(|d| d.borrow().clone()) {
+                    tx.post(move |worker| {
+                        worker_switch_mint(worker, index);
+                    });
+                }
                 js_sys::JsString::from("ok")
             }
             "snapshot" => {
@@ -293,6 +430,38 @@ impl Worker {
     }
 
     #[cfg(target_arch = "wasm32")]
+    fn build_engine(&mut self) {
+        self.engine = None;
+        let Some(active) = self.state.active_mint.clone() else {
+            return;
+        };
+        let client = if active == crate::demo_mint::DEMO_MINT_URL {
+            ClientForMint::Demo(crate::demo_mint::DemoMintClient::new(self.demo_mint_seed()))
+        } else {
+            ClientForMint::Fetch(crate::wasm_http::FetchMintClient::new(&active))
+        };
+        let engine = WalletEngine::with_pending(
+            &active,
+            client,
+            MemoryStore::new(),
+            self.seed(),
+            self.state.history.clone(),
+            self.state.pending_sends.clone(),
+        );
+        match engine {
+            Ok(engine) => self.engine = Some(engine),
+            Err(err) => self.status = format!("wallet init failed: {err}"),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn demo_mint_seed(&self) -> [u8; 32] {
+        // The demo mint instance must live as long as the engine: keep a
+        // per-worker seed so rebuilds share the mint's keyset.
+        DEMO_MINT_SEED.with(|slot| *slot.borrow())
+    }
+
+    #[cfg(target_arch = "wasm32")]
     fn new(_dir: &Path) -> Result<Self, String> {
         let mut wallet_seed = [0u8; 32];
         OsRng.fill_bytes(&mut wallet_seed);
@@ -306,14 +475,14 @@ impl Worker {
         });
         state.active_mint = Some(String::from(crate::demo_mint::DEMO_MINT_URL));
         state.seed_hex = Some(hex::encode(wallet_seed));
-        let pending = state.pending_sends.clone();
+        DEMO_MINT_SEED.with(|slot| *slot.borrow_mut() = mint_seed);
         let engine = WalletEngine::with_pending(
             crate::demo_mint::DEMO_MINT_URL,
-            DemoMintClient::new(mint_seed),
+            ClientForMint::Demo(DemoMintClient::new(mint_seed)),
             MemoryStore::new(),
             wallet_seed,
             Vec::new(),
-            pending,
+            state.pending_sends.clone(),
         )
         .map_err(|e| format!("browser engine: {e}"))?;
         Ok(Self {
@@ -620,6 +789,55 @@ fn parse_amount(text: &str) -> Result<u64, String> {
     text.trim()
         .parse::<u64>()
         .map_err(|_| format!("invalid amount: {text}"))
+}
+
+fn worker_add_mint(worker: &mut Worker, url: String) {
+    if url.is_empty() {
+        return;
+    }
+    if worker.state.mints.iter().any(|m| m.url == url) {
+        worker.status = format!("mint already known: {url}");
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let info = HttpMintClient::new(&url).get_info();
+    #[cfg(target_arch = "wasm32")]
+    let info = (|| {
+        if url == crate::demo_mint::DEMO_MINT_URL {
+            return Err(cashu_core_lite::error::CashuError::Protocol(String::from(
+                "demo mint already active",
+            )));
+        }
+        let mut probe = crate::wasm_http::FetchMintClient::new(&url);
+        cashu_core_lite::transport::MintClient::get_info(&mut probe)
+    })();
+    match info {
+        Ok(info) => {
+            worker.state.mints.push(MintEntry {
+                url: url.clone(),
+                name: info.name,
+                trusted: true,
+            });
+            worker.state.active_mint = Some(url);
+            worker.build_engine();
+            worker.connect_active();
+        }
+        Err(err) => worker.status = format!("mint unreachable: {err}"),
+    }
+}
+
+fn worker_switch_mint(worker: &mut Worker, index: i32) {
+    let index = usize::try_from(index).unwrap_or(usize::MAX);
+    let Some(entry) = worker.state.mints.get(index) else {
+        return;
+    };
+    let url = entry.url.clone();
+    if worker.state.active_mint.as_deref() == Some(&url) {
+        return;
+    }
+    worker.state.active_mint = Some(url);
+    worker.build_engine();
+    worker.connect_active();
 }
 
 fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
@@ -961,38 +1179,7 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
         logic.on_add_mint(move |url: slint::SharedString| {
             set_busy(&weak);
             let url = url.trim().trim_end_matches('/').to_string();
-            tx.post(move |worker| {
-                if url.is_empty() {
-                    return;
-                }
-                if worker.state.mints.iter().any(|m| m.url == url) {
-                    worker.status = format!("mint already known: {url}");
-                    return;
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let mut probe = HttpMintClient::new(&url);
-                    match probe.get_info() {
-                        Ok(info) => {
-                            worker.state.mints.push(MintEntry {
-                                url: url.clone(),
-                                name: info.name,
-                                trusted: true,
-                            });
-                            worker.state.active_mint = Some(url);
-                            worker.build_engine();
-                            worker.connect_active();
-                        }
-                        Err(err) => worker.status = format!("mint unreachable: {err}"),
-                    }
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let _ = url;
-                    worker.status =
-                        String::from("browser demo: the embedded mint is the only mint here");
-                }
-            });
+            tx.post(move |worker| worker_add_mint(worker, url));
         });
     }
 
@@ -1001,26 +1188,7 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
         let weak = weak.clone();
         logic.on_switch_mint(move |index: i32| {
             set_busy(&weak);
-            tx.post(move |worker| {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let index = usize::try_from(index).unwrap_or(usize::MAX);
-                    let Some(entry) = worker.state.mints.get(index) else {
-                        return;
-                    };
-                    let url = entry.url.clone();
-                    if worker.state.active_mint.as_deref() == Some(&url) {
-                        return;
-                    }
-                    worker.state.active_mint = Some(url);
-                    worker.build_engine();
-                    worker.connect_active();
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let _ = (index, worker);
-                }
-            });
+            tx.post(move |worker| worker_switch_mint(worker, index));
         });
     }
 

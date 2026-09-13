@@ -15,10 +15,13 @@ pub mod flow;
 pub mod gm65;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http;
+pub mod mint_wire;
 pub mod payload;
 pub mod qr_decode;
 pub mod state;
 pub mod ui;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_http;
 
 /// The one amount formatter (UX contract): thousands-separated integer
 /// + " sats". Every surface renders amounts through this.
