@@ -11,7 +11,7 @@ use std::time::Duration;
 use rand_core::{OsRng, RngCore};
 use slint::{ComponentHandle, ModelRc, VecModel, Weak};
 
-use crate::engine::{HistoryEntry, HistoryKind, WalletEngine};
+use crate::engine::{HistoryEntry, HistoryKind, PendingStatus, WalletEngine};
 use crate::flow;
 use crate::state::{MintEntry, WalletState};
 #[cfg(not(target_arch = "wasm32"))]
@@ -216,12 +216,14 @@ impl Worker {
         });
         state.active_mint = Some(String::from(crate::demo_mint::DEMO_MINT_URL));
         state.seed_hex = Some(hex::encode(wallet_seed));
-        let engine = WalletEngine::new(
+        let pending = state.pending_sends.clone();
+        let engine = WalletEngine::with_pending(
             crate::demo_mint::DEMO_MINT_URL,
             DemoMintClient::new(mint_seed),
             MemoryStore::new(),
             wallet_seed,
             Vec::new(),
+            pending,
         )
         .map_err(|e| format!("browser engine: {e}"))?;
         Ok(Self {
@@ -267,12 +269,13 @@ impl Worker {
             return;
         };
         let client = HttpMintClient::new(&active);
-        match WalletEngine::new(
+        match WalletEngine::with_pending(
             &active,
             client,
             store,
             self.seed(),
             self.state.history.clone(),
+            self.state.pending_sends.clone(),
         ) {
             Ok(engine) => self.engine = Some(engine),
             Err(err) => self.status = format!("wallet init failed: {err}"),
@@ -296,6 +299,20 @@ impl Worker {
                 Ok(pruned) => self.status = format!("pruned {pruned} spent proofs"),
                 Err(_) => {}
             }
+            // Lifecycle check of in-flight sends (non-fatal): finalize
+            // any the recipient already claimed.
+            if let Ok(statuses) = engine.check_all_pending() {
+                let claimed = statuses
+                    .iter()
+                    .filter(|s| **s == PendingStatus::Claimed)
+                    .count();
+                if claimed > 0 {
+                    self.status = format!(
+                        "{claimed} send{} claimed",
+                        if claimed == 1 { "" } else { "s" }
+                    );
+                }
+            }
         }
     }
 
@@ -303,6 +320,7 @@ impl Worker {
     fn persist_state(&mut self) {
         if let Some(engine) = self.engine.as_ref() {
             self.state.history = engine.history().to_vec();
+            self.state.pending_sends = engine.pending_sends().to_vec();
         }
         if let Err(err) = self.state.save(&self.state_path()) {
             self.status = format!("state save failed: {}", store_error_text(err));
@@ -311,11 +329,13 @@ impl Worker {
 
     #[cfg(target_arch = "wasm32")]
     fn persist_state(&mut self) {
-        self.state.history = self
+        let (history, pending) = self
             .engine
             .as_ref()
-            .map(|engine| engine.history().to_vec())
+            .map(|engine| (engine.history().to_vec(), engine.pending_sends().to_vec()))
             .unwrap_or_default();
+        self.state.history = history;
+        self.state.pending_sends = pending;
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -424,6 +444,8 @@ fn mirror_state_to_window(logic: &WalletLogic) {
         "receiveLine",
         logic.get_receive_review_line().to_string().into(),
     );
+    set("sendState", logic.get_send_ecash_state().to_string().into());
+    set("pendingSends", logic.get_pending_send_count().into());
     set("tokenOut", logic.get_token_out().to_string().into());
     set("invoiceState", logic.get_invoice_state().to_string().into());
     set("meltPreimage", logic.get_melt_preimage().to_string().into());
@@ -637,19 +659,79 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                     match engine.send_token(amount, memo_arg.as_deref()) {
                         Ok(token) => {
                             worker.status = format!("token for {amount} sat created");
+                            let line = flow::SendEcashPhase::AwaitingClaim.user_line();
+                            let pending_count = engine.pending_sends().len() as i32;
                             let _ = weak.upgrade_in_event_loop(move |ui| {
                                 let logic = ui.global::<WalletLogic>();
+                                logic.set_send_ecash_state(String::from("ready").into());
+                                logic.set_pending_send_line(line.into());
+                                logic.set_pending_send_count(pending_count);
                                 logic.set_token_out(token.clone().into());
                                 if let Some(image) = qr_image(&token) {
                                     logic.set_token_qr(image);
                                 }
                             });
                         }
-                        Err(err) => worker.status = format!("send failed: {err}"),
+                        Err(err) => {
+                            worker.status = format!("send failed: {err}");
+                            let line = flow::SendEcashPhase::Failed.user_line();
+                            let _ = weak.upgrade_in_event_loop(move |ui| {
+                                let logic = ui.global::<WalletLogic>();
+                                logic.set_send_ecash_state(String::from("failed").into());
+                                logic.set_pending_send_line(line.into());
+                            });
+                        }
                     }
                 });
             },
         );
+    }
+
+    {
+        let tx = dispatcher.clone();
+        let weak = weak.clone();
+        logic.on_reclaim_send(move |index: i32| {
+            let weak = weak.clone();
+            set_busy(&weak);
+            let index = usize::try_from(index).unwrap_or(0);
+            tx.post(move |worker| {
+                let Some(engine) = worker.engine.as_mut() else {
+                    return;
+                };
+                match engine.reclaim_pending(index) {
+                    Ok(amount) => {
+                        worker.status = format!("reclaimed {amount} sat");
+                        let pending_count = engine.pending_sends().len() as i32;
+                        let _ = weak.upgrade_in_event_loop(move |ui| {
+                            let logic = ui.global::<WalletLogic>();
+                            logic.set_token_out(String::new().into());
+                            logic.set_token_qr(slint::Image::default());
+                            logic.set_send_ecash_state(String::from("amount").into());
+                            logic.set_pending_send_line(String::new().into());
+                            logic.set_pending_send_count(pending_count);
+                        });
+                    }
+                    Err(err) => {
+                        worker.status = format!("reclaim failed: {err}");
+                        // A claimed send finalizes during the failed
+                        // reclaim; refresh whatever remains.
+                        let pending_count = engine.pending_sends().len() as i32;
+                        let claimed = pending_count == 0;
+                        let _ = weak.upgrade_in_event_loop(move |ui| {
+                            let logic = ui.global::<WalletLogic>();
+                            logic.set_pending_send_count(pending_count);
+                            if claimed {
+                                logic.set_token_out(String::new().into());
+                                logic.set_token_qr(slint::Image::default());
+                                logic.set_pending_send_line(
+                                    String::from("Received by the recipient.").into(),
+                                );
+                            }
+                        });
+                    }
+                }
+            });
+        });
     }
 
     {

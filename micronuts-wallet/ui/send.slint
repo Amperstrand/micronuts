@@ -41,6 +41,12 @@ export component SendScreen inherits Rectangle {
             }
             if WalletLogic.token-out != "" : VerticalLayout {
                 spacing: 10px;
+                Text {
+                    text: WalletLogic.pending-send-line != "" ? WalletLogic.pending-send-line : "Ready — show this QR to send it.";
+                    color: Theme.text-dim;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
                 Rectangle {
                     height: 264px;
                     border-radius: 12px;
@@ -56,6 +62,14 @@ export component SendScreen inherits Rectangle {
                     read-only: true;
                     font-size: 11px;
                     height: 88px;
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Button {
+                        text: "Reclaim";
+                        enabled: !WalletLogic.busy;
+                        clicked => { WalletLogic.reclaim-send(0); }
+                    }
                 }
             }
         }

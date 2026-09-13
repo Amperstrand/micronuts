@@ -29,12 +29,50 @@ pub enum HistoryKind {
     Melt,
 }
 
+/// Lifecycle of a history row (UX contract: "QR created" ≠ "payment
+/// complete"). Old wallets default to Complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HistoryStatus {
+    #[default]
+    Complete,
+    /// Ecash handed over, recipient has not claimed yet.
+    Pending,
+    /// Taken back by this wallet before the recipient claimed.
+    Reclaimed,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub kind: HistoryKind,
     pub amount: u64,
     pub detail: String,
     pub ts_secs: u64,
+    #[serde(default)]
+    pub status: HistoryStatus,
+}
+
+/// An in-flight ecash send (UX contract / CDK pending-send semantics).
+/// The proofs were removed from the store at send time — this record is
+/// the persisted "reserved" state, surviving restarts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingSend {
+    pub token: String,
+    pub amount: u64,
+    #[serde(default)]
+    pub memo: Option<String>,
+    pub ts_secs: u64,
+    /// Index into the engine history vec recorded at send time.
+    pub history_idx: usize,
+}
+
+/// Result of checking one pending send against the mint (NUT-07).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingStatus {
+    /// Every proof still unspent — the recipient has not claimed.
+    Awaiting,
+    /// The mint reports the proofs spent — the recipient claimed.
+    Claimed,
 }
 
 pub struct WalletEngine<T: MintClient + Clone, S: ProofStore> {
@@ -48,6 +86,7 @@ pub struct WalletEngine<T: MintClient + Clone, S: ProofStore> {
     unit: String,
     mint_name: String,
     history: Vec<HistoryEntry>,
+    pending: Vec<PendingSend>,
 }
 
 impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
@@ -57,6 +96,17 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         store: S,
         seed: [u8; 32],
         history: Vec<HistoryEntry>,
+    ) -> Result<Self, CashuError> {
+        Self::with_pending(mint_url, transport, store, seed, history, Vec::new())
+    }
+
+    pub fn with_pending(
+        mint_url: &str,
+        transport: T,
+        store: S,
+        seed: [u8; 32],
+        history: Vec<HistoryEntry>,
+        pending: Vec<PendingSend>,
     ) -> Result<Self, CashuError> {
         let mint_url = mint_url.trim_end_matches('/').to_string();
         let wallet = PersistentWallet::new(&mint_url, transport.clone(), store, seed)?;
@@ -75,6 +125,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             unit: String::from("sat"),
             mint_name: String::new(),
             history,
+            pending,
         })
     }
 
@@ -134,6 +185,10 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
 
     pub fn history(&self) -> &[HistoryEntry] {
         &self.history
+    }
+
+    pub fn pending_sends(&self) -> &[PendingSend] {
+        &self.pending
     }
 
     pub fn seed_hex(&self) -> String {
@@ -281,9 +336,11 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(response.states)
     }
 
-    /// Compose an exact-amount ecash token (NUT-00 V4 wire string).
-    /// Over-selection is swapped into exact send + keep denominations so
-    /// no value is lost to rounding.
+    /// Compose an exact-amount ecash token (NUT-00 V4 wire string) and
+    /// hand it over: the proofs leave the wallet and a persisted
+    /// `PendingSend` records the in-flight payment (UX contract: a token
+    /// existing is not a completed payment). CDK keeps reserved proofs
+    /// in-DB; we remove-and-record — same safety, simpler embedded store.
     pub fn send_token(&mut self, amount: u64, memo: Option<&str>) -> Result<String, CashuError> {
         self.ensure_connected()?;
         let send_proofs = self.compose_exact(amount)?;
@@ -309,8 +366,145 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         let wire = encode_token_wire(&token)
             .map_err(|e| CashuError::Protocol(format!("token encode failed: {e}")))?;
         self.wallet.remove_proofs(&send_proofs)?;
-        self.record(HistoryKind::Send, amount, String::from("ecash token"));
+        let history_idx = self.history.len();
+        self.record(HistoryKind::Send, amount, String::from("ecash to QR"));
+        self.history[history_idx].status = HistoryStatus::Pending;
+        self.pending.push(PendingSend {
+            token: wire.clone(),
+            amount,
+            memo: memo.map(str::to_string),
+            ts_secs: self.history[history_idx].ts_secs,
+            history_idx,
+        });
+        // Sanity: the token must carry exactly the secrets we selected.
         Ok(wire)
+    }
+
+    /// Check one pending send against the mint (NUT-07): `Claimed` when
+    /// every proof is spent, `Awaiting` otherwise. A claimed send is
+    /// finalized (pending record dropped, history completed).
+    pub fn check_pending_send(&mut self, index: usize) -> Result<PendingStatus, CashuError> {
+        self.ensure_connected()?;
+        let pending = self
+            .pending
+            .get(index)
+            .cloned()
+            .ok_or_else(|| CashuError::Protocol(String::from("no such pending send")))?;
+        let status = self.probe_pending(&pending)?;
+        if status == PendingStatus::Claimed {
+            self.finalize_claimed(index);
+        }
+        Ok(status)
+    }
+
+    /// Check every pending send; returns each with its outcome. Claimed
+    /// sends are finalized along the way.
+    pub fn check_all_pending(&mut self) -> Result<Vec<PendingStatus>, CashuError> {
+        self.ensure_connected()?;
+        let mut statuses = Vec::new();
+        let mut index = 0;
+        while index < self.pending.len() {
+            let pending = self.pending[index].clone();
+            let status = self.probe_pending(&pending)?;
+            if status == PendingStatus::Claimed {
+                self.finalize_claimed(index);
+                // Do not advance: the vec shrank.
+            } else {
+                index += 1;
+            }
+            statuses.push(status);
+        }
+        Ok(statuses)
+    }
+
+    /// Take an unclaimed send back: re-import the proofs and swap them
+    /// into fresh deterministic outputs — the mint marks the old secrets
+    /// spent, so the handed-out token dies atomically. If the recipient
+    /// claimed in the meantime, the swap fails and the send finalizes as
+    /// claimed instead. Returns the reclaimed amount.
+    pub fn reclaim_pending(&mut self, index: usize) -> Result<u64, CashuError> {
+        self.ensure_connected()?;
+        let pending = self
+            .pending
+            .get(index)
+            .cloned()
+            .ok_or_else(|| CashuError::Protocol(String::from("no such pending send")))?;
+        let token = decode_token(pending.token.as_bytes())
+            .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
+
+        let mut inputs = Vec::new();
+        for group in &token.tokens {
+            for proof in &group.proofs {
+                inputs.push(token_proof_to_wallet(proof, &group.keyset_id)?);
+            }
+        }
+        let total: u64 = inputs.iter().map(|p| p.amount).sum();
+
+        let known = self.known_secrets();
+        let swap_fee = (self.fee_ppk * inputs.len() as u64).div_ceil(1000);
+        let net = total
+            .checked_sub(swap_fee)
+            .ok_or(CashuError::InsufficientInputs)?;
+        // The swap consumes the given proofs (they are NOT in the store —
+        // they left it at send time); its outputs land in the store, so
+        // a lost race with the recipient simply fails the swap.
+        self.wallet
+            .swap_deterministic(
+                inputs,
+                &nut00::decompose_amount(net),
+                &self.keyset_id,
+                &self.keys,
+            )
+            .map_err(|_| {
+                // The recipient may have claimed first — verify, then
+                // fail with the truthful state instead of a bare swap
+                // error.
+                if self.probe_pending(&pending) == Ok(PendingStatus::Claimed) {
+                    self.finalize_claimed(index);
+                }
+                CashuError::Protocol(String::from("already claimed by the recipient"))
+            })?;
+        self.verify_new_proofs(&known)?;
+
+        self.pending.retain(|p| p != &pending);
+        if let Some(entry) = self.history.get_mut(pending.history_idx) {
+            entry.status = HistoryStatus::Reclaimed;
+        }
+        self.record(HistoryKind::Receive, net, String::from("ecash reclaimed"));
+        Ok(net)
+    }
+
+    fn probe_pending(&mut self, pending: &PendingSend) -> Result<PendingStatus, CashuError> {
+        let token = decode_token(pending.token.as_bytes())
+            .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
+        let mut ys = Vec::new();
+        for proof in token.tokens.iter().flat_map(|g| &g.proofs) {
+            let y = hash_to_curve(proof.secret.as_bytes())
+                .map_err(|_| CashuError::Crypto(String::from("hash_to_curve failed")))?;
+            ys.push(y);
+        }
+        let response = self
+            .meta
+            .post_check_state(nut07::CheckStateRequest { ys })?;
+        let all_spent = !response.states.is_empty()
+            && response
+                .states
+                .iter()
+                .all(|s| s.state == nut07::state::SPENT);
+        Ok(if all_spent {
+            PendingStatus::Claimed
+        } else {
+            PendingStatus::Awaiting
+        })
+    }
+
+    fn finalize_claimed(&mut self, index: usize) {
+        if let Some(pending) = self.pending.get(index).cloned() {
+            if let Some(entry) = self.history.get_mut(pending.history_idx) {
+                entry.status = HistoryStatus::Complete;
+            }
+            self.pending.remove(index);
+        }
     }
 
     /// NUT-05 step 1: fetch a melt quote for an invoice without paying.
@@ -552,6 +746,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             amount,
             detail,
             ts_secs,
+            status: HistoryStatus::Complete,
         });
     }
 }

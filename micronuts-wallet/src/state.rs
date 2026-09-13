@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use cashu_core_lite::store::{ProofStore, StoreError};
 use serde::{Deserialize, Serialize};
 
-use crate::engine::HistoryEntry;
+use crate::engine::{HistoryEntry, PendingSend};
 
 /// Byte-blob proof store backed by one file.
 pub struct FileStore {
@@ -56,7 +56,7 @@ pub struct MintEntry {
 }
 
 /// wallet.json — everything except the proofs themselves.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WalletState {
     #[serde(default)]
     pub mints: Vec<MintEntry>,
@@ -66,6 +66,10 @@ pub struct WalletState {
     pub seed_hex: Option<String>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
+    /// In-flight ecash sends (UX contract: token ≠ payment). Persisted so
+    /// claim-checking and reclaim survive restarts.
+    #[serde(default)]
+    pub pending_sends: Vec<PendingSend>,
 }
 
 impl WalletState {

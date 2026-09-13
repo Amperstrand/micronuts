@@ -554,3 +554,190 @@ fn inspect_malformed_input_is_terminal() {
         other => panic!("expected InvalidToken, got {other:?}"),
     }
 }
+
+// --- M4: ecash send lifecycle ---------------------------------------------
+
+fn funded_sender(
+    amount: u64,
+) -> (
+    SharedMintClient,
+    WalletEngine<SharedMintClient, MemoryStore>,
+) {
+    let client = shared_mint();
+    let mut wallet = engine(&client, [0x61; 32]);
+    wallet.connect().unwrap();
+    fund(&mut wallet, amount);
+    (client, wallet)
+}
+
+#[test]
+fn send_records_pending_not_complete() {
+    let (_client, mut wallet) = funded_sender(100);
+    let token = wallet.send_token(21, None).unwrap();
+
+    assert_eq!(wallet.balance(), 79, "proofs leave at hand-over");
+    assert_eq!(wallet.pending_sends().len(), 1);
+    let pending = &wallet.pending_sends()[0];
+    assert_eq!(pending.amount, 21);
+    assert_eq!(pending.token, token);
+    let entry = &wallet.history()[pending.history_idx];
+    assert_eq!(entry.kind, HistoryKind::Send);
+    assert_eq!(
+        entry.status,
+        micronuts_wallet::engine::HistoryStatus::Pending
+    );
+}
+
+#[test]
+fn pending_check_awaiting_then_claimed() {
+    let (client, mut sender) = funded_sender(100);
+    let token = sender.send_token(21, None).unwrap();
+
+    // Before anyone redeems: awaiting.
+    assert_eq!(
+        sender.check_pending_send(0).unwrap(),
+        micronuts_wallet::engine::PendingStatus::Awaiting
+    );
+    assert_eq!(sender.pending_sends().len(), 1, "awaiting stays pending");
+
+    // A second wallet claims the token.
+    let mut receiver = engine(&client, [0x62; 32]);
+    receiver.connect().unwrap();
+    assert_eq!(receiver.receive_token(&token).unwrap(), 21);
+
+    // Now the sender's check sees SPENT and finalizes.
+    assert_eq!(
+        sender.check_pending_send(0).unwrap(),
+        micronuts_wallet::engine::PendingStatus::Claimed
+    );
+    assert!(sender.pending_sends().is_empty(), "claimed drops pending");
+    let entry = &sender.history()[0];
+    assert_eq!(
+        entry.status,
+        micronuts_wallet::engine::HistoryStatus::Complete,
+        "history stops lying after claim"
+    );
+}
+
+#[test]
+fn reclaim_restores_balance_and_kills_token() {
+    let (client, mut sender) = funded_sender(100);
+    let token = sender.send_token(21, None).unwrap();
+    let send_idx = sender.pending_sends()[0].history_idx;
+
+    let reclaimed = sender.reclaim_pending(0).unwrap();
+    assert_eq!(reclaimed, 21, "zero-fee keyset reclaims exactly");
+    assert_eq!(sender.balance(), 100, "balance restored");
+    assert!(sender.pending_sends().is_empty(), "reclaim drops pending");
+    assert_eq!(
+        sender.history()[send_idx].status,
+        micronuts_wallet::engine::HistoryStatus::Reclaimed
+    );
+
+    // The handed-out token is dead: its secrets were rotated at the mint.
+    let mut receiver = engine(&client, [0x63; 32]);
+    receiver.connect().unwrap();
+    let inspection = receiver.inspect_token(&token).unwrap();
+    assert!(
+        inspection.all_spent(),
+        "old token fully spent after reclaim"
+    );
+    assert!(receiver.receive_token(&token).is_err());
+}
+
+#[test]
+fn reclaim_after_recipient_claims_fails_truthfully() {
+    let (client, mut sender) = funded_sender(100);
+    let token = sender.send_token(21, None).unwrap();
+
+    let mut receiver = engine(&client, [0x64; 32]);
+    receiver.connect().unwrap();
+    receiver.receive_token(&token).unwrap();
+
+    // Reclaim races a completed claim: must fail and finalize as claimed.
+    let err = sender.reclaim_pending(0).unwrap_err();
+    assert!(format!("{err:?}").contains("already claimed"));
+    assert!(sender.pending_sends().is_empty());
+    assert_eq!(
+        sender.history()[0].status,
+        micronuts_wallet::engine::HistoryStatus::Complete
+    );
+    assert_eq!(sender.balance(), 79, "no double credit");
+}
+
+#[test]
+fn pending_sends_survive_restart() {
+    use micronuts_wallet::state::FileStore;
+    let client = shared_mint();
+    let dir = std::env::temp_dir().join(format!(
+        "micronuts-m4-restart-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store_path = dir.join("proofs.bin");
+
+    let mut wallet = WalletEngine::new(
+        "https://mint.example",
+        client.clone(),
+        FileStore::new(&store_path).unwrap(),
+        SEED,
+        Vec::new(),
+    )
+    .unwrap();
+    wallet.connect().unwrap();
+    fund(&mut wallet, 100);
+    let token = wallet.send_token(21, None).unwrap();
+    let history = wallet.history().to_vec();
+    let pending = wallet.pending_sends().to_vec();
+    assert_eq!(pending.len(), 1);
+
+    // "Restart": fresh engine over the SAME store + persisted state.
+    let mut reopened = WalletEngine::with_pending(
+        "https://mint.example",
+        client,
+        FileStore::new(&store_path).unwrap(),
+        SEED,
+        history,
+        pending,
+    )
+    .unwrap();
+    reopened.connect().unwrap();
+    assert_eq!(reopened.pending_sends().len(), 1);
+    assert_eq!(reopened.pending_sends()[0].token, token);
+    assert_eq!(reopened.balance(), 79, "store survived the restart");
+    // And the restarted wallet can still reclaim.
+    assert_eq!(reopened.reclaim_pending(0).unwrap(), 21);
+    assert_eq!(reopened.balance(), 100);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn check_all_pending_mixed_states() {
+    let (client, mut sender) = funded_sender(200);
+    let token_a = sender.send_token(21, None).unwrap();
+    let _token_b = sender.send_token(32, None).unwrap();
+
+    let mut receiver = engine(&client, [0x65; 32]);
+    receiver.connect().unwrap();
+    receiver.receive_token(&token_a).unwrap();
+
+    let statuses = sender.check_all_pending().unwrap();
+    assert_eq!(statuses.len(), 2);
+    assert_eq!(
+        statuses[0],
+        micronuts_wallet::engine::PendingStatus::Claimed
+    );
+    assert_eq!(
+        statuses[1],
+        micronuts_wallet::engine::PendingStatus::Awaiting
+    );
+    assert_eq!(
+        sender.pending_sends().len(),
+        1,
+        "only the awaiting one stays"
+    );
+    assert_eq!(sender.pending_sends()[0].amount, 32);
+}

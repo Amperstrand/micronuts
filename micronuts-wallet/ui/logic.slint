@@ -60,6 +60,12 @@ export global WalletLogic {
     // send: ecash token
     in-out property <string> token-out: "";
     in-out property <image> token-qr;
+    // Send-ecash lifecycle: "amount" | "ready" | "failed" (the token is
+    // handed over; payment completes when the recipient claims).
+    in-out property <string> send-ecash-state: "amount";
+    in-out property <string> pending-send-line: "";
+    in-out property <int> pending-send-count: 0;
+    pure callback reclaim-send(int);
 
     // send: lightning melt
     in-out property <string> melt-quote-info: "";
