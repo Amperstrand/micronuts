@@ -384,6 +384,7 @@ fn hero_glyph(c: char) -> Option<[u8; 7]> {
         '!' => Some([0x04, 0x04, 0x04, 0x04, 0x04, 0, 0x04]),
         '?' => Some([0x0E, 0x11, 0x01, 0x02, 0x04, 0, 0x04]),
         'S' => Some([0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E]),
+        'E' => Some([0x1F, 0x10, 0x10, 0x1F, 0x10, 0x10, 0x1F]),
         'A' => Some([0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11]),
         'T' => Some([0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04]),
         'M' => Some([0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11]),
@@ -721,7 +722,7 @@ fn u64_to_string(n: u64) -> heapless::String<20> {
     }
 
     for j in (0..i).rev() {
-        result.push(digits[j] as char).ok();
+        result.push(char::from(b'0' + digits[j])).ok();
     }
 
     result
@@ -1394,6 +1395,32 @@ mod tests {
         }
         assert!(hero_width("255", 7) > 0);
         assert!(hero_width("", 7) == 0);
+    }
+
+    #[test]
+    fn u64_to_string_yields_ascii_digits() {
+        // Found by the vision QA pass: `9u8 as char` is a control
+        // character, so every nonzero amount rendered invisible.
+        assert_eq!(u64_to_string(0).as_str(), "0");
+        assert_eq!(u64_to_string(21).as_str(), "21");
+        assert_eq!(u64_to_string(65535).as_str(), "65535");
+        for c in u64_to_string(255).chars() {
+            assert!(c.is_ascii_digit(), "non-digit {c:?} in converted amount");
+        }
+    }
+
+    #[test]
+    fn hero_glyphs_cover_error_title() {
+        // Found by the vision QA pass: "ERROR" rendered as "RROR" — and
+        // the first fix bitmap had BOTH verticals (an "8"), caught by a
+        // second vision pass. Pin the shape, not just presence.
+        for c in "ERROR".chars() {
+            assert!(hero_glyph(c).is_some(), "missing hero glyph {c}");
+        }
+        assert_eq!(
+            hero_glyph('E'),
+            Some([0x1F, 0x10, 0x10, 0x1F, 0x10, 0x10, 0x1F])
+        );
     }
 
     #[test]
