@@ -38,3 +38,7 @@ required-features = ["native-sim"]
 [[example]]
 name = "shotui"
 required-features = ["std"]
+
+[[example]]
+name = "journey"
+required-features = ["std"]
