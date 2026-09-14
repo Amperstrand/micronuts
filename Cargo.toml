@@ -8,7 +8,7 @@ members = [
     "micronuts-mint", "micronuts-fips-bridge", "micronuts-fips-responder", "walletport",
     "micronuts-audit-adapter", "micronuts-wallet",
 ]
-exclude = ["micronuts-esp32-mint"]
+exclude = ["micronuts-esp32-mint", "micronuts-esp32-wallet"]
 default-members = ["firmware"]
 
 [workspace.package]

@@ -1,0 +1,35 @@
+[package]
+name = "micronuts-esp32-wallet"
+version = "0.1.0"
+edition = "2021"
+license = "0BSD"
+description = "ESP32 (esp-idf, std Rust) Cashu wallet — the nucula-mode device (micronuts#68 M1)"
+publish = false
+
+[lib]
+name = "micronuts_esp32_wallet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "micronuts-esp32-wallet"
+path = "src/main.rs"
+
+[dependencies]
+# House pins (micronuts-esp32-mint, bolty-rs apps/bolty-esp32).
+esp-idf-sys = { version = "=0.37.2", features = ["binstart"] }
+esp-idf-hal = "=0.46.2"
+esp-idf-svc = "=0.52.1"
+log = "=0.4.29"
+anyhow = "1"
+
+cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+
+[build-dependencies]
+embuild = { version = "=0.32.0", features = ["espidf"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
