@@ -19,6 +19,7 @@ path = "src/main.rs"
 esp-idf-sys = { version = "=0.37.2", features = ["binstart"] }
 esp-idf-hal = "=0.46.2"
 esp-idf-svc = "=0.52.1"
+embedded-svc = "0.29"
 log = "=0.4.29"
 anyhow = "1"
 

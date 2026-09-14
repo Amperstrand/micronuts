@@ -25,3 +25,4 @@ CROSS_COMPILE = "xtensa-esp32-elf"
 # IDF compiler default; without it C calls overflow the call8 range
 # ("dangerous relocation: call8: call target out of range").
 CFLAGS_xtensa_esp32_espidf = "-mlongcalls"
+SDKCONFIG_DEFAULTS = { value = "sdkconfig.defaults" }
