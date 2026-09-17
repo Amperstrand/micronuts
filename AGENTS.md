@@ -130,3 +130,30 @@ acquires the rig:
 
 The GM65 wedge recovery matrix lives in gm65-scanner's AGENTS.md —
 that crate owns all module lore (modularity rule).
+
+## Process hygiene — teardown + orphan collection (2026-09-17 sweep)
+
+Found by the 2026-09-17 sweep: `micronuts-audit-adapter` and `mint_server`
+(debug builds from `~/.cargo-target`) running since Sep 12 on
+ai-legion-small with no owning session alive.
+
+### Spawn → teardown
+
+| Artifact | Teardown |
+|---|---|
+| micronuts-audit-adapter | `pkill -f micronuts-audit-adapter` |
+| mint_server (nucula backend) | `pkill -f "cargo-target/debug/mint_server"` |
+
+### Orphan hunt (run before ending a session)
+
+```bash
+pgrep -af "micronuts\|mint_server" | grep -v grep
+```
+
+### Rules
+
+1. Long-running device/mint helpers on shared boxes run under
+   `systemd-run --user --unit=micronuts-<name>` so the next session finds
+   them by unit name instead of pgrep archaeology.
+2. The session and its helpers die together: teardown belongs on the
+   session exit checklist, after the last assertion.
