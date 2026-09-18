@@ -2,6 +2,7 @@
 //! minimal HTTP/1.1 — asserting routes, JSON field names (`B_`, `C`, `Ys`),
 //! response parsing, and error-code mapping.
 
+use micronuts_wallet::http::http_mint_client;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
@@ -95,7 +96,7 @@ fn get_keys_parses_amount_keyed_map_sorted_ascending() {
         .replace("GPH", G);
     let body = body.leak();
     let (base, _rx) = spawn_mock(200, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
     let keys = client.get_keys().expect("keys");
     assert_eq!(keys.keysets.len(), 1);
     let keyset = &keys.keysets[0];
@@ -117,7 +118,7 @@ fn mint_quote_posts_amount_unit_and_parses_response() {
         "amount_paid":21,"amount_issued":0,"updated_at":42,"method":"bolt11"
     }"#;
     let (base, rx) = spawn_mock(200, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
     let quote = client
         .post_mint_quote(nut04::MintQuoteRequest {
             amount: 21,
@@ -148,7 +149,7 @@ fn swap_uses_spec_field_names_and_parses_dleq() {
     )
     .leak();
     let (base, rx) = spawn_mock(200, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
 
     let proof = proof_fixture(8);
     let output = blinded_fixture(8);
@@ -205,7 +206,7 @@ fn blinded_fixture(amount: u64) -> nut00::BlindedMessage {
 fn error_status_maps_code_back_to_cashu_error() {
     let body = r#"{"detail":"nope","code":"KEYSET_NOT_FOUND","error_kind":"KEYSET_NOT_FOUND"}"#;
     let (base, _rx) = spawn_mock(404, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
     let err = client.get_keys().expect_err("must fail");
     assert_eq!(err, CashuError::KeysetNotFound);
 }
@@ -214,7 +215,7 @@ fn error_status_maps_code_back_to_cashu_error() {
 fn unknown_error_code_becomes_protocol_with_detail() {
     let body = r#"{"detail":"mystery","code":"SOMETHING_ELSE"}"#;
     let (base, _rx) = spawn_mock(500, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
     let err = client.get_keysets().expect_err("must fail");
     match err {
         CashuError::Protocol(detail) => assert_eq!(detail, "mystery"),
@@ -226,7 +227,7 @@ fn unknown_error_code_becomes_protocol_with_detail() {
 fn checkstate_posts_capital_ys_and_parses_states() {
     let body = format!(r#"{{"states":[{{"Y":"{G}","state":"SPENT","witness":null}}]}}"#).leak();
     let (base, rx) = spawn_mock(200, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
 
     let request = nut07::CheckStateRequest { ys: vec![point(G)] };
     let response = client.post_check_state(request).expect("checkstate");
@@ -250,7 +251,7 @@ fn melt_quote_lookup_builds_get_path() {
         "state":"UNPAID","expiry":123,"request":"lnbc30","unit":"sat","method":"bolt11"
     }"#;
     let (base, rx) = spawn_mock(200, body);
-    let mut client = HttpMintClient::new(&base);
+    let mut client = http_mint_client(&base);
     let quote = client.get_melt_quote("m/1 x").expect("melt quote");
     let raw = captured(&rx);
     assert!(

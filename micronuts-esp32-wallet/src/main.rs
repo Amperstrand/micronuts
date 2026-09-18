@@ -1,6 +1,6 @@
 //! M1 scaffold entry: NVS up, the ProofStore live, a diagnostic console.
 
-use embedded_svc::http::client::Client;
+
 
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
@@ -55,26 +55,15 @@ fn run() -> anyhow::Result<()> {
     wifi.connect(ssid, pass)?;
     println!("wifi connected");
 
-    let mut http = esp_idf_svc::http::client::EspHttpConnection::new(
-        &esp_idf_svc::http::client::Configuration {
-            buffer_size: Some(2048),
-            ..Default::default()
-        },
-    )?;
-    let mut client = Client::wrap(http);
-    let headers: [(&str, &str); 0] = [];
-    let mut request = client.request(embedded_svc::http::Method::Get, "http://192.168.13.221:3338/v1/keysets", &headers)?;
-    let mut request = request.submit()?;
-    let status = request.status();
-    let mut body = Vec::new();
-    let mut chunk = [0u8; 512];
-    loop {
-        let n = request.read(&mut chunk)?;
-        if n == 0 { break; }
-        body.extend_from_slice(&chunk[..n]);
-    }
-    let preview = String::from_utf8_lossy(&body[..body.len().min(80)]);
-    println!("GET {MINT}/v1/keysets -> {status}, {} bytes: {preview}", body.len());
+    // Full typed MintClient through the wallet-core wire protocol
+    use cashu_core_lite::transport::MintClient as _;
+    use micronuts_esp32_wallet::http_transport;
+    let mut mint = http_transport::esp_idf_mint_client(MINT);
+    let keys = mint.get_keys()?;
+    let total: usize = keys.keysets.iter().map(|ks| ks.keys.len()).sum();
+    println!("NUT-01 get_keys: {} keysets, {} keys total", keys.keysets.len(), total);
+    let info = mint.get_info()?;
+    println!("NUT-06 get_info: {}", info.name.as_str());
 
     let mut line = String::new();
     println!("type 'help' for commands");

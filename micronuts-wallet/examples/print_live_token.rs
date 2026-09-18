@@ -31,7 +31,7 @@ fn main() {
     OsRng.fill_bytes(&mut seed);
     let mut wallet = WalletEngine::new(
         &url,
-        HttpMintClient::new(&url),
+        micronuts_wallet::http::http_mint_client(&url),
         MemoryStore::new(),
         seed,
         Vec::new(),

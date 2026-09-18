@@ -38,7 +38,7 @@ mod native {
         std::fs::create_dir_all(&dir).map_err(|e| format!("demo dir: {e}"))?;
 
         let store = FileStore::new(dir.join("proofs.bin")).map_err(|e| format!("store: {e:?}"))?;
-        let client = HttpMintClient::new(&mint_url);
+        let client = micronuts_wallet::http::http_mint_client(&mint_url);
         // Random seed per run: the local store is wiped, but the mint
         // remembers secrets spent by previous demo runs — reusing a fixed
         // seed would re-derive (and re-spend) them.

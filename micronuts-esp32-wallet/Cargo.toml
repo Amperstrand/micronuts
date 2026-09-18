@@ -24,6 +24,8 @@ log = "=0.4.29"
 anyhow = "1"
 
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+micronuts-wallet-core = { path = "../micronuts-wallet-core" }
+serde_json = "1"
 
 [build-dependencies]
 embuild = { version = "=0.32.0", features = ["espidf"] }

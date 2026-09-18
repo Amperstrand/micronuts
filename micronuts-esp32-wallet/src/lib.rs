@@ -13,6 +13,7 @@
 //!   opaque bytes produced by `cashu-core-lite`'s own encoding.
 
 use cashu_core_lite::store::{ProofStore, StoreError};
+pub mod http_transport;
 pub mod wifi;
 
 use esp_idf_svc::nvs::{EspNvs, EspNvsPartition, NvsPartitionId};

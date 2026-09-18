@@ -6,16 +6,14 @@ use std::time::Duration;
 use cashu_core_lite::error::CashuError;
 use serde_json::Value;
 
-use crate::mint_wire::{JsonTransport, WireMintClient};
+use micronuts_wallet_core::mint_wire::{JsonTransport, WireMintClient};
 
 /// The native mint client: shared wire protocol over `ureq`.
 pub type HttpMintClient = WireMintClient<UreqTransport>;
 
-impl HttpMintClient {
-    /// Build a client for `base_url` (e.g. `http://127.0.0.1:3030`).
-    pub fn new(base_url: &str) -> Self {
-        WireMintClient::with_transport(base_url, UreqTransport::new())
-    }
+/// Build a client for `base_url` (e.g. `http://127.0.0.1:3030`).
+pub fn http_mint_client(base_url: &str) -> HttpMintClient {
+    WireMintClient::with_transport(base_url, UreqTransport::new())
 }
 
 /// ureq-backed JSON transport (10 s connect / 30 s per-call timeout).

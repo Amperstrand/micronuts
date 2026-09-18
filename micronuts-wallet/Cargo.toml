@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cashu-core-lite = { path = "../cashu-core-lite", features = ["std"] }
+micronuts-wallet-core = { path = "../micronuts-wallet-core" }
 hex = "0.4"
 k256 = { workspace = true }
 qrcodegen-no-heap = { workspace = true }

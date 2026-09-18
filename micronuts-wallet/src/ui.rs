@@ -549,7 +549,7 @@ impl Worker {
             self.status = format!("cannot open proof store for {active}");
             return;
         };
-        let client = HttpMintClient::new(&active);
+        let client = crate::http::http_mint_client(&active);
         match WalletEngine::with_pending(
             &active,
             client,
@@ -832,7 +832,7 @@ fn worker_add_mint(worker: &mut Worker, url: String) {
         return;
     }
     #[cfg(not(target_arch = "wasm32"))]
-    let info = HttpMintClient::new(&url).get_info();
+    let info = crate::http::http_mint_client(&url).get_info();
     #[cfg(target_arch = "wasm32")]
     let info = (|| {
         if url == crate::demo_mint::DEMO_MINT_URL {
