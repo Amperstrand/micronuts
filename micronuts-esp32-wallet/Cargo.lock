@@ -1071,6 +1071,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -1151,8 +1152,10 @@ dependencies = [
  "base64",
  "cashu-core-lite",
  "hex",
+ "k256",
  "serde",
  "serde_json",
+ "sha2",
  "web-time",
 ]
 
