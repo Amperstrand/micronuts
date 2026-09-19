@@ -312,36 +312,37 @@ impl Scanner for FirmwareHardware {
         // registers; the module then sits at factory-default 9600 — init
         // there and STAY (2026-09-13 bench: returning to 115200 loses a
         // freshly-reset module; stay-at-discovered keeps it). Panic-safe:
-        // a scanner object is always rebuilt.
+        // a scanner object is always rebuilt. The initialized s9600
+        // handle is KEPT as the live handle — bench 2026-09-19: rebuilding
+        // a fresh handle over the live uart left status().connected=false
+        // after a SUCCESSFUL heal (0x14 ACKed, module alive at 9600, every
+        // later probe read connected=0 until a reboot re-ran the boot
+        // ladder and found the module immediately).
         let mut scanner = self
             .scanner
             .take()
             .expect("factory_heal reentry is not supported");
-        let mut ok = false;
         let _ = scanner.factory_reset().await;
-        let (mut uart, ..) = scanner.into_parts();
+        let (uart, ..) = scanner.into_parts();
         if uart.0.set_baudrate(9600).is_ok() {
             embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
             let mut s9600 = Gm65ScannerAsync::with_default_config(uart);
-            if s9600.init().await.is_ok() {
-                ok = s9600
+            let healed = s9600.init().await.is_ok()
+                && s9600
                     .start_scanning(gm65_scanner::ScanPolicy::SilentContinuous)
                     .await
                     .is_ok();
-                uart = s9600.into_parts().0;
-            } else {
-                uart = s9600.into_parts().0;
+            if healed {
+                self.scanner = Some(s9600);
+                return Ok(());
             }
-        }
-        // Always leave a live scanner handle (at 9600 — the module's
-        // proven-reachable rate after a reset).
-        let _ = uart.0.set_baudrate(9600);
-        self.scanner = Some(Gm65ScannerAsync::with_default_config(uart));
-        if ok {
-            Ok(())
+            let (uart, ..) = s9600.into_parts();
+            let _ = uart.0.set_baudrate(9600);
+            self.scanner = Some(Gm65ScannerAsync::with_default_config(uart));
         } else {
-            Err(ScanError::NotConnected)
+            self.scanner = Some(Gm65ScannerAsync::with_default_config(uart));
         }
+        Err(ScanError::NotConnected)
     }
 
     fn debug_dump_settings(&mut self) {
