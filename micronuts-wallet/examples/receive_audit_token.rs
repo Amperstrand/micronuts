@@ -14,13 +14,14 @@ fn main() {
     }
     let token = args.get(1).expect("token as arg").clone();
     let preimage = args.get(2).map(String::as_str);
-    let mint = "http://127.0.0.1:3338";
+    let mint = std::env::var("MICRONUTS_WALLET_MINT")
+        .unwrap_or_else(|_| String::from("http://127.0.0.1:3338"));
 
-    let transport = micronuts_wallet::http::http_mint_client(mint);
+    let transport = micronuts_wallet::http::http_mint_client(&mint);
     let store = cashu_core_lite::store::MemoryStore::new();
 
     let mut engine = match micronuts_wallet_core::engine::WalletEngine::new(
-        mint,
+        &mint,
         transport,
         store,
         seed,

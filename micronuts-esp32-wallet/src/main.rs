@@ -130,7 +130,7 @@ use micronuts_wallet_core::engine::WalletEngine;
         }
         let trimmed = line.trim();
         match trimmed {
-            "help" => println!("help | connect | balance | heap | seed"),
+            "help" => println!("help | connect | balance | heap | seed | p2pk"),
             "connect" => {
                 match engine.connect() {
                     Ok(()) => println!("connected: mint={} keyset={}", engine.mint_url(), engine.keyset_id()),
@@ -140,10 +140,16 @@ use micronuts_wallet_core::engine::WalletEngine;
             "balance" => println!("balance: {} sats", engine.balance()),
             "heap" => println!("free: {} B", unsafe { esp_idf_svc::hal::sys::esp_get_free_heap_size() }),
             "seed" => println!("seed: {}", engine.seed_hex()),
+            "p2pk" => println!("p2pk: {}", engine.p2pk_pubkey_hex()),
             "" => {}
             other => {
-                if let Some(token) = other.strip_prefix("receive ") {
-                    match engine.receive_token(token) {
+                if let Some(rest) = other.strip_prefix("receive ") {
+                    let (token, preimage) = match rest.split_once(' ') {
+                        Some((token, preimage)) => (token, Some(preimage)),
+                        None => (rest, None),
+                    };
+                    let options = micronuts_wallet_core::engine::ReceiveOptions { preimage };
+                    match engine.receive_token_with(token, options) {
                         Ok(amount) => println!("received {amount} sats, balance: {} sats", engine.balance()),
                         Err(e) => println!("receive error: {e:?}"),
                     }
