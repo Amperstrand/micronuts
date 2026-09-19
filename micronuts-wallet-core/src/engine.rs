@@ -13,9 +13,7 @@ use cashu_core_lite::nuts::nut12::verify_proof_dleq;
 use cashu_core_lite::nuts::{nut00, nut01, nut04, nut05, nut07};
 use cashu_core_lite::persistent::{MeltOutcome, PersistentWallet};
 use cashu_core_lite::store::ProofStore;
-use cashu_core_lite::token::{
-    decode_token, encode_token_wire, Proof as TokenProof, TokenV4, TokenV4Token,
-};
+use cashu_core_lite::token::{encode_token_wire, Proof as TokenProof, TokenV4, TokenV4Token};
 use cashu_core_lite::transport::MintClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -240,7 +238,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         &mut self,
         token_str: &str,
     ) -> Result<crate::flow::TokenInspection, crate::flow::FlowFailure> {
-        let token = decode_token(token_str.as_bytes())
+        let token = crate::token_compat::decode_token_any(token_str)
             .map_err(|_| crate::flow::FlowFailure::InvalidToken)?;
         if token.mint.trim_end_matches('/') != self.mint_url {
             return Err(crate::flow::FlowFailure::ForeignMint { mint: token.mint });
@@ -283,7 +281,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
     /// learns the new secrets). Returns the received amount.
     pub fn receive_token(&mut self, token_str: &str) -> Result<u64, CashuError> {
         self.ensure_connected()?;
-        let token = decode_token(token_str.as_bytes())
+        let token = crate::token_compat::decode_token_any(token_str)
             .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
         if token.mint.trim_end_matches('/') != self.mint_url {
             return Err(CashuError::Protocol(format!(
@@ -325,7 +323,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         &mut self,
         token_str: &str,
     ) -> Result<Vec<nut07::ProofState>, CashuError> {
-        let token = decode_token(token_str.as_bytes())
+        let token = crate::token_compat::decode_token_any(token_str)
             .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
         let mut ys = Vec::new();
         for proof in token.tokens.iter().flat_map(|g| &g.proofs) {
@@ -432,7 +430,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             .get(index)
             .cloned()
             .ok_or_else(|| CashuError::Protocol(String::from("no such pending send")))?;
-        let token = decode_token(pending.token.as_bytes())
+        let token = crate::token_compat::decode_token_any(&pending.token)
             .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
 
         let mut inputs = Vec::new();
@@ -478,7 +476,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
     }
 
     fn probe_pending(&mut self, pending: &PendingSend) -> Result<PendingStatus, CashuError> {
-        let token = decode_token(pending.token.as_bytes())
+        let token = crate::token_compat::decode_token_any(&pending.token)
             .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
         let mut ys = Vec::new();
         for proof in token.tokens.iter().flat_map(|g| &g.proofs) {

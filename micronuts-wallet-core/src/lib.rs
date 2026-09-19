@@ -16,6 +16,7 @@ pub mod flow;
 pub mod mint_wire;
 pub mod payload;
 pub mod state;
+pub mod token_compat;
 
 /// The one amount formatter (UX contract): thousands-separated integer
 /// + " sats". Every surface renders amounts through this.
