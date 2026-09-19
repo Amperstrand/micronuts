@@ -1,11 +1,20 @@
 //! Receive a Python/coincurve-minted token through the Rust WalletEngine.
+//! `--p2pk-pubkey` prints the wallet identity's lock-facing public key.
+//! Optional second arg: the HTLC preimage for NUT-14 tokens.
 fn main() {
-    let token = std::env::args().nth(1).expect("token as arg");
+    let args: Vec<String> = std::env::args().collect();
+    let seed: [u8; 32] = [42u8; 32];
+    if args.iter().any(|a| a == "--p2pk-pubkey") {
+        let identity = micronuts_wallet_core::conditions::derive_identity(&seed).unwrap();
+        println!("{}", micronuts_wallet_core::conditions::p2pk_pubkey_hex(&identity));
+        return;
+    }
+    let token = args.get(1).expect("token as arg").clone();
+    let preimage = args.get(2).map(String::as_str);
     let mint = "http://127.0.0.1:3338";
 
     let transport = micronuts_wallet::http::http_mint_client(mint);
     let store = cashu_core_lite::store::MemoryStore::new();
-    let seed: [u8; 32] = [42u8; 32];
 
     let mut engine = match micronuts_wallet_core::engine::WalletEngine::new(
         mint,
@@ -49,7 +58,8 @@ fn main() {
         }
     }
     println!("receiving Python-minted token...");
-    match engine.receive_token(&token) {
+    let options = micronuts_wallet_core::engine::ReceiveOptions { preimage };
+    match engine.receive_token_with(&token, options) {
         Ok(amount) => println!(
             "SUCCESS: received {amount} sats, balance: {} sats",
             engine.balance()
