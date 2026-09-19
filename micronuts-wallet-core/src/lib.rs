@@ -11,6 +11,7 @@
 //! wasm) and `micronuts-esp32-wallet` (device) both consume it,
 //! supplying only their own transports and UI.
 
+pub mod conditions;
 pub mod engine;
 pub mod flow;
 pub mod mint_wire;

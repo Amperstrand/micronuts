@@ -89,7 +89,6 @@ fn decode_v3(token_str: &str) -> Result<TokenV4, CashuError> {
         for (keyset_id, proofs) in by_keyset {
             tokens.push(TokenV4Token { keyset_id, proofs });
         }
-
     }
 
     let unit = v3
