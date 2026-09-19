@@ -89,11 +89,18 @@ def scan_ur_token(cdc, cyd, token: str, chunk: int = 68,
                     break
                 time.sleep(0.4)
         if len(seen) == len(frames):
-            st, info = cdc.token_info()
-            if st == rig.STATUS_OK and len(info) > 12:
-                return {"ok": True, "fragments": len(frames), "fragments_seen": sorted(seen),
-                        "token_info": rig.parse_token_info(info),
-                        "latency_s": round(time.monotonic() - start, 2)}
+            # The completing fragment imports asynchronously — a single
+            # immediate poll races it (bench 2026-09-19: 15/15 fragments
+            # seen, token on device, harness reported failure). Poll a
+            # bounded window instead.
+            deadline = time.monotonic() + 12.0
+            while time.monotonic() < deadline:
+                st, info = cdc.token_info()
+                if st == rig.STATUS_OK and len(info) > 12:
+                    return {"ok": True, "fragments": len(frames), "fragments_seen": sorted(seen),
+                            "token_info": rig.parse_token_info(info),
+                            "latency_s": round(time.monotonic() - start, 2)}
+                time.sleep(1.0)
     return {"ok": False, "fragments": len(frames), "fragments_seen": sorted(seen),
             "clipped": clipped,
             "assembler_outcomes": outcomes,

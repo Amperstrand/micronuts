@@ -110,7 +110,12 @@ def main() -> int:
             gm65qr.arm_winning_config(cyd)
 
             # --- F3: single-frame roundtrip (quiet cadence) ---
-            r = mnscan.scan_quiet(cdc, cyd, b"micronuts-feas1")
+            # Unique payload per run: the GM65 suppresses re-decodes of a
+            # barcode it already reported (bench 2026-09-19: F3 passed once
+            # after power-cycle, then every retry of the fixed payload
+            # failed while unique payloads decoded instantly).
+            feas = f"micronuts-feas{int(time.time())}".encode()
+            r = mnscan.scan_quiet(cdc, cyd, feas)
             note(f"F3 single-frame: {r}")
             assert r["ok"], "single-frame roundtrip failed"
 
