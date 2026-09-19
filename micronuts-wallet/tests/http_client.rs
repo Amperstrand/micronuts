@@ -11,7 +11,6 @@ use std::time::Duration;
 use cashu_core_lite::error::CashuError;
 use cashu_core_lite::nuts::{nut00, nut03, nut04, nut07};
 use cashu_core_lite::transport::MintClient;
-use micronuts_wallet::http::HttpMintClient;
 /// Compressed secp256k1 generator (a valid point for B_/C_/C/Y fields).
 const G: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 /// 2*G.

@@ -28,7 +28,6 @@ mod native {
     /// `MICRONUTS_WALLET_MINT` at any Cashu mint).
     fn run_demo() -> Result<(), String> {
         use micronuts_wallet::engine::WalletEngine;
-        use micronuts_wallet::http::HttpMintClient;
         use micronuts_wallet::state::FileStore;
 
         let mint_url = std::env::var("MICRONUTS_WALLET_MINT")

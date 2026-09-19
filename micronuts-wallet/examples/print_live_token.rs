@@ -7,7 +7,6 @@
 
 use cashu_core_lite::store::MemoryStore;
 use micronuts_wallet::engine::WalletEngine;
-use micronuts_wallet::http::HttpMintClient;
 
 fn main() {
     let url =
