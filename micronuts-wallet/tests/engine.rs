@@ -16,6 +16,7 @@ use cashu_core_lite::token::{
 use cashu_core_lite::transport::MintClient;
 use micronuts_mint::{DemoMint, LoopbackTransport};
 use micronuts_wallet::engine::{HistoryKind, WalletEngine};
+use micronuts_wallet_core::engine::ReceiveOptions;
 
 /// `MintClient` over an `Arc<Mutex<..>>`-shared demo-mint RPC client, so
 /// the engine's two transport handles (metadata + wallet) hit one mint.
@@ -740,4 +741,288 @@ fn check_all_pending_mixed_states() {
         "only the awaiting one stays"
     );
     assert_eq!(sender.pending_sends()[0].amount, 32);
+}
+
+// --- NUT-10 condition-locked receive (wallet-side #72) ---
+
+/// Raw proof crafting straight against the mint (the Python audit
+/// builder's shape, in core-only primitives): mint plain proofs, swap
+/// them into outputs with caller-chosen secrets, wrap as a V4 token.
+mod locked {
+    use super::{engine, shared_mint, ReceiveOptions, SharedMintClient};
+    use cashu_core_lite::crypto::{blind_message, unblind_signature};
+    use cashu_core_lite::nuts::{nut00, nut03, nut04};
+    use cashu_core_lite::token::{encode_token_wire, Proof as TokenProof, TokenV4, TokenV4Token};
+    use cashu_core_lite::transport::MintClient;
+
+    const MINT: &str = "https://mint.example";
+
+    fn keyset_id(client: &mut SharedMintClient) -> String {
+        client.get_keys().unwrap().keysets[0].id.clone()
+    }
+
+    fn amount_key(client: &mut SharedMintClient, amount: u64) -> cashu_core_lite::PublicKey {
+        client.get_keys().unwrap().keysets[0]
+            .keys
+            .iter()
+            .find(|k| k.amount == amount)
+            .unwrap()
+            .pubkey
+    }
+
+    fn mint_plain_proofs(
+        client: &mut SharedMintClient,
+        tag: &str,
+        amounts: &[u64],
+    ) -> Vec<nut00::Proof> {
+        let total: u64 = amounts.iter().sum();
+        let quote = client
+            .post_mint_quote(nut04::MintQuoteRequest {
+                amount: total,
+                unit: String::from("sat"),
+                pubkey: None,
+            })
+            .unwrap();
+        let settled = client.get_mint_quote(&quote.quote).unwrap();
+        assert_eq!(settled.state, "PAID", "FakeWallet settles on first poll");
+        let keyset = keyset_id(client);
+
+        let mut outputs = Vec::new();
+        let mut blinders = Vec::new();
+        for (i, &amount) in amounts.iter().enumerate() {
+            let secret = format!("{tag}-secret-{i}");
+            let pair = blind_message(secret.as_bytes(), None).unwrap();
+            outputs.push(nut00::BlindedMessage {
+                amount,
+                id: keyset.clone(),
+                b: pair.blinded,
+            });
+            blinders.push((secret, pair.blinder, amount));
+        }
+        let response = client
+            .post_mint(nut04::MintRequest {
+                quote: settled.quote,
+                outputs,
+                signature: None,
+            })
+            .unwrap();
+        response
+            .signatures
+            .iter()
+            .zip(blinders)
+            .map(|(sig, (secret, r, amount))| {
+                let a = amount_key(client, amount);
+                let c = unblind_signature(&sig.c, &r, &a).unwrap();
+                nut00::Proof {
+                    amount,
+                    id: keyset_id(client),
+                    secret: secret.clone(),
+                    c,
+                    dleq: None,
+                    witness: None,
+                }
+            })
+            .collect()
+    }
+
+    fn swap_proofs_to_secrets(
+        client: &mut SharedMintClient,
+        inputs: Vec<nut00::Proof>,
+        amounts: &[u64],
+        secrets: &[String],
+    ) -> Vec<nut00::Proof> {
+        let keyset = keyset_id(client);
+        let mut outputs = Vec::new();
+        let mut blinders = Vec::new();
+        for (i, (&amount, secret)) in amounts.iter().zip(secrets).enumerate() {
+            let pair = blind_message(secret.as_bytes(), None).unwrap();
+            outputs.push(nut00::BlindedMessage {
+                amount,
+                id: keyset.clone(),
+                b: pair.blinded,
+            });
+            blinders.push((secret, pair.blinder, amount, i));
+        }
+        let response = client
+            .post_swap(nut03::SwapRequest { inputs, outputs })
+            .unwrap();
+        response
+            .signatures
+            .iter()
+            .zip(blinders)
+            .map(|(sig, (secret, r, amount, i))| {
+                let a = amount_key(client, amount);
+                let c = unblind_signature(&sig.c, &r, &a).unwrap();
+                assert_eq!(amounts[i], amount, "signature order follows outputs");
+                nut00::Proof {
+                    amount,
+                    id: keyset_id(client),
+                    secret: secret.clone(),
+                    c,
+                    dleq: None,
+                    witness: None,
+                }
+            })
+            .collect()
+    }
+
+    fn proofs_to_token(client: &mut SharedMintClient, proofs: Vec<nut00::Proof>) -> String {
+        let keyset = keyset_id(client);
+        encode_token_wire(&TokenV4 {
+            mint: String::from(MINT),
+            unit: String::from("sat"),
+            memo: None,
+            tokens: vec![TokenV4Token {
+                keyset_id: keyset,
+                proofs: proofs
+                    .into_iter()
+                    .map(|p| TokenProof {
+                        amount: p.amount,
+                        keyset_id: p.id.clone(),
+                        secret: p.secret,
+                        c: p.c.to_bytes().to_vec(),
+                        dleq: None,
+                    })
+                    .collect(),
+            }],
+        })
+        .unwrap()
+    }
+
+    fn locked_token(client: &mut SharedMintClient, secret: String) -> String {
+        let plain = mint_plain_proofs(client, "src", &[4]);
+        let locked = swap_proofs_to_secrets(client, plain, &[4], &[secret]);
+        proofs_to_token(client, locked)
+    }
+
+    #[test]
+    fn receive_p2pk_locked_to_wallet_identity() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+        let pubkey = wallet.p2pk_pubkey_hex();
+        assert_eq!(pubkey.len(), 66);
+
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["P2PK",{{"nonce":"n1","data":"{pubkey}","tags":[["sigflag","SIG_INPUTS"]]}}]"#
+            ),
+        );
+        let received = wallet.receive_token(&token).unwrap();
+        assert_eq!(received, 4);
+        assert_eq!(wallet.balance(), 4);
+    }
+
+    #[test]
+    fn receive_p2pk_foreign_lock_fails() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+
+        let foreign = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7";
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["P2PK",{{"nonce":"n2","data":"{foreign}","tags":[["sigflag","SIG_INPUTS"]]}}]"#
+            ),
+        );
+        let err = wallet.receive_token(&token).unwrap_err().to_string();
+        assert!(err.contains("does not hold"), "{err}");
+        assert_eq!(wallet.balance(), 0);
+    }
+
+    #[test]
+    fn receive_p2pk_multisig_lock_fails() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+        let pubkey = wallet.p2pk_pubkey_hex();
+        let other = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["P2PK",{{"nonce":"n3","data":"{pubkey}","tags":[["sigflag","SIG_INPUTS"],["pubkeys","{other}"],["n_sigs","2"]]}}]"#
+            ),
+        );
+        let err = wallet.receive_token(&token).unwrap_err().to_string();
+        assert!(err.contains("identity key"), "{err}");
+        assert_eq!(wallet.balance(), 0);
+    }
+
+    const PREIMAGE: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+    const LOCK_HASH: &str = "72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793";
+
+    #[test]
+    fn receive_htlc_with_preimage() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["HTLC",{{"nonce":"h1","data":"{LOCK_HASH}","tags":[["sigflag","SIG_INPUTS"]]}}]"#
+            ),
+        );
+        let received = wallet
+            .receive_token_with(
+                &token,
+                ReceiveOptions {
+                    preimage: Some(PREIMAGE),
+                },
+            )
+            .unwrap();
+        assert_eq!(received, 4);
+        assert_eq!(wallet.balance(), 4);
+    }
+
+    #[test]
+    fn receive_htlc_without_or_wrong_preimage_fails() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["HTLC",{{"nonce":"h2","data":"{LOCK_HASH}","tags":[["sigflag","SIG_INPUTS"]]}}]"#
+            ),
+        );
+        let missing = wallet.receive_token(&token).unwrap_err().to_string();
+        assert!(missing.contains("preimage"), "{missing}");
+
+        let wrong = wallet
+            .receive_token_with(
+                &token,
+                ReceiveOptions {
+                    preimage: Some(
+                        "0202020202020202020202020202020202020202020202020202020202020202",
+                    ),
+                },
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(wrong.contains("does not hash"), "{wrong}");
+        assert_eq!(wallet.balance(), 0);
+    }
+
+    #[test]
+    fn receive_sig_all_lock_fails_with_explicit_error() {
+        let mut client = shared_mint();
+        let mut wallet = engine(&client, super::SEED);
+        wallet.connect().unwrap();
+        let pubkey = wallet.p2pk_pubkey_hex();
+
+        let token = locked_token(
+            &mut client,
+            format!(
+                r#"["P2PK",{{"nonce":"n4","data":"{pubkey}","tags":[["sigflag","SIG_ALL"]]}}]"#
+            ),
+        );
+        let err = wallet.receive_token(&token).unwrap_err().to_string();
+        assert!(err.contains("SIG_ALL"), "{err}");
+        assert_eq!(wallet.balance(), 0);
+    }
 }

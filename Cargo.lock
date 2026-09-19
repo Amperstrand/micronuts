@@ -4539,6 +4539,7 @@ dependencies = [
  "js-sys",
  "k256",
  "micronuts-mint",
+ "micronuts-wallet-core",
  "png 0.17.16",
  "qrcodegen-no-heap",
  "rand_core 0.6.4",
@@ -4553,6 +4554,20 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "web-time",
+]
+
+[[package]]
+name = "micronuts-wallet-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "cashu-core-lite",
+ "hex",
+ "k256",
+ "serde",
+ "serde_json",
+ "sha2",
  "web-time",
 ]
 

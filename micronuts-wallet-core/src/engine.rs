@@ -73,6 +73,13 @@ pub enum PendingStatus {
     Claimed,
 }
 
+/// Explicit unlock material for [`WalletEngine::receive_token_with`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReceiveOptions<'a> {
+    /// The preimage for an HTLC (NUT-14) hash lock, as 64 hex chars.
+    pub preimage: Option<&'a str>,
+}
+
 pub struct WalletEngine<T: MintClient + Clone, S: ProofStore> {
     mint_url: String,
     seed: [u8; 32],
@@ -278,8 +285,19 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
 
     /// Redeem an incoming ecash token: swap its proofs for fresh
     /// deterministic outputs (secret-rotation hygiene — the sender never
-    /// learns the new secrets). Returns the received amount.
+    /// learns the new secrets). Condition-locked inputs (NUT-10) are
+    /// unlocked with the wallet's P2PK identity / a supplied HTLC
+    /// preimage. Returns the received amount.
     pub fn receive_token(&mut self, token_str: &str) -> Result<u64, CashuError> {
+        self.receive_token_with(token_str, ReceiveOptions::default())
+    }
+
+    /// [`receive_token`] with explicit unlock material for HTLC locks.
+    pub fn receive_token_with(
+        &mut self,
+        token_str: &str,
+        options: ReceiveOptions<'_>,
+    ) -> Result<u64, CashuError> {
         self.ensure_connected()?;
         let token = crate::token_compat::decode_token_any(token_str)
             .map_err(|e| CashuError::Protocol(format!("invalid token: {e}")))?;
@@ -290,11 +308,27 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             )));
         }
 
+        let identity = crate::conditions::derive_identity(&self.seed)
+            .map_err(|e| CashuError::Protocol(format!("{e}")))?;
+        let now = web_time::SystemTime::now()
+            .duration_since(web_time::SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let mut total = 0u64;
         for group in &token.tokens {
             let mut inputs = Vec::with_capacity(group.proofs.len());
             for proof in &group.proofs {
-                inputs.push(token_proof_to_wallet(proof, &group.keyset_id)?);
+                let mut input = token_proof_to_wallet(proof, &group.keyset_id)?;
+                input.witness = crate::conditions::witness_for_secret(
+                    &input.secret,
+                    &crate::conditions::UnlockContext {
+                        identity: &identity,
+                        preimage: options.preimage,
+                        now,
+                    },
+                )
+                .map_err(|e| CashuError::Protocol(format!("locked input: {e}")))?;
+                inputs.push(input);
             }
             let group_total: u64 = inputs.iter().map(|p| p.amount).sum();
             let swap_fee = (self.fee_ppk * inputs.len() as u64).div_ceil(1000);
@@ -315,6 +349,16 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         }
         self.record(HistoryKind::Receive, total, String::from("ecash token"));
         Ok(total)
+    }
+
+    /// The wallet's lock-facing NUT-11 public key (compressed hex) —
+    /// senders lock P2PK tokens to this; HTLC locks with a `pubkeys` tag
+    /// can include it.
+    pub fn p2pk_pubkey_hex(&self) -> String {
+        match crate::conditions::derive_identity(&self.seed) {
+            Ok(identity) => crate::conditions::p2pk_pubkey_hex(&identity),
+            Err(_) => String::new(),
+        }
     }
 
     /// NUT-07 health check for an incoming token (before redemption):
