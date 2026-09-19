@@ -32,7 +32,7 @@ fn run() -> anyhow::Result<()> {
     // fail loudly here — never the nucula#1 silent RAM-only class.
     let partition = EspDefaultNvsPartition::take()?;
     let store_partition = partition.clone();
-    let mut store = NvsProofStore::new(store_partition, WALLET_KEY, 32 * 1024).map_err(|e| anyhow::anyhow!("store: {e:?}"))?;
+    let mut store = NvsProofStore::new(store_partition.clone(), WALLET_KEY, 32 * 1024).map_err(|e| anyhow::anyhow!("store: {e:?}"))?;
 
     println!("micronuts-esp32-wallet M1 scaffold");
     println!("stored blob: {} B", store.stored_len().map_err(|e| anyhow::anyhow!("{e:?}"))?);
@@ -66,11 +66,14 @@ use micronuts_wallet_core::engine::WalletEngine;
     let info = mint.get_info()?;
     println!("NUT-06 get_info: {}", info.name.as_str());
 
-    // Seed: generate on first boot, persist in NVS (key "seed").
+    // Seed: generate on first boot, persist in NVS under its own key
+    // ("seed") — the M1 smoke test keeps using the "wallet_blob" slot, so
+    // the wallet identity survives every boot.
     // 32 bytes per the WalletEngine contract.
-    let seed_key = "wallet_seed";
+    let mut seed_store = NvsProofStore::new(store_partition.clone(), "seed", 64)
+        .map_err(|e| anyhow::anyhow!("seed store: {e:?}"))?;
     let mut seed_buf = [0u8; 32];
-    match store.load() {
+    match seed_store.load() {
         Ok(Some(blob)) if blob.len() == 32 => {
             seed_buf.copy_from_slice(&blob);
             println!("seed: loaded from NVS");
@@ -78,7 +81,7 @@ use micronuts_wallet_core::engine::WalletEngine;
         _ => {
             // Generate from hardware RNG
             unsafe { esp_idf_svc::hal::sys::esp_fill_random(seed_buf.as_mut_ptr() as *mut core::ffi::c_void, 32) };
-            store.save(&seed_buf).map_err(|e| anyhow::anyhow!("seed save: {e:?}"))?;
+            seed_store.save(&seed_buf).map_err(|e| anyhow::anyhow!("seed save: {e:?}"))?;
             println!("seed: generated + persisted");
         }
     }
@@ -88,8 +91,11 @@ use micronuts_wallet_core::engine::WalletEngine;
     let mut engine = {
         use cashu_core_lite::transport::MintClient as _;
         let transport = http_transport::esp_idf_mint_client(MINT);
+        // EspDefaultNvsPartition::take() yields the singleton once — the
+        // smoke store's clone is reused here instead of a second take
+        // (which aborts app_main with ESP_ERR_INVALID_STATE).
         let store2 = NvsProofStore::new(
-            esp_idf_svc::nvs::EspDefaultNvsPartition::take()?,
+            store_partition.clone(),
             "engine_state",
             32 * 1024,
         ).map_err(|e| anyhow::anyhow!("{e:?}"))?;
@@ -99,10 +105,29 @@ use micronuts_wallet_core::engine::WalletEngine;
     };
 
     let mut line = String::new();
+    // A ~400-byte token pasted at 115200 overflows the 128-byte UART FIFO
+    // whenever the poll loop sleeps: install the driver so stdin blocks on
+    // a 2 KiB ring buffer instead.
+    unsafe {
+        use esp_idf_svc::hal::sys::{esp_vfs_dev_uart_use_driver, uart_driver_install};
+        uart_driver_install(0, 2048, 0, 0, core::ptr::null_mut(), 0);
+        esp_vfs_dev_uart_use_driver(0);
+    }
     println!("nucula-mode wallet ready — type 'help'");
     loop {
         line.clear();
-        std::io::stdin().read_line(&mut line)?;
+        // esp-idf stdin is non-blocking (VFS returns EAGAIN while idle):
+        // poll-retry instead of letting the error kill app_main.
+        loop {
+            match std::io::stdin().read_line(&mut line) {
+                Ok(_) if line.ends_with('\n') => break,
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(20))
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
         let trimmed = line.trim();
         match trimmed {
             "help" => println!("help | connect | balance | heap | seed"),
