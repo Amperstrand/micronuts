@@ -58,6 +58,7 @@ fn run() -> anyhow::Result<()> {
     // Full typed MintClient through the wallet-core wire protocol
     use cashu_core_lite::transport::MintClient as _;
     use micronuts_esp32_wallet::http_transport;
+use micronuts_wallet_core::engine::WalletEngine;
     let mut mint = http_transport::esp_idf_mint_client(MINT);
     let keys = mint.get_keys()?;
     let total: usize = keys.keysets.iter().map(|ks| ks.keys.len()).sum();
@@ -65,20 +66,74 @@ fn run() -> anyhow::Result<()> {
     let info = mint.get_info()?;
     println!("NUT-06 get_info: {}", info.name.as_str());
 
+    // Seed: generate on first boot, persist in NVS (key "seed").
+    // 32 bytes per the WalletEngine contract.
+    let seed_key = "wallet_seed";
+    let mut seed_buf = [0u8; 32];
+    match store.load() {
+        Ok(Some(blob)) if blob.len() == 32 => {
+            seed_buf.copy_from_slice(&blob);
+            println!("seed: loaded from NVS");
+        }
+        _ => {
+            // Generate from hardware RNG
+            unsafe { esp_idf_svc::hal::sys::esp_fill_random(seed_buf.as_mut_ptr() as *mut core::ffi::c_void, 32) };
+            store.save(&seed_buf).map_err(|e| anyhow::anyhow!("seed save: {e:?}"))?;
+            println!("seed: generated + persisted");
+        }
+    }
+
+    // The full WalletEngine: money operations through the same
+    // code path as the host and wasm wallets.
+    let mut engine = {
+        use cashu_core_lite::transport::MintClient as _;
+        let transport = http_transport::esp_idf_mint_client(MINT);
+        let store2 = NvsProofStore::new(
+            esp_idf_svc::nvs::EspDefaultNvsPartition::take()?,
+            "engine_state",
+            32 * 1024,
+        ).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        let engine_store_seed: [u8; 32] = seed_buf;
+        WalletEngine::new(MINT, transport, store2, engine_store_seed, Vec::new())
+            .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?
+    };
+
     let mut line = String::new();
-    println!("type 'help' for commands");
+    println!("nucula-mode wallet ready — type 'help'");
     loop {
         line.clear();
         std::io::stdin().read_line(&mut line)?;
-        match line.trim() {
-            "help" => println!("help | status | heap"),
-            "status" => println!(
-                "stored: {} B | bound: 32768 B | core: cashu-core-lite",
-                store.stored_len().map_err(|e| anyhow::anyhow!("{e:?}"))?
-            ),
+        let trimmed = line.trim();
+        match trimmed {
+            "help" => println!("help | connect | balance | heap | seed"),
+            "connect" => {
+                match engine.connect() {
+                    Ok(()) => println!("connected: mint={} keyset={}", engine.mint_url(), engine.keyset_id()),
+                    Err(e) => println!("connect error: {e:?}"),
+                }
+            }
+            "balance" => println!("balance: {} sats", engine.balance()),
             "heap" => println!("free: {} B", unsafe { esp_idf_svc::hal::sys::esp_get_free_heap_size() }),
+            "seed" => println!("seed: {}", engine.seed_hex()),
             "" => {}
-            other => println!("unknown: {other}"),
+            other => {
+                if let Some(token) = other.strip_prefix("receive ") {
+                    match engine.receive_token(token) {
+                        Ok(amount) => println!("received {amount} sats, balance: {} sats", engine.balance()),
+                        Err(e) => println!("receive error: {e:?}"),
+                    }
+                } else if let Some(amount) = other.strip_prefix("send ") {
+                    match amount.parse::<u64>() {
+                        Ok(amt) => match engine.send_token(amt, None) {
+                            Ok(token) => println!("sent {amt}: {token}"),
+                            Err(e) => println!("send error: {e:?}"),
+                        },
+                        Err(_) => println!("send: invalid amount"),
+                    }
+                } else {
+                    println!("unknown: {other}");
+                }
+            }
         }
     }
 }
