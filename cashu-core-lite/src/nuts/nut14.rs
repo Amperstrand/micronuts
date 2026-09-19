@@ -211,6 +211,31 @@ impl HtlcWitness {
             signatures,
         })
     }
+
+    /// Serialize to the stringified-JSON wire form (compact, matching how
+    /// upstream wallets emit it); `None` fields are omitted.
+    pub fn to_json(&self) -> String {
+        let mut out = String::from("{");
+        if let Some(preimage) = &self.preimage {
+            out.push_str("\"preimage\":");
+            out.push_str(&super::nut11::json_escape(preimage));
+            if self.signatures.is_some() {
+                out.push(',');
+            }
+        }
+        if let Some(signatures) = &self.signatures {
+            out.push_str("\"signatures\":[");
+            for (i, sig) in signatures.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&super::nut11::json_escape(sig));
+            }
+            out.push(']');
+        }
+        out.push('}');
+        out
+    }
 }
 
 fn decode_32_bytes(hex_str: &str) -> Option<[u8; 32]> {
@@ -340,6 +365,34 @@ mod tests {
         assert!(conditions.requirements_at(100).refund_path.is_none());
         let expired = conditions.requirements_at(101).refund_path.unwrap();
         assert!(expired.is_anyone_can_spend());
+    }
+
+    #[test]
+    fn witness_json_round_trip() {
+        // Full receiver witness (preimage + receiver signatures).
+        let full = HtlcWitness {
+            preimage: Some(String::from(PREIMAGE)),
+            signatures: Some(vec!["aa".repeat(64)]),
+        };
+        assert_eq!(HtlcWitness::from_json(&full.to_json()).unwrap(), full);
+        // Preimage only (hash lock, no pubkeys tag).
+        let preimage_only = HtlcWitness {
+            preimage: Some(String::from(PREIMAGE)),
+            signatures: None,
+        };
+        assert_eq!(
+            HtlcWitness::from_json(&preimage_only.to_json()).unwrap(),
+            preimage_only
+        );
+        // Signatures only (sender pathway after expiry), empty array kept.
+        let sigs_only = HtlcWitness {
+            preimage: None,
+            signatures: Some(Vec::new()),
+        };
+        assert_eq!(
+            HtlcWitness::from_json(&sigs_only.to_json()).unwrap(),
+            sigs_only
+        );
     }
 
     #[test]

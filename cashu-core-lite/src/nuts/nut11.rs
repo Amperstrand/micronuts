@@ -303,8 +303,9 @@ impl P2pkWitness {
 }
 
 /// JSON-escape and quote a string (hex signatures never need escapes, but
-/// stay correct for arbitrary content).
-fn json_escape(raw: &str) -> String {
+/// stay correct for arbitrary content). Shared with NUT-14's witness
+/// serializer.
+pub(super) fn json_escape(raw: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(raw.len() + 2);
     out.push('"');
