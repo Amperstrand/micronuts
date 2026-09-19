@@ -6,7 +6,10 @@ fn main() {
     let seed: [u8; 32] = [42u8; 32];
     if args.iter().any(|a| a == "--p2pk-pubkey") {
         let identity = micronuts_wallet_core::conditions::derive_identity(&seed).unwrap();
-        println!("{}", micronuts_wallet_core::conditions::p2pk_pubkey_hex(&identity));
+        println!(
+            "{}",
+            micronuts_wallet_core::conditions::p2pk_pubkey_hex(&identity)
+        );
         return;
     }
     let token = args.get(1).expect("token as arg").clone();
