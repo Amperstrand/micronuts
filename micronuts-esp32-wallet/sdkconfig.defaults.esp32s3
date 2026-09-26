@@ -1,0 +1,14 @@
+# ESP32-S3 overlay, auto-picked only when building with
+# `--target xtensa-esp32s3-espidf` (esp-idf-sys resolves
+# `sdkconfig.defaults.<mcu>` after the base file). Target board class:
+# LilyGo T-Display-S3 — ESP32-S3, 16 MB flash, octal PSRAM (bolty-rs
+# apps/bolty-esp32 sdkconfig pattern). Base sdkconfig.defaults still
+# contributes the 64 KiB main-task stack, NVS compaction, log levels,
+# and the shared partition table.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y

@@ -11,12 +11,42 @@ linker = "ldproxy"
 runner = "espflash flash --monitor"
 rustflags = ["-C", "default-linker-libraries"]
 
+# S3 lane (LilyGo T-Display-S3 class: ESP32-S3, 16 MB flash, PSRAM) —
+# explicit override only, the default target above stays plain ESP32:
+#   cargo +esp build --target xtensa-esp32s3-espidf
+# (bolty-rs apps/bolty-esp32 pattern: espidf_time64 because S3 has
+# 64-bit time_t on IDF v5.x — esp-idf-sys fails to compile without it.)
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = [
+    "-C", "default-linker-libraries",
+    "--cfg", "espidf_time64",
+    "-Zunstable-options",
+    "-C", "panic=immediate-abort",
+]
+
 [unstable]
 build-std = ["std", "panic_abort"]
 
 [env]
 ESP_IDF_VERSION = { value = "v5.2.4" } # ccid-firmware-rs pin
-MCU = "esp32"
+# The shared target dir (~/.cargo/config.toml) breaks embuild's
+# workspace detection (it pops 6 components off OUT_DIR and lands on the
+# target dir itself) — without this, `sdkconfig.defaults` and the
+# `sdkconfig.defaults.<mcu>` overlays silently never apply (the reason
+# main.rs spawns a 64 KiB thread instead of relying on the sdkconfig
+# stack bump). "." resolves relative to this .cargo directory.
+CARGO_WORKSPACE_DIR = { value = ".", relative = true }
+# CONFIG_PARTITION_TABLE_CUSTOM (sdkconfig.defaults) needs partitions.csv
+# inside the IDF cmake project dir (the build out dir) — glob-copy it
+# from the crate root into there (esp-idf-sys's sanctioned mechanism).
+ESP_IDF_GLOB_PARTITIONS_BASE = { value = ".", relative = true }
+ESP_IDF_GLOB_PARTITIONS_CSV = "partitions.csv"
+# MCU deliberately NOT pinned: esp-idf-sys derives the chip from the
+# target triple (and picks `sdkconfig.defaults.<mcu>` overlays with it).
+# A pinned esp32 would abort S3 builds ("MCU not amongst the MCUs
+# supported by the build target").
 # cc-rs doesn't know the xtensa-esp32-espidf triple; without an explicit
 # cross prefix it picks a compiler that emits wrong-ELF-flag objects
 # ("compiled for a big endian system and target is little endian" from ld —
@@ -25,4 +55,6 @@ CROSS_COMPILE = "xtensa-esp32-elf"
 # IDF compiler default; without it C calls overflow the call8 range
 # ("dangerous relocation: call8: call target out of range").
 CFLAGS_xtensa_esp32_espidf = "-mlongcalls"
+# S3 twin of the CFLAGS above (same call8 range issue on the S3 core).
+CFLAGS_xtensa_esp32s3_espidf = "-mlongcalls"
 SDKCONFIG_DEFAULTS = { value = "sdkconfig.defaults" }
