@@ -1,7 +1,5 @@
 //! M1 scaffold entry: NVS up, the ProofStore live, a diagnostic console.
 
-
-
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
@@ -27,15 +25,18 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn run() -> anyhow::Result<()> {
-
     // 32 KiB fail-stop bound: wallet blobs that cannot fit NVS atomically
     // fail loudly here — never the nucula#1 silent RAM-only class.
     let partition = EspDefaultNvsPartition::take()?;
     let store_partition = partition.clone();
-    let mut store = NvsProofStore::new(store_partition.clone(), WALLET_KEY, 32 * 1024).map_err(|e| anyhow::anyhow!("store: {e:?}"))?;
+    let mut store = NvsProofStore::new(store_partition.clone(), WALLET_KEY, 32 * 1024)
+        .map_err(|e| anyhow::anyhow!("store: {e:?}"))?;
 
     println!("micronuts-esp32-wallet M1 scaffold");
-    println!("stored blob: {} B", store.stored_len().map_err(|e| anyhow::anyhow!("{e:?}"))?);
+    println!(
+        "stored blob: {} B",
+        store.stored_len().map_err(|e| anyhow::anyhow!("{e:?}"))?
+    );
 
     // Round-trip smoke through the full ProofStore contract.
     let payload: Vec<u8> = (0..64u8).collect();
@@ -58,11 +59,15 @@ fn run() -> anyhow::Result<()> {
     // Full typed MintClient through the wallet-core wire protocol
     use cashu_core_lite::transport::MintClient as _;
     use micronuts_esp32_wallet::http_transport;
-use micronuts_wallet_core::engine::WalletEngine;
+    use micronuts_wallet_core::engine::WalletEngine;
     let mut mint = http_transport::esp_idf_mint_client(MINT);
     let keys = mint.get_keys()?;
     let total: usize = keys.keysets.iter().map(|ks| ks.keys.len()).sum();
-    println!("NUT-01 get_keys: {} keysets, {} keys total", keys.keysets.len(), total);
+    println!(
+        "NUT-01 get_keys: {} keysets, {} keys total",
+        keys.keysets.len(),
+        total
+    );
     let info = mint.get_info()?;
     println!("NUT-06 get_info: {}", info.name.as_str());
 
@@ -80,8 +85,15 @@ use micronuts_wallet_core::engine::WalletEngine;
         }
         _ => {
             // Generate from hardware RNG
-            unsafe { esp_idf_svc::hal::sys::esp_fill_random(seed_buf.as_mut_ptr() as *mut core::ffi::c_void, 32) };
-            seed_store.save(&seed_buf).map_err(|e| anyhow::anyhow!("seed save: {e:?}"))?;
+            unsafe {
+                esp_idf_svc::hal::sys::esp_fill_random(
+                    seed_buf.as_mut_ptr() as *mut core::ffi::c_void,
+                    32,
+                )
+            };
+            seed_store
+                .save(&seed_buf)
+                .map_err(|e| anyhow::anyhow!("seed save: {e:?}"))?;
             println!("seed: generated + persisted");
         }
     }
@@ -94,17 +106,15 @@ use micronuts_wallet_core::engine::WalletEngine;
         // EspDefaultNvsPartition::take() yields the singleton once — the
         // smoke store's clone is reused here instead of a second take
         // (which aborts app_main with ESP_ERR_INVALID_STATE).
-        let store2 = NvsProofStore::new(
-            store_partition.clone(),
-            "engine_state",
-            32 * 1024,
-        ).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        let store2 = NvsProofStore::new(store_partition.clone(), "engine_state", 32 * 1024)
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
         let engine_store_seed: [u8; 32] = seed_buf;
         WalletEngine::new(MINT, transport, store2, engine_store_seed, Vec::new())
             .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?
     };
 
     let mut line = String::new();
+    let mut tollgate = micronuts_esp32_wallet::tollgate::TollgateClient::new();
     // A ~400-byte token pasted at 115200 overflows the 128-byte UART FIFO
     // whenever the poll loop sleeps: install the driver so stdin blocks on
     // a 2 KiB ring buffer instead.
@@ -130,15 +140,21 @@ use micronuts_wallet_core::engine::WalletEngine;
         }
         let trimmed = line.trim();
         match trimmed {
-            "help" => println!("help | connect | balance | heap | seed | p2pk"),
-            "connect" => {
-                match engine.connect() {
-                    Ok(()) => println!("connected: mint={} keyset={}", engine.mint_url(), engine.keyset_id()),
-                    Err(e) => println!("connect error: {e:?}"),
-                }
+            "help" => {
+                println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status")
             }
+            "connect" => match engine.connect() {
+                Ok(()) => println!(
+                    "connected: mint={} keyset={}",
+                    engine.mint_url(),
+                    engine.keyset_id()
+                ),
+                Err(e) => println!("connect error: {e:?}"),
+            },
             "balance" => println!("balance: {} sats", engine.balance()),
-            "heap" => println!("free: {} B", unsafe { esp_idf_svc::hal::sys::esp_get_free_heap_size() }),
+            "heap" => println!("free: {} B", unsafe {
+                esp_idf_svc::hal::sys::esp_get_free_heap_size()
+            }),
             "seed" => println!("seed: {}", engine.seed_hex()),
             "p2pk" => println!("p2pk: {}", engine.p2pk_pubkey_hex()),
             "" => {}
@@ -150,7 +166,9 @@ use micronuts_wallet_core::engine::WalletEngine;
                     };
                     let options = micronuts_wallet_core::engine::ReceiveOptions { preimage };
                     match engine.receive_token_with(token, options) {
-                        Ok(amount) => println!("received {amount} sats, balance: {} sats", engine.balance()),
+                        Ok(amount) => {
+                            println!("received {amount} sats, balance: {} sats", engine.balance())
+                        }
                         Err(e) => println!("receive error: {e:?}"),
                     }
                 } else if let Some(amount) = other.strip_prefix("send ") {
@@ -160,6 +178,59 @@ use micronuts_wallet_core::engine::WalletEngine;
                             Err(e) => println!("send error: {e:?}"),
                         },
                         Err(_) => println!("send: invalid amount"),
+                    }
+                } else if let Some(rest) = other.strip_prefix("tollgate ") {
+                    let mut args = rest.split_whitespace();
+                    match args.next() {
+                        Some("join") => {
+                            match args.next() {
+                                Some(ssid) => {
+                                    if let Some(extra) = args.next() {
+                                        println!("tollgate join: open networks only — unexpected '{extra}'");
+                                    } else {
+                                        match tollgate.join(&mut wifi, ssid) {
+                                            Ok(()) => println!("tollgate: joined"),
+                                            Err(e) => println!("tollgate error: {e}"),
+                                        }
+                                    }
+                                }
+                                None => println!("usage: tollgate join <ssid>"),
+                            }
+                        }
+                        Some("pay") => {
+                            let amount = match args.next() {
+                                None => None,
+                                Some(sats) => match sats.parse::<u64>() {
+                                    Ok(amount) => Some(amount),
+                                    Err(_) => {
+                                        println!("tollgate pay: invalid amount");
+                                        continue;
+                                    }
+                                },
+                            };
+                            match tollgate.pay(&mut engine, &wifi, amount) {
+                                Ok(micronuts_esp32_wallet::tollgate::PayOutcome::AlreadyAuthed) => {
+                                    println!("tollgate: already authenticated, nothing spent")
+                                }
+                                Ok(micronuts_esp32_wallet::tollgate::PayOutcome::Paid {
+                                    amount,
+                                    http_status,
+                                }) => {
+                                    println!(
+                                        "tollgate: paid {amount} sats (HTTP {http_status}), internet verified — balance: {} sats",
+                                        engine.balance()
+                                    )
+                                }
+                                Err(e) => println!("tollgate error: {e}"),
+                            }
+                        }
+                        Some("status") => {
+                            println!("tollgate: {}", tollgate.status());
+                            println!("tollgate: wallet balance {} sats", engine.balance());
+                        }
+                        _ => println!(
+                            "usage: tollgate join <ssid> | tollgate pay [sats] | tollgate status"
+                        ),
                     }
                 } else {
                     println!("unknown: {other}");

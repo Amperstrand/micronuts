@@ -21,6 +21,8 @@ const MAX_PASSWORD_LEN: usize = 64;
 pub enum WifiError {
     SsidTooLong,
     PasswordTooLong,
+    /// Station has no DHCP lease yet (gateway still 0.0.0.0).
+    NoLease,
     Esp(EspError),
 }
 
@@ -29,6 +31,7 @@ impl fmt::Display for WifiError {
         match self {
             Self::SsidTooLong => f.write_str("ssid too long"),
             Self::PasswordTooLong => f.write_str("password too long"),
+            Self::NoLease => f.write_str("no DHCP lease (gateway unset)"),
             Self::Esp(err) => write!(f, "{err}"),
         }
     }
@@ -81,7 +84,13 @@ impl WifiManager {
             password: password
                 .try_into()
                 .map_err(|_| WifiError::PasswordTooLong)?,
-            auth_method: AuthMethod::WPA2Personal,
+            // Open networks (captive portals) authenticate with None —
+            // an empty passphrase + WPA2Personal never associates.
+            auth_method: if password.is_empty() {
+                AuthMethod::None
+            } else {
+                AuthMethod::WPA2Personal
+            },
             bssid: None,
             channel: None,
             ..Default::default()
@@ -95,5 +104,16 @@ impl WifiManager {
         let ip_info = self.wifi.wifi().sta_netif().get_ip_info()?;
         info!("WiFi connected: ip={}", ip_info.ip);
         Ok(())
+    }
+
+    /// DHCP-lease gateway of the station interface. TollGate discovery
+    /// targets the backend on the gateway — never a hardcoded address.
+    pub fn gateway_ip(&self) -> Result<String, WifiError> {
+        let ip_info = self.wifi.wifi().sta_netif().get_ip_info()?;
+        let gw = ip_info.subnet.gateway;
+        if gw.is_unspecified() {
+            return Err(WifiError::NoLease);
+        }
+        Ok(gw.to_string())
     }
 }
