@@ -6,7 +6,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 // Env-only credentials (never committed): the esp32-mint pattern.
 const WIFI_SSID: Option<&str> = option_env!("MICRONUTS_WIFI_SSID");
 const WIFI_PASS: Option<&str> = option_env!("MICRONUTS_WIFI_PASS");
-const MINT: &str = "http://192.168.13.221:3338";
+    const MINT: &str = "http://192.168.13.221:8383";
 
 use cashu_core_lite::store::ProofStore as _;
 use micronuts_esp32_wallet::{NvsProofStore, WALLET_KEY};
@@ -25,6 +25,15 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn run() -> anyhow::Result<()> {
+    // The console thread doubles as the crypto worker; at default priority
+    // a minutes-long k256 swap pins the CPU and starves the network stack
+    // (bench 2026-09-27: the wifi association DROPPED mid-receive — WDT
+    // flagged IDLE starvation, hostapd saw the client vanish). Priority 1
+    // keeps wifi/lwIP (>=19) always preempting: beacons flow through
+    // compute-heavy stretches.
+    unsafe {
+        esp_idf_svc::hal::sys::vTaskPrioritySet(core::ptr::null_mut(), 1);
+    }
     // 32 KiB fail-stop bound: wallet blobs that cannot fit NVS atomically
     // fail loudly here — never the nucula#1 silent RAM-only class.
     let partition = EspDefaultNvsPartition::take()?;
@@ -53,7 +62,25 @@ fn run() -> anyhow::Result<()> {
         (Some(s), Some(p)) => (s, p),
         _ => anyhow::bail!("MICRONUTS_WIFI_SSID/PASS not set at build time"),
     };
-    wifi.connect(ssid, pass)?;
+    // One join can wedge in the event layer while the router sees a
+    // completed DHCP (bench 2026-09-27) — retry the full cycle.
+    if let Err(e) = wifi.scan_dump() {
+        println!("wifi: scan failed: {e}");
+    }
+    let mut joined = false;
+    for attempt in 1..=3u8 {
+        println!("wifi: join attempt {attempt}");
+        match wifi.connect(ssid, pass) {
+            Ok(()) => {
+                joined = true;
+                break;
+            }
+            Err(e) => println!("wifi: attempt {attempt} failed: {e}"),
+        }
+    }
+    if !joined {
+        anyhow::bail!("wifi: all join attempts failed");
+    }
     println!("wifi connected");
 
     // Full typed MintClient through the wallet-core wire protocol
@@ -113,7 +140,32 @@ fn run() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?
     };
 
+    // hostapd deauths a silent station (~30-60s inactivity) — and the
+    // k256 swap stretches run minutes with zero TX (bench 2026-09-27:
+    // every long-compute phase ended in "Host is unreachable"). One UDP
+    // packet every 8s feeds the AP's timer and keeps the gateway ARP
+    // fresh, through any compute stretch.
+    std::thread::Builder::new()
+        .stack_size(4096)
+        .spawn(|| {
+            let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok();
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(8));
+                if let Some(s) = &sock {
+                    let _ = s.send_to(b"ka", "1.1.1.1:9");
+                }
+            }
+        })?;
+
     let mut line = String::new();
+    // Cache the keyset while the network is boot-fresh: an idle station
+    // behind the portal can blackhole later SYNs (bench 2026-09-27: the
+    // console `connect` wedged >45s post-boot while the identical calls
+    // succeeded seconds earlier at boot).
+    match engine.connect() {
+        Ok(()) => println!("connected: mint={} keyset={}", engine.mint_url(), engine.keyset_id()),
+        Err(e) => println!("connect error: {e:?}"),
+    }
     let mut tollgate = micronuts_esp32_wallet::tollgate::TollgateClient::new();
     // A ~400-byte token pasted at 115200 overflows the 128-byte UART FIFO
     // whenever the poll loop sleeps: install the driver so stdin blocks on

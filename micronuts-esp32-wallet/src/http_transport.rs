@@ -32,6 +32,10 @@ impl EspIdfTransport {
             config: esp_idf_svc::http::client::Configuration {
                 buffer_size: Some(4096),
                 buffer_size_tx: Some(2048),
+                // Bounded calls: an idle-then-blackholed path (bench-proven
+                // 2026-09-27: `connect` wedged the console thread forever
+                // on retrying SYNs) must fail loudly, not stall stdin.
+                timeout: Some(core::time::Duration::from_secs(10)),
                 ..Default::default()
             },
         }

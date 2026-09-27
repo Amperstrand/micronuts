@@ -97,12 +97,45 @@ impl WifiManager {
         });
 
         self.wifi.set_configuration(&wifi_configuration)?;
+        println!("wifi: starting");
         self.wifi.start()?;
+        println!("wifi: associating with {ssid}");
         self.wifi.connect()?;
-        self.wifi.wait_netif_up()?;
+        // wait_netif_up() blocks forever when the GOT_IP event is lost
+        // (bench 2026-09-27: router saw DHCPACK + later radio-deaf
+        // retries while the app sat frozen in the event wait). Poll the
+        // netif with a bound instead; NoLease on timeout lets the caller
+        // retry the whole join cycle.
+        for _ in 0..60 {
+            if self.wifi.is_connected().unwrap_or(false) {
+                if let Ok(info) = self.wifi.wifi().sta_netif().get_ip_info() {
+                    if !info.ip.is_unspecified() {
+                        println!("wifi: netif up, ip={}", info.ip);
+                        return Ok(());
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        Err(WifiError::NoLease)
+    }
 
-        let ip_info = self.wifi.wifi().sta_netif().get_ip_info()?;
-        info!("WiFi connected: ip={}", ip_info.ip);
+    /// Print visible APs, strongest first — S3-side RF telemetry
+    /// (bench 2026-09-27: the router receives our auth frames but the
+    /// station never ACKs the responses, on any channel; this answers
+    /// whether the station's RX hears the AP at all).
+    pub fn scan_dump(&mut self) -> Result<(), WifiError> {
+        if !self.wifi.is_started()? {
+            self.wifi.start()?;
+        }
+        let mut aps = self.wifi.scan()?;
+        aps.sort_by(|a, b| b.signal_strength.cmp(&a.signal_strength));
+        for (i, ap) in aps.iter().enumerate().take(10) {
+            println!(
+                "wifi: scan[{i}] {} ch{} {}dBm",
+                ap.ssid, ap.channel, ap.signal_strength
+            );
+        }
         Ok(())
     }
 
