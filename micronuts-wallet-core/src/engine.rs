@@ -316,9 +316,10 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             .unwrap_or(0);
         let mut total = 0u64;
         for group in &token.tokens {
+            let group_keyset_id = resolve_v3_keyset_prefix(&group.keyset_id, &self.keyset_id);
             let mut inputs = Vec::with_capacity(group.proofs.len());
             for proof in &group.proofs {
-                let mut input = token_proof_to_wallet(proof, &group.keyset_id)?;
+                let mut input = token_proof_to_wallet(proof, &group_keyset_id)?;
                 input.witness = crate::conditions::witness_for_secret(
                     &input.secret,
                     &crate::conditions::UnlockContext {
@@ -828,6 +829,17 @@ fn token_proof_to_wallet(proof: &TokenProof, keyset_id: &str) -> Result<nut00::P
     })
 }
 
+/// V3 legacy tokens carry the 16-hex truncated keyset id; mints only
+/// know the full id (bench 2026-09-27: cdk-mintd 422s the swap input
+/// on the short id). Resolve a V3 prefix against the active keyset.
+fn resolve_v3_keyset_prefix(group_id: &str, active: &str) -> String {
+    if group_id.len() == 16 && active.starts_with(group_id) {
+        active.to_string()
+    } else {
+        group_id.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -846,6 +858,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn v3_short_keyset_prefix_resolves_to_active() {
+        // Bench-proven 2026-09-27: the PRTA minter's V3 tokens carry a
+        // 16-hex keyset id; the mint only accepts the full id.
+        let active = "01df97b6fb8a572a718d7df7fcbf4387e2d455134ea8004c9c8c51e1b3391f909e";
+        assert_eq!(resolve_v3_keyset_prefix("01df97b6fb8a572a", active), active);
+        assert_eq!(resolve_v3_keyset_prefix(active, active), active);
+        assert_eq!(
+            resolve_v3_keyset_prefix("0123456789abcdef", active),
+            "0123456789abcdef"
+        );
     }
 
     #[test]

@@ -504,7 +504,9 @@ fn parse_mint_info(value: &Value) -> Result<nut06::MintInfo, CashuError> {
     }
 
     Ok(nut06::MintInfo {
-        name: str_field(value, "name", "mint info")?,
+        // NUT-06: `name` is optional (cdk-mintd emits "" by default) —
+        // absent/empty is a valid info document, not a protocol error.
+        name: opt_str_field(value, "name").unwrap_or_default(),
         pubkey: opt_str_field(value, "pubkey").unwrap_or_default(),
         version: opt_str_field(value, "version").unwrap_or_default(),
         description: opt_str_field(value, "description").unwrap_or_default(),
@@ -599,4 +601,20 @@ fn urlencode(segment: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mint_info_name_is_optional() {
+        // NUT-06: name is optional; cdk-mintd emits "" when unset
+        // (bench-proven 2026-09-26: a "" name was rejected as a protocol
+        // error and reboot-looped the esp32 wallet at boot).
+        for body in [json!({}), json!({"name": ""})] {
+            let info = parse_mint_info(&body).expect("empty/absent name must parse");
+            assert_eq!(info.name, "");
+        }
+    }
 }

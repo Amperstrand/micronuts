@@ -25,9 +25,27 @@ pub fn decode_token_any(token_str: &str) -> Result<TokenV4, CashuError> {
 ///  "unit":"sat","memo":"..."}
 /// ```
 fn decode_v3(token_str: &str) -> Result<TokenV4, CashuError> {
-    let b64_body = token_str
+    let mut b64_body = token_str
         .strip_prefix("cashuA")
         .ok_or_else(|| CashuError::Protocol("not a cashuA token".into()))?;
+
+    // V3 emitters (the PRTA minter, cdk-cli) ship unpadded standard
+    // base64; the strict STANDARD engine rejects it ("Invalid padding" —
+    // bench-proven 2026-09-27, take21). Pad to a canonical length.
+    let mut padded;
+    match b64_body.len() % 4 {
+        2 => {
+            padded = b64_body.to_string();
+            padded.push_str("==");
+            b64_body = &padded;
+        }
+        3 => {
+            padded = b64_body.to_string();
+            padded.push('=');
+            b64_body = &padded;
+        }
+        _ => {}
+    }
 
     // V3 uses standard base64 (with padding), not base64url
     use base64::Engine;
@@ -115,4 +133,19 @@ fn decode_v3(token_str: &str) -> Result<TokenV4, CashuError> {
         memo,
         tokens,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v3_decode_accepts_unpadded_base64() {
+        // Bench-proven 2026-09-27 (take21): the PRTA minter emits unpadded
+        // standard base64; len%4==3 needs one '=' pad char.
+        let unpadded = "cashuAeyJ0b2tlbiI6W3sibWludCI6Imh0dHA6Ly8xOTIuMTY4LjEzLjIyMTo4MzgzIiwicHJvb2ZzIjpbXSwiaWQiOiJ4In1dLCJ1bml0Ijoic2F0In0";
+        let token = decode_token_any(unpadded).expect("unpadded V3 must decode");
+        assert_eq!(token.mint, "http://192.168.13.221:8383");
+        assert_eq!(token.unit, "sat");
+    }
 }
