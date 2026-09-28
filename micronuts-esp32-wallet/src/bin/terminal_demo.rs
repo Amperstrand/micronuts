@@ -105,7 +105,7 @@ const QR_ROWS: [u64; 57] = [    0x1FC54AFB5A3E67F,
     0x1FD2BF20A74A1EA,
 ];
 
-static mut SPI_BUFFER: [u8; 512] = [0u8; 512];
+static mut SPI_BUFFER: [u8; 4096] = [0u8; 4096];
 
 const BLACK: Rgb565 = Rgb565::BLACK;
 const WHITE: Rgb565 = Rgb565::WHITE;
@@ -174,7 +174,7 @@ fn run() -> anyhow::Result<()> {
         &Config::new().baudrate(40.MHz().into()),
     )?;
     let dc = PinDriver::output(p.pins.gpio2)?;
-    let buffer: &'static mut [u8; 512] = unsafe { &mut *core::ptr::addr_of_mut!(SPI_BUFFER) };
+    let buffer: &'static mut [u8; 4096] = unsafe { &mut *core::ptr::addr_of_mut!(SPI_BUFFER) };
     let di = SpiInterface::new(spi_device, dc, buffer);
 
     println!("terminal demo: mipidsi init (ST7796 320x480, BGR)");
@@ -182,7 +182,7 @@ fn run() -> anyhow::Result<()> {
         .display_size(W as u16, H as u16)
         .color_order(ColorOrder::Bgr)
         .invert_colors(ColorInversion::Inverted)
-        .orientation(Orientation::default())
+        .orientation(Orientation::default().flip_horizontal())
         .init(&mut FreeRtos)
         .map_err(|e| anyhow::anyhow!("init: {e:?}"))?;
 
