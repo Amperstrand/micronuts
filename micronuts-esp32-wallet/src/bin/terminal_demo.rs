@@ -186,30 +186,64 @@ fn run() -> anyhow::Result<()> {
         .init(&mut FreeRtos)
         .map_err(|e| anyhow::anyhow!("init: {e:?}"))?;
 
-    let mut screen = 0u8;
+    println!("TERMINAL READY");
+    use std::io::BufRead as _;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
     loop {
-        println!("terminal demo: screen {}", screen % 3);
-        match screen % 3 {
-            0 => {
-                draw_invoice(&mut display)?;
-                led.set(true, false, false);
-            }
-            1 => {
-                draw_paid(&mut display)?;
-                led.set(false, true, false);
-            }
-            _ => {
-                draw_wallet(&mut display)?;
-                led.set(false, false, true);
-            }
+        line.clear();
+        if stdin.read_line(&mut line).is_err() || line.trim().is_empty() {
+            continue;
         }
-        for _ in 0..60 {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        let t = line.trim();
+        let (cmd, rest) = t.split_once(' ').unwrap_or((t, ""));
+        match cmd {
+            "invoice" => {
+                let (amount, bolt11) = rest.split_once(' ').unwrap_or((rest, ""));
+                if bolt11.is_empty() {
+                    println!("ERR invoice <amount> <bolt11>");
+                    continue;
+                }
+                match draw_invoice_live(&mut display, amount, bolt11) {
+                    Ok(()) => {
+                        led.set(true, false, false);
+                        println!("OK invoice {amount}");
+                    }
+                    Err(e) => println!("ERR draw: {e}"),
+                }
+            }
+            "paid" => match draw_paid(&mut display) {
+                Ok(()) => {
+                    led.set(false, true, false);
+                    println!("OK paid {rest}");
+                }
+                Err(e) => println!("ERR draw: {e}"),
+            },
+            "wallet" => match draw_wallet(&mut display) {
+                Ok(()) => {
+                    led.set(false, false, true);
+                    println!("OK wallet");
+                }
+                Err(e) => println!("ERR draw: {e}"),
+            },
+            "demo" => {
+                for (f, (r, g, b)) in [
+                    (&draw_invoice as &dyn Fn(&mut Display) -> anyhow::Result<()>, (true, false, false)),
+                    (&draw_paid as &dyn Fn(&mut Display) -> anyhow::Result<()>, (false, true, false)),
+                    (&draw_wallet as &dyn Fn(&mut Display) -> anyhow::Result<()>, (false, false, true)),
+                ] {
+                    if let Err(e) = f(&mut display) {
+                        println!("ERR demo: {e}");
+                    }
+                    led.set(r, g, b);
+                    std::thread::sleep(std::time::Duration::from_millis(2500));
+                }
+                println!("OK demo");
+            }
+            _ => println!("ERR unknown (invoice|paid|wallet|demo)"),
         }
-        screen = screen.wrapping_add(1);
     }
 }
-
 fn clear(d: &mut Display) -> anyhow::Result<()> {
     wrap(d.fill_solid(&Rectangle::new(Point::new(0, 0), Size::new(W, H)), BLACK))
 }
@@ -313,6 +347,65 @@ fn draw_qr(d: &mut Display, top: i32) -> anyhow::Result<()> {
         Size::new(QR_SIZE * QR_SCALE, QR_SIZE * QR_SCALE),
     );
     wrap(d.fill_contiguous(&area, QrPx { row: 0, rep: 0, col: 0, k: 0 }))
+}
+
+fn draw_qr_live(d: &mut Display, top: i32, code: &qrcode::QrCode) -> anyhow::Result<()> {
+    let n = code.width() as u32;
+    let scale = (W - 32) / n;
+    let px_size = n * scale;
+    let x0 = ((W - px_size) / 2) as i32;
+    wrap(d.fill_solid(
+        &Rectangle::new(Point::new(x0 - 8, top - 8), Size::new(px_size + 16, px_size + 16)),
+        WHITE,
+    ))?;
+    struct LivePx<'a> {
+        code: &'a qrcode::QrCode,
+        n: u32,
+        scale: u32,
+        row: u32,
+        rep: u32,
+        col: u32,
+        k: u32,
+    }
+    impl Iterator for LivePx<'_> {
+        type Item = Rgb565;
+        fn next(&mut self) -> Option<Rgb565> {
+            if self.row >= self.n {
+                return None;
+            }
+            let dark = self.code[(self.col as usize, self.row as usize)] == qrcode::Color::Dark;
+            let px = if dark { BLACK } else { WHITE };
+            self.k += 1;
+            if self.k >= self.scale {
+                self.k = 0;
+                self.col += 1;
+                if self.col >= self.n {
+                    self.col = 0;
+                    self.rep += 1;
+                    if self.rep >= self.scale {
+                        self.rep = 0;
+                        self.row += 1;
+                        std::thread::yield_now();
+                    }
+                }
+            }
+            Some(px)
+        }
+    }
+    let area = Rectangle::new(Point::new(x0, top), Size::new(px_size, px_size));
+    wrap(d.fill_contiguous(&area, LivePx { code, n, scale, row: 0, rep: 0, col: 0, k: 0 }))
+}
+
+fn draw_invoice_live(d: &mut Display, amount: &str, bolt11: &str) -> anyhow::Result<()> {
+    let code = qrcode::QrCode::with_error_correction_level(bolt11.as_bytes(), qrcode::EcLevel::L)
+        .map_err(|e| anyhow::anyhow!("qr: {e:?}"))?;
+    clear(d)?;
+    header(d, "TOLLGATE")?;
+    body(d, 48, &format!("{amount} sats — scan to pay"))?;
+    draw_qr_live(d, 80, &code)?;
+    chip(d, 400, "AWAITING PAYMENT", BLACK, AMBER)?;
+    body(d, 444, "live invoice · rig-bridged")?;
+    Ok(())
 }
 
 fn draw_invoice(d: &mut Display) -> anyhow::Result<()> {

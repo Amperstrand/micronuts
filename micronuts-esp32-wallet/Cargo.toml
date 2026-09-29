@@ -20,7 +20,7 @@ path = "src/bin/terminal_demo.rs"
 required-features = ["display-cyd"]
 
 [features]
-display-cyd = ["dep:mipidsi", "dep:embedded-graphics"]
+display-cyd = ["dep:mipidsi", "dep:embedded-graphics", "dep:qrcode"]
 
 [dependencies]
 # House pins (micronuts-esp32-mint, bolty-rs apps/bolty-esp32).
@@ -38,6 +38,10 @@ serde_json = "1"
 # embedded-graphics on the house pins (bolty-rs apps/bolty-esp32).
 mipidsi = { version = "=0.9.0", optional = true }
 embedded-graphics = { version = "=0.8.2", optional = true }
+# Serial-umbilical terminal mode: on-device QR for LIVE invoices pushed
+# over the rig serial (this CYD's radio is dead silicon — the rig is the
+# network, micronuts#79).
+qrcode = { version = "0.14", default-features = false, optional = true }
 
 [build-dependencies]
 embuild = { version = "=0.32.0", features = ["espidf"] }
