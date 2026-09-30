@@ -26,6 +26,9 @@ required-features = ["display-cyd"]
 
 [features]
 display-cyd = ["dep:mipidsi", "dep:embedded-graphics", "dep:qrcode"]
+# M5StickC-Plus2 port (ST7789 135×240): same deps as display-cyd minus qrcode.
+# See docs/PORT-M5STICK.md for the pin map and build instructions.
+display-m5stick = ["dep:mipidsi", "dep:embedded-graphics"]
 
 [dependencies]
 # House pins (micronuts-esp32-mint, bolty-rs apps/bolty-esp32).
