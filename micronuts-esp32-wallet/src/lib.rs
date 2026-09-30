@@ -14,6 +14,7 @@
 
 use cashu_core_lite::store::{ProofStore, StoreError};
 pub mod http_transport;
+pub mod led_matrix;
 pub mod tollgate;
 pub mod wifi;
 

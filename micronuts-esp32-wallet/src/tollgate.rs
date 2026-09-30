@@ -452,6 +452,65 @@ impl TollgateClient {
         })
     }
 
+    /// Validate the discovered ad against the client acceptance rules:
+    /// kind 10021, a `price_per_step` in sats of at least 1 (the spec's
+    /// `min_steps >= 1` — a zero/negative price is a broken offer), and
+    /// a unit that is either absent or `sat` (Cashu/sat pricing only).
+    /// Mint-URL matching against the wallet is the caller's call — it
+    /// owns the configured mint.
+    pub fn ad_valid(&self) -> Result<&Discovery, TollgateError> {
+        let d = self
+            .discovery
+            .as_ref()
+            .ok_or(TollgateError::NotDiscovered)?;
+        if d.kind != 10021 {
+            return Err(TollgateError::Protocol(format!(
+                "discovery kind {} — not a TollGate offer (10021)",
+                d.kind
+            )));
+        }
+        let price = d
+            .price_sats
+            .ok_or(TollgateError::Protocol("no price_per_step tag".into()))?;
+        if price < 1 {
+            return Err(TollgateError::Protocol(format!(
+                "price_per_step {price} — below the 1-sat minimum"
+            )));
+        }
+        if let Some(unit) = &d.price_unit {
+            if unit != "sat" {
+                return Err(TollgateError::Protocol(format!(
+                    "price unit {unit:?} — Cashu/sat pricing only"
+                )));
+            }
+        }
+        Ok(d)
+    }
+
+    /// Live session allotment from `GET /usage` — the backend answers
+    /// plain text `<remaining_ms>/<total_ms>` (NutBar protocol fact;
+    /// `None` = no answer/session yet, i.e. not paid or gate down).
+    pub fn usage(&self) -> Result<Option<(u64, u64)>, TollgateError> {
+        let gateway = self.gateway()?;
+        let url = format!("http://{gateway}:{BACKEND_PORT}/usage");
+        let reply = http_exchange(Method::Get, &url, None, None, PROBE_BODY_CAP)?;
+        if !(200..300).contains(&reply.status) {
+            return Ok(None);
+        }
+        let body = String::from_utf8_lossy(&reply.body);
+        let (remaining, total) = body
+            .trim()
+            .split_once('/')
+            .ok_or_else(|| TollgateError::Protocol(format!("usage body {body:?}")))?
+        ;
+        let parse = |s: &str| {
+            s.trim()
+                .parse::<u64>()
+                .map_err(|_| TollgateError::Protocol(format!("usage number {s:?}")))
+        };
+        Ok(Some((parse(remaining)?, parse(total)?)))
+    }
+
     /// Last flow state + discovery summary for `tollgate status`.
     pub fn status(&self) -> String {
         match &self.discovery {

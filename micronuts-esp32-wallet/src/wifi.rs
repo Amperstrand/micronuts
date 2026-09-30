@@ -139,6 +139,25 @@ impl WifiManager {
         Ok(())
     }
 
+    /// Strongest OPEN network whose SSID starts with `prefix` — the
+    /// TollGate beacon pattern (`TollGate-<venue>`). TollGate portals
+    /// are open by design (OWE off — the m5stick port lesson); an
+    /// encrypted `TollGate-*` is not ours and is skipped.
+    pub fn scan_find_open(
+        &mut self,
+        prefix: &str,
+    ) -> Result<Option<(String, i8)>, WifiError> {
+        if !self.wifi.is_started()? {
+            self.wifi.start()?;
+        }
+        let mut aps = self.wifi.scan()?;
+        aps.sort_by(|a, b| b.signal_strength.cmp(&a.signal_strength));
+        Ok(aps
+            .iter()
+            .find(|ap| ap.ssid.starts_with(prefix) && ap.auth_method == Some(AuthMethod::None))
+            .map(|ap| (ap.ssid.to_string(), ap.signal_strength)))
+    }
+
     /// DHCP-lease gateway of the station interface. TollGate discovery
     /// targets the backend on the gateway — never a hardcoded address.
     pub fn gateway_ip(&self) -> Result<String, WifiError> {
