@@ -19,6 +19,11 @@ name = "terminal_demo"
 path = "src/bin/terminal_demo.rs"
 required-features = ["display-cyd"]
 
+[[bin]]
+name = "terminal_kiosk"
+path = "src/bin/terminal_kiosk.rs"
+required-features = ["display-cyd"]
+
 [features]
 display-cyd = ["dep:mipidsi", "dep:embedded-graphics", "dep:qrcode"]
 
