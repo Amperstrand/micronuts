@@ -24,6 +24,14 @@ name = "terminal_kiosk"
 path = "src/bin/terminal_kiosk.rs"
 required-features = ["display-cyd"]
 
+# M5 Atom (ESP32-PICO + 5x5 SK6812 on GPIO27) — the standing TollGate
+# client (the NutBar C firmware is decommissioned; micronuts is the only
+# embedded TollGate client). Scan-join-validate-pay-monitor loop, USB
+# serial token funding, PRTA TG_* event lines.
+[[bin]]
+name = "tollgate_atom"
+path = "src/bin/tollgate_atom.rs"
+
 [features]
 display-cyd = ["dep:mipidsi", "dep:embedded-graphics", "dep:qrcode"]
 # M5StickC-Plus2 port (ST7789 135×240): same deps as display-cyd minus qrcode.
