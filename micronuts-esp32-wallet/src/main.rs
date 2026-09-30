@@ -6,7 +6,10 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 // Env-only credentials (never committed): the esp32-mint pattern.
 const WIFI_SSID: Option<&str> = option_env!("MICRONUTS_WIFI_SSID");
 const WIFI_PASS: Option<&str> = option_env!("MICRONUTS_WIFI_PASS");
-    const MINT: &str = "http://192.168.13.221:8383";
+    const MINT: &str = match option_env!("MICRONUTS_MINT_URL") {
+        Some(m) => m,
+        None => "http://192.168.13.221:8383",
+    };
 
 use cashu_core_lite::store::ProofStore as _;
 use micronuts_esp32_wallet::{NvsProofStore, WALLET_KEY};
@@ -79,24 +82,32 @@ fn run() -> anyhow::Result<()> {
         }
     }
     if !joined {
-        anyhow::bail!("wifi: all join attempts failed");
+        // Rig rule (micronuts#79): the console must survive wifi failure —
+        // PRTA drives this device over labgrid serial and needs `wifi`
+        // diagnostics + retries even when the association is down.
+        println!("wifi: all join attempts failed — console continues (wifi cmd retries)");
+    } else {
+        println!("wifi connected");
     }
-    println!("wifi connected");
 
     // Full typed MintClient through the wallet-core wire protocol
     use cashu_core_lite::transport::MintClient as _;
     use micronuts_esp32_wallet::http_transport;
     use micronuts_wallet_core::engine::WalletEngine;
+    // Boot probes are diagnostics, not gates (micronuts#79 rig rule):
+    // an unreachable mint at boot must not kill the console.
     let mut mint = http_transport::esp_idf_mint_client(MINT);
-    let keys = mint.get_keys()?;
-    let total: usize = keys.keysets.iter().map(|ks| ks.keys.len()).sum();
-    println!(
-        "NUT-01 get_keys: {} keysets, {} keys total",
-        keys.keysets.len(),
-        total
-    );
-    let info = mint.get_info()?;
-    println!("NUT-06 get_info: {}", info.name.as_str());
+    match mint.get_keys() {
+        Ok(keys) => {
+            let total: usize = keys.keysets.iter().map(|ks| ks.keys.len()).sum();
+            println!("NUT-01 get_keys: {} keysets, {} keys total", keys.keysets.len(), total);
+        }
+        Err(e) => println!("NUT-01 get_keys: deferred ({e}) — mint unreachable at boot"),
+    }
+    match mint.get_info() {
+        Ok(info) => println!("NUT-06 get_info: {}", info.name.as_str()),
+        Err(e) => println!("NUT-06 get_info: deferred ({e})"),
+    }
 
     // Seed: generate on first boot, persist in NVS under its own key
     // ("seed") — the M1 smoke test keeps using the "wallet_blob" slot, so
@@ -126,18 +137,34 @@ fn run() -> anyhow::Result<()> {
     }
 
     // The full WalletEngine: money operations through the same
-    // code path as the host and wasm wallets.
-    let mut engine = {
+    // code path as the host and wasm wallets. Init failure (mint
+    // unreachable at boot — e.g. wifi still down) must NOT kill the
+    // console: micronuts#79 rig rule, labgrid drives this device over
+    // serial and needs diagnostics + retries. A stub engine with a blank
+    // mint keeps every command compilable; each prints its own error.
+    let engine_init = {
         use cashu_core_lite::transport::MintClient as _;
-        let transport = http_transport::esp_idf_mint_client(MINT);
-        // EspDefaultNvsPartition::take() yields the singleton once — the
-        // smoke store's clone is reused here instead of a second take
-        // (which aborts app_main with ESP_ERR_INVALID_STATE).
-        let store2 = NvsProofStore::new(store_partition.clone(), "engine_state", 32 * 1024)
-            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-        let engine_store_seed: [u8; 32] = seed_buf;
-        WalletEngine::new(MINT, transport, store2, engine_store_seed, Vec::new())
-            .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?
+        || {
+            let transport = http_transport::esp_idf_mint_client(MINT);
+            // EspDefaultNvsPartition::take() yields the singleton once — the
+            // smoke store's clone is reused here instead of a second take
+            // (which aborts app_main with ESP_ERR_INVALID_STATE).
+            let store2 = NvsProofStore::new(store_partition.clone(), "engine_state", 32 * 1024)
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            let engine_store_seed: [u8; 32] = seed_buf;
+            WalletEngine::new(MINT, transport, store2, engine_store_seed, Vec::new())
+                .map_err(|e| anyhow::anyhow!("engine: {e:?}"))
+        }
+    };
+    let mut engine = match engine_init() {
+        Ok(e) => e,
+        Err(e) => {
+            println!("engine init failed ({e:#}) — wallet commands error until reboot with mint reachable");
+            let stub_store = NvsProofStore::new(store_partition.clone(), "engine_state", 32 * 1024)
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            WalletEngine::new("", http_transport::esp_idf_mint_client(""), stub_store, seed_buf, Vec::new())
+                .map_err(|e| anyhow::anyhow!("engine stub: {e:?}"))?
+        }
     };
 
     // hostapd deauths a silent station (~30-60s inactivity) — and the
@@ -191,6 +218,19 @@ fn run() -> anyhow::Result<()> {
             }
         }
         let trimmed = line.trim();
+        if trimmed == "wifi" {
+            if let Err(e) = wifi.scan_dump() {
+                println!("wifi scan: {e}");
+            }
+            if let (Some(s), Some(p)) = (WIFI_SSID, WIFI_PASS) {
+                println!("wifi: retrying join to baked creds");
+                match wifi.connect(s, p) {
+                    Ok(()) => println!("wifi: joined"),
+                    Err(e) => println!("wifi retry: {e}"),
+                }
+            }
+            continue;
+        }
         match trimmed {
             "help" => {
                 println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status")

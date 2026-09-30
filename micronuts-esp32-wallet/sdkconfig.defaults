@@ -10,3 +10,8 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# Open-network association stability: OWE STA breaks open APs (bench
+# 2026-09-30: "authmode threshold ... impossible to connect to an AP with
+# authmode OWE" flaked every post-first join). Captive portals are open.
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
