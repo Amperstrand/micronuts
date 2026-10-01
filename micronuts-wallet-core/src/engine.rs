@@ -743,6 +743,16 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         if amount == 0 {
             return Err(CashuError::InvalidAmount);
         }
+
+        // Fast path: exact-amount proofs already in the wallet — no swap,
+        // no mint round-trip. Critical for pre-auth gated payments where
+        // the mint is unreachable (micronuts#79 bench 2026-09-30: every
+        // gated tollgate take failed at spend because compose_exact
+        // always swapped, and pre-auth NDS blocks the mint).
+        if let Some(exact) = self.wallet.try_spend_exact(amount)? {
+            return Ok(exact);
+        }
+
         let fee = self.swap_fee_hint(amount)?;
         let selected = self
             .wallet

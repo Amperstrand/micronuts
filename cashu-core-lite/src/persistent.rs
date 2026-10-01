@@ -247,6 +247,45 @@ where
     /// overshoot — exact change requires a NUT-03 swap by the caller).
     /// Persisted before the proofs leave the wallet; roll back a failed
     /// transfer with [`Self::undo_spend`].
+    /// Try to spend `amount` using proofs that sum EXACTLY to it — no
+    /// swap, no mint round-trip. Returns None if no such combination
+    /// exists. Critical for pre-auth gated payments (micronuts#79).
+    pub fn try_spend_exact(&mut self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+        #[cfg(not(feature = "std"))]
+        use alloc::vec;
+        if amount == 0 {
+            return Ok(None);
+        }
+
+        // Exact single proof
+        if let Some(idx) = self.proofs.iter().position(|p| p.amount == amount) {
+            let proof = self.proofs.remove(idx);
+            self.persist()?;
+            return Ok(Some(vec![proof]));
+        }
+
+        // Subset-sum: try pairs (covers the common pre-split case: a
+        // 1-sat target with a 1-sat proof, or a 2-sat target with two
+        // 1-sat proofs). Full NP subset-sum is overkill for a wallet.
+        let n = self.proofs.len();
+        if n >= 2 {
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    if self.proofs[i].amount + self.proofs[j].amount == amount {
+                        let hi = j;
+                        let lo = i;
+                        let b = self.proofs.remove(hi);
+                        let a = self.proofs.remove(lo);
+                        self.persist()?;
+                        return Ok(Some(vec![a, b]));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     pub fn spend(&mut self, amount: u64) -> Result<Vec<nut00::Proof>, CashuError> {
         if amount == 0 {
             return Err(CashuError::InvalidAmount);
@@ -579,3 +618,84 @@ pub struct MeltOutcome {
 
 /// Re-exported for doc links; `MemoryStore` is the reference `ProofStore`.
 pub type VolatileWallet<T> = PersistentWallet<T, MemoryStore>;
+
+
+#[cfg(all(test, feature = "std"))]
+mod exact_spend_tests {
+    use super::*;
+
+    /// Minimal MintClient stub — every method errors. `try_spend_exact`
+    /// never calls the mint (that is its entire point), so errors are
+    /// never observed by these tests.
+    struct StubTransport;
+    impl crate::transport::MintClient for StubTransport {
+        fn get_info(&mut self) -> Result<crate::nuts::nut06::MintInfo, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn get_keys(&mut self) -> Result<crate::nuts::nut01::KeysResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn get_keysets(&mut self) -> Result<crate::nuts::nut02::KeysetsResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_mint_quote(&mut self, _r: crate::nuts::nut04::MintQuoteRequest) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn get_mint_quote(&mut self, _id: &str) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_mint(&mut self, _r: crate::nuts::nut04::MintRequest) -> Result<crate::nuts::nut04::MintResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_swap(&mut self, _r: crate::nuts::nut03::SwapRequest) -> Result<crate::nuts::nut03::SwapResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_melt_quote(&mut self, _r: crate::nuts::nut05::MeltQuoteRequest) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn get_melt_quote(&mut self, _id: &str) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_melt(&mut self, _r: crate::nuts::nut05::MeltRequest) -> Result<crate::nuts::nut05::MeltResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_check_state(&mut self, _r: crate::nuts::nut07::CheckStateRequest) -> Result<crate::nuts::nut07::CheckStateResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn post_restore(&mut self, _r: crate::nuts::nut09::RestoreRequest) -> Result<crate::nuts::nut09::RestoreResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+    }
+
+    fn make_proof(amount: u64, nonce: u8) -> nut00::Proof {
+        nut00::Proof {
+            amount,
+            id: "ks1".to_string(),
+            secret: format!("{nonce:02x}"),
+            c: crate::keypair::PublicKey::from_bytes(&[2u8; 33]).expect("valid generator point"),
+            dleq: None,
+            witness: None,
+        }
+    }
+
+    fn wallet() -> PersistentWallet<StubTransport, MemoryStore> {
+        PersistentWallet::new("http://t.example", StubTransport, MemoryStore::new(), [0u8; 32]).unwrap()
+    }
+
+    /// Pre-fix regression (micronuts#79 bench 2026-09-30): every gated
+    /// tollgate pay failed because compose_exact always swapped — a mint
+    /// round-trip that pre-auth NDS blocks. try_spend_exact returns
+    /// exact-amount proofs with ZERO mint calls (the stub would panic
+    /// if any were made).
+    #[test]
+    fn try_spend_exact_single_proof() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(1, 1)]).unwrap();
+        let result = w.try_spend_exact(1).unwrap();
+        assert!(result.is_some(), "1-sat proof must be found for 1-sat target");
+        assert_eq!(result.unwrap()[0].amount, 1);
+    }
+
+    #[test]
+    fn try_spend_exact_pair() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(1, 1), make_proof(1, 2)]).unwrap();
+        let result = w.try_spend_exact(2).unwrap();
+        assert!(result.is_some(), "two 1-sat proofs must combine for 2-sat target");
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn try_spend_exact_none_when_no_match() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(4, 1)]).unwrap();
+        let result = w.try_spend_exact(1).unwrap();
+        assert!(result.is_none(), "4-sat proof alone cannot make exact 1");
+    }
+
+    #[test]
+    fn try_spend_exact_uses_and_removes_the_proof() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)]).unwrap();
+        let spent = w.try_spend_exact(1).unwrap().expect("exact 1 found");
+        assert_eq!(spent.len(), 1);
+        let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
+        assert_eq!(remaining, 4, "only the exact proof leaves the wallet");
+    }
+}
