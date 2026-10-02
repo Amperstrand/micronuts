@@ -15,6 +15,9 @@ pub enum Command {
     ScannerData = 0x12,
     ScannerHeal = 0x13,
     ScannerFactoryHeal = 0x14,
+    NfcPoll = 0x15,
+    NfcData = 0x16,
+    NfcHeal = 0x17,
 }
 
 impl Command {
@@ -30,6 +33,9 @@ impl Command {
             0x12 => Some(Command::ScannerData),
             0x13 => Some(Command::ScannerHeal),
             0x14 => Some(Command::ScannerFactoryHeal),
+            0x15 => Some(Command::NfcPoll),
+            0x16 => Some(Command::NfcData),
+            0x17 => Some(Command::NfcHeal),
             _ => None,
         }
     }
@@ -47,6 +53,8 @@ pub enum Status {
     ScannerNotConnected = 0x10,
     ScannerBusy = 0x11,
     NoScanData = 0x12,
+    NfcNotConnected = 0x20,
+    NfcNoTag = 0x21,
 }
 
 impl Status {

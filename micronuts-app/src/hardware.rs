@@ -37,7 +37,22 @@ pub trait Scanner {
     fn factory_heal(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
 }
 
-pub trait MicronutsHardware: Scanner {
+/// Contactless-reader capability mirroring [`Scanner`] for NFC tag
+/// capture. The PN7160-class transport lives behind this seam: the
+/// app-level commands (NfcPoll/NfcData/NfcHeal) and the token pipeline
+/// are transport-agnostic, so a board only implements these four
+/// methods to gain NFC token entry alongside the QR scanner.
+pub trait NfcReader {
+    fn nfc_is_connected(&self) -> bool;
+    /// Turn the field on and report whether a tag answered.
+    fn nfc_poll(&mut self) -> impl core::future::Future<Output = Result<bool, ScanError>>;
+    /// Read the tag's NDEF payload bytes (None: no tag in field).
+    fn nfc_read_ndef(&mut self) -> impl core::future::Future<Output = Option<alloc::vec::Vec<u8>>>;
+    /// Reader re-init after a wedge.
+    fn nfc_heal(&mut self) -> impl core::future::Future<Output = Result<(), ScanError>>;
+}
+
+pub trait MicronutsHardware: Scanner + NfcReader {
     type Display: DrawTarget<Color = Rgb888>;
 
     fn display(&mut self) -> &mut Self::Display;

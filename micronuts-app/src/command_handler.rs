@@ -83,51 +83,81 @@ pub async fn handle_command<H: MicronutsHardware>(
             Err(_) => Response::new(Status::ScannerNotConnected),
         },
         Command::ScannerData => match last_scan_data.take() {
-            Some(data) => {
-                let payload = qr::decode_qr(&data);
-                display::render_decoded_scan(hw.display(), &payload);
-                let type_byte: u8 = match &payload {
-                    qr::QrPayload::CashuV4 { .. } => 0x01,
-                    qr::QrPayload::CashuV3 { .. } => 0x02,
-                    qr::QrPayload::UrFragment { .. } => 0x03,
-                    qr::QrPayload::PlainText(_) => 0x00,
-                    qr::QrPayload::Binary(_) => 0x04,
-                };
-                // On-device reassembly for the CDC path (the Scanning
-                // screen feeds the same state-level assembler): a completed
-                // sequence imports the token immediately. UR responses
-                // carry the assembler outcome as a second byte so hosts can
-                // observe device-side progress: 0 accepted, 1 invalid
-                // (hash mismatch / bad index), 2 completed + imported,
-                // 3 completed but decode failed.
-                let mut asm_byte = 0u8;
-                match state.scan_assembler.process(&data) {
-                    crate::scanflow::ScanOutcome::TokenReady(token) => {
-                        asm_byte = 2;
-                        display::render_token_info(hw.display(), &token);
-                        state.imported_token = Some(token);
-                        state.swap_state = crate::state::SwapState::TokenImported;
-                    }
-                    crate::scanflow::ScanOutcome::InvalidFragment => asm_byte = 1,
-                    crate::scanflow::ScanOutcome::ShowPayload(crate::qr::QrPayload::PlainText(
-                        _,
-                    )) => asm_byte = 3,
-                    _ => {}
-                }
-                let max_payload = MAX_PAYLOAD_SIZE;
-                let header_len = if type_byte == 0x03 { 2 } else { 1 };
-                let total = header_len + data.len().min(max_payload - header_len);
-                let mut buf = alloc::vec![type_byte; total];
-                if type_byte == 0x03 {
-                    buf[1] = asm_byte;
-                }
-                buf[header_len..].copy_from_slice(&data[..total - header_len]);
-                Response::with_payload(Status::Ok, &buf)
-                    .unwrap_or_else(|| Response::new(Status::BufferOverflow))
-            }
+            Some(data) => classify_and_assemble(hw, state, &data),
             None => Response::new(Status::NoScanData),
         },
+        Command::NfcPoll => {
+            if !hw.nfc_is_connected() {
+                Response::new(Status::NfcNotConnected)
+            } else {
+                match hw.nfc_poll().await {
+                    Ok(tag_present) => Response::with_payload(Status::Ok, &[tag_present as u8])
+                        .unwrap_or_else(|| Response::new(Status::Error)),
+                    Err(_) => Response::new(Status::NfcNotConnected),
+                }
+            }
+        }
+        Command::NfcData => match hw.nfc_read_ndef().await {
+            Some(data) => classify_and_assemble(hw, state, &data),
+            None => Response::new(Status::NfcNoTag),
+        },
+        Command::NfcHeal => match hw.nfc_heal().await {
+            Ok(()) => Response::new(Status::Ok),
+            Err(_) => Response::new(Status::NfcNotConnected),
+        },
     }
+}
+
+/// Shared capture-transport completion — the QR scanner (ScannerData)
+/// and the NFC reader (NfcData) land here alike: classify the payload,
+/// render it, feed the state-level assembler, and answer with the
+/// ScannerData wire shape (type byte, optional assembler-outcome byte
+/// for UR fragments, then the raw payload). Both transports are a
+/// differential pair: identical payloads must import byte-identical
+/// tokens.
+fn classify_and_assemble<H: MicronutsHardware>(
+    hw: &mut H,
+    state: &mut FirmwareState,
+    data: &[u8],
+) -> Response {
+    let payload = qr::decode_qr(data);
+    display::render_decoded_scan(hw.display(), &payload);
+    let type_byte: u8 = match &payload {
+        qr::QrPayload::CashuV4 { .. } => 0x01,
+        qr::QrPayload::CashuV3 { .. } => 0x02,
+        qr::QrPayload::UrFragment { .. } => 0x03,
+        qr::QrPayload::PlainText(_) => 0x00,
+        qr::QrPayload::Binary(_) => 0x04,
+    };
+    // On-device reassembly for the CDC path (the Scanning screen feeds
+    // the same state-level assembler): a completed sequence imports the
+    // token immediately. UR responses carry the assembler outcome as a
+    // second byte so hosts can observe device-side progress: 0 accepted,
+    // 1 invalid (hash mismatch / bad index), 2 completed + imported,
+    // 3 completed but decode failed.
+    let mut asm_byte = 0u8;
+    match state.scan_assembler.process(data) {
+        crate::scanflow::ScanOutcome::TokenReady(token) => {
+            asm_byte = 2;
+            display::render_token_info(hw.display(), &token);
+            state.imported_token = Some(token);
+            state.swap_state = crate::state::SwapState::TokenImported;
+        }
+        crate::scanflow::ScanOutcome::InvalidFragment => asm_byte = 1,
+        crate::scanflow::ScanOutcome::ShowPayload(crate::qr::QrPayload::PlainText(_)) => {
+            asm_byte = 3
+        }
+        _ => {}
+    }
+    let header_len = if type_byte == 0x03 { 2 } else { 1 };
+    let total = header_len + data.len().min(MAX_PAYLOAD_SIZE - header_len);
+    let mut buf = alloc::vec![type_byte; total];
+    if type_byte == 0x03 {
+        buf[1] = asm_byte;
+    }
+    buf[header_len..].copy_from_slice(&data[..total - header_len]);
+    Response::with_payload(Status::Ok, &buf)
+        .unwrap_or_else(|| Response::new(Status::BufferOverflow))
 }
 
 fn handle_get_token_info(state: &mut FirmwareState) -> Response {
@@ -372,7 +402,7 @@ fn handle_get_proofs(state: &mut FirmwareState) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+    use crate::hardware::{MicronutsHardware, NfcReader, ScanError, Scanner, TouchPoint};
     use crate::protocol::{Command, Frame, Status};
     use crate::state::{FirmwareState, SwapState};
     use alloc::string::String;
@@ -416,6 +446,9 @@ mod tests {
         scan_data: Option<Vec<u8>>,
         heal_count: u32,
         factory_heal_count: u32,
+        nfc_connected: bool,
+        ndef_payload: Option<Vec<u8>>,
+        nfc_heal_count: u32,
     }
 
     impl MockHardware {
@@ -426,6 +459,9 @@ mod tests {
                 scan_data: None,
                 heal_count: 0,
                 factory_heal_count: 0,
+                nfc_connected: false,
+                ndef_payload: None,
+                nfc_heal_count: 0,
             }
         }
 
@@ -436,6 +472,22 @@ mod tests {
                 scan_data: None,
                 heal_count: 0,
                 factory_heal_count: 0,
+                nfc_connected: false,
+                ndef_payload: None,
+                nfc_heal_count: 0,
+            }
+        }
+
+        fn with_nfc(ndef: Vec<u8>) -> Self {
+            Self {
+                display: MockDisplay,
+                scanner_connected: false,
+                scan_data: None,
+                heal_count: 0,
+                factory_heal_count: 0,
+                nfc_connected: true,
+                ndef_payload: Some(ndef),
+                nfc_heal_count: 0,
             }
         }
     }
@@ -481,6 +533,33 @@ mod tests {
         async fn factory_heal(&mut self) -> Result<(), ScanError> {
             self.factory_heal_count += 1;
             if self.scanner_connected {
+                Ok(())
+            } else {
+                Err(ScanError::NotConnected)
+            }
+        }
+    }
+
+    impl NfcReader for MockHardware {
+        fn nfc_is_connected(&self) -> bool {
+            self.nfc_connected
+        }
+
+        async fn nfc_poll(&mut self) -> Result<bool, ScanError> {
+            if self.nfc_connected {
+                Ok(self.ndef_payload.is_some())
+            } else {
+                Err(ScanError::NotConnected)
+            }
+        }
+
+        async fn nfc_read_ndef(&mut self) -> Option<Vec<u8>> {
+            self.ndef_payload.take()
+        }
+
+        async fn nfc_heal(&mut self) -> Result<(), ScanError> {
+            self.nfc_heal_count += 1;
+            if self.nfc_connected {
                 Ok(())
             } else {
                 Err(ScanError::NotConnected)
@@ -618,6 +697,164 @@ mod tests {
         let amount = u64::from_be_bytes(p[off..off + 8].try_into().unwrap());
         let proofs = u32::from_be_bytes(p[off + 8..off + 12].try_into().unwrap());
         assert_eq!((amount, proofs), (10, 2));
+    }
+
+    #[tokio::test]
+    async fn nfc_poll_reports_tag_present() {
+        let mut hw = MockHardware::with_nfc(b"cashuBxyz".to_vec());
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcPoll, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(resp.payload(), &[0x01]);
+    }
+
+    #[tokio::test]
+    async fn nfc_poll_reports_no_tag() {
+        let mut hw = MockHardware::with_nfc(Vec::new());
+        hw.ndef_payload = None;
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcPoll, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(resp.payload(), &[0x00]);
+    }
+
+    #[tokio::test]
+    async fn nfc_poll_reports_reader_absent() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcPoll, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::NfcNotConnected);
+    }
+
+    #[tokio::test]
+    async fn nfc_data_reports_no_tag() {
+        let mut hw = MockHardware::with_nfc(Vec::new());
+        hw.ndef_payload = None;
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcData, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::NfcNoTag);
+        assert!(state.imported_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn nfc_data_returns_plain_text_classified() {
+        let mut hw = MockHardware::with_nfc(b"just some text".to_vec());
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcData, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(resp.payload()[0], 0x00);
+        assert_eq!(&resp.payload()[1..], b"just some text");
+        assert!(state.imported_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn nfc_data_imports_token() {
+        let wire = cashu_core_lite::encode_token_wire(&sample_token())
+            .unwrap()
+            .into_bytes();
+        let mut hw = MockHardware::with_nfc(wire);
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcData, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(resp.payload()[0], 0x01);
+        assert_eq!(state.swap_state, SwapState::TokenImported);
+        assert!(state.imported_token.is_some());
+    }
+
+    #[tokio::test]
+    async fn nfc_data_reassembles_ur_and_imports_token() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+        let wire = cashu_core_lite::encode_token_wire(&sample_token()).unwrap();
+        let (a, b) = wire.split_at(wire.len() / 2);
+        let hash = "deadbeef";
+        for (idx, chunk) in [(1usize, a), (2usize, b)] {
+            hw.ndef_payload = Some(format!("ur:bytes/{}-2/{}/{}", idx, hash, chunk).into_bytes());
+            let resp = handle_command(Command::NfcData, &[], &mut state, &mut hw, &mut None).await;
+            assert_eq!(resp.status, Status::Ok);
+            if idx == 1 {
+                assert!(
+                    state.imported_token.is_none(),
+                    "no import before the sequence completes"
+                );
+            }
+        }
+
+        assert_eq!(state.swap_state, SwapState::TokenImported);
+    }
+
+    #[tokio::test]
+    async fn nfc_and_qr_paths_import_identical_tokens() {
+        let wire = cashu_core_lite::encode_token_wire(&sample_token()).unwrap();
+
+        let mut hw_qr = MockHardware::new();
+        let mut state_qr = FirmwareState::new();
+        let mut last_scan = Some(wire.clone().into_bytes());
+        let r_qr = handle_command(
+            Command::ScannerData,
+            &[],
+            &mut state_qr,
+            &mut hw_qr,
+            &mut last_scan,
+        )
+        .await;
+        assert_eq!(r_qr.status, Status::Ok);
+        assert_eq!(state_qr.swap_state, SwapState::TokenImported);
+
+        let mut hw_nfc = MockHardware::with_nfc(wire.into_bytes());
+        let mut state_nfc = FirmwareState::new();
+        let r_nfc = handle_command(
+            Command::NfcData,
+            &[],
+            &mut state_nfc,
+            &mut hw_nfc,
+            &mut None,
+        )
+        .await;
+        assert_eq!(r_nfc.status, Status::Ok);
+        assert_eq!(state_nfc.swap_state, SwapState::TokenImported);
+
+        // Differential invariant: both capture transports converge on
+        // byte-identical wire responses and byte-identical tokens.
+        assert_eq!(r_qr.payload(), r_nfc.payload());
+        let t_qr = state_qr.imported_token.as_ref().unwrap();
+        let t_nfc = state_nfc.imported_token.as_ref().unwrap();
+        assert_eq!(
+            cashu_core_lite::encode_token(t_qr).unwrap(),
+            cashu_core_lite::encode_token(t_nfc).unwrap()
+        );
+        assert_eq!(t_qr.mint, t_nfc.mint);
+        assert_eq!(t_qr.unit, t_nfc.unit);
+        assert_eq!(t_qr.total_amount(), t_nfc.total_amount());
+        assert_eq!(t_qr.proof_count(), t_nfc.proof_count());
+    }
+
+    #[tokio::test]
+    async fn nfc_heal_reinits_reader() {
+        let mut hw = MockHardware::with_nfc(Vec::new());
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcHeal, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::Ok);
+        assert_eq!(
+            hw.nfc_heal_count, 1,
+            "heal must issue exactly one reader re-init"
+        );
+    }
+
+    #[tokio::test]
+    async fn nfc_heal_reports_reader_absent() {
+        let mut hw = MockHardware::new();
+        let mut state = FirmwareState::new();
+
+        let resp = handle_command(Command::NfcHeal, &[], &mut state, &mut hw, &mut None).await;
+        assert_eq!(resp.status, Status::NfcNotConnected);
     }
 
     #[tokio::test]

@@ -18,7 +18,7 @@ pub mod util;
 #[cfg(any(test, feature = "std"))]
 pub mod test_util;
 
-pub use hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+pub use hardware::{MicronutsHardware, NfcReader, ScanError, Scanner, TouchPoint};
 
 enum AppScreen {
     Home,
@@ -80,6 +80,7 @@ pub async fn run<H: MicronutsHardware>(hw: &mut H) -> ! {
                         protocol::Command::ImportToken
                         | protocol::Command::ScannerTrigger
                         | protocol::Command::ScannerData
+                        | protocol::Command::NfcData
                         | protocol::Command::GetBlinded
                         | protocol::Command::SendSignatures => hw.swap_buffers(),
                         _ => {}

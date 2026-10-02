@@ -15,7 +15,7 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::Sdl;
 
 use micronuts_app::display::{HEIGHT, WIDTH};
-use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+use micronuts_app::hardware::{MicronutsHardware, NfcReader, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
 
 const SDL_RGB888_BYTES_PER_PIXEL: usize = 3;
@@ -284,6 +284,38 @@ impl Scanner for MockHardware {
 
     fn debug_dump_settings(&mut self) {
         println!("[SCANNER] debug_dump_settings (no-op in simulator)");
+    }
+
+    async fn deep_sleep_reboot(&mut self) -> bool {
+        println!("[SCANNER] deep_sleep_reboot (no-op in simulator)");
+        true
+    }
+
+    async fn reinit_scanner(&mut self) -> Result<(), ScanError> {
+        Ok(())
+    }
+
+    async fn factory_heal(&mut self) -> Result<(), ScanError> {
+        Ok(())
+    }
+}
+
+impl NfcReader for MockHardware {
+    fn nfc_is_connected(&self) -> bool {
+        false
+    }
+
+    async fn nfc_poll(&mut self) -> Result<bool, ScanError> {
+        println!("[NFC] poll (no reader in simulator)");
+        Err(ScanError::NotConnected)
+    }
+
+    async fn nfc_read_ndef(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
+    async fn nfc_heal(&mut self) -> Result<(), ScanError> {
+        Ok(())
     }
 }
 
