@@ -148,6 +148,10 @@ impl WifiManager {
         prefix: &str,
     ) -> Result<Option<(String, i8)>, WifiError> {
         if !self.wifi.is_started()? {
+            // esp_wifi_scan_start fails with ESP_FAIL in WIFI_MODE_NULL;
+            // the driver reaches scan only after a Client config is set.
+            self.wifi
+                .set_configuration(&Configuration::Client(ClientConfiguration::default()))?;
             self.wifi.start()?;
         }
         let mut aps = self.wifi.scan()?;
