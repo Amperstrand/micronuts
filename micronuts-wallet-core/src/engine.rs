@@ -744,15 +744,6 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             return Err(CashuError::InvalidAmount);
         }
 
-        // Fast path: exact-amount proofs already in the wallet — no swap,
-        // no mint round-trip. Critical for pre-auth gated payments where
-        // the mint is unreachable (micronuts#79 bench 2026-09-30: every
-        // gated tollgate take failed at spend because compose_exact
-        // always swapped, and pre-auth NDS blocks the mint).
-        if let Some(exact) = self.wallet.try_spend_exact(amount)? {
-            return Ok(exact);
-        }
-
         let fee = self.swap_fee_hint(amount)?;
         let selected = self
             .wallet
@@ -764,20 +755,28 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         let mut amounts = send_amounts.clone();
         amounts.extend(nut00::decompose_amount(keep));
 
-        let fresh = match self.wallet.swap_deterministic(
+        match self.wallet.swap_deterministic(
             selected.clone(),
             &amounts,
             &self.keyset_id,
             &self.keys,
         ) {
-            Ok(fresh) => fresh,
+            Ok(fresh) => Ok(fresh.into_iter().take(send_amounts.len()).collect()),
             Err(err) => {
                 let _ = self.wallet.undo_spend(selected);
-                return Err(err);
+                // Offline fallback (#79): pre-auth gated networks block the
+                // mint, so the swap cannot run — hand over an exact-amount
+                // subset of the held proofs instead. Online, the swap stays
+                // first: it marks the spent secrets at the mint, which the
+                // restore/reconcile contract on other devices depends on.
+                if matches!(err, CashuError::Transport(_)) {
+                    if let Some(exact) = self.wallet.try_spend_exact(amount)? {
+                        return Ok(exact);
+                    }
+                }
+                Err(err)
             }
-        };
-
-        Ok(fresh.into_iter().take(send_amounts.len()).collect())
+        }
     }
 
     /// NUT-08 fee estimate for the number of inputs a `spend(amount)` would
