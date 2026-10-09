@@ -12,5 +12,11 @@ paths = [
 ]
 
 [[allowlists]]
+description = "Emitter token corpus (#78): bench-proven tokens from the PRTA lab minter (192.168.13.x, no custody value) plus envelopes synthesized around them with dummy C points. generic-api-key fires on the 'token:' field name + base64 entropy — byte-exact test material by design"
+paths = [
+  '''micronuts-wallet-core/tests/token_corpus\.rs''',
+]
+
+[[allowlists]]
 description = "tools/hil/rig.py names the labgrid board alias with a *_KEY constant; generic-api-key fires on the name + literal. The value is a board name, not a credential (allowlist covers the pre-allow-comment history)"
 regexes = ['''stm32f469i-disco''']
