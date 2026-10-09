@@ -36,6 +36,7 @@ impl EspIdfTransport {
                 // 2026-09-27: `connect` wedged the console thread forever
                 // on retrying SYNs) must fail loudly, not stall stdin.
                 timeout: Some(core::time::Duration::from_secs(10)),
+                crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
                 ..Default::default()
             },
         }

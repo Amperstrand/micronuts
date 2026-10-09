@@ -102,7 +102,6 @@ fn main() -> anyhow::Result<()> {
     leds.render().ok();
 
     let modem = peripherals.modem;
-    let sys_loop = esp_idf_svc::eventloop::EspSystemEventLoop::take()?;
     let mut wifi = WifiManager::new(modem, store_partition.clone())?;
 
     // Seed: generate on first boot, persist under "seed" (main.rs
