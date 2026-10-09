@@ -484,6 +484,12 @@ pub(super) fn has_duplicate_x_coordinates(pubkeys: &[PublicKey]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::format;
+    #[cfg(not(feature = "std"))]
+    use alloc::string::ToString;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     const DATA_PUBKEY: &str = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7";
 

@@ -157,3 +157,20 @@ pgrep -af "micronuts\|mint_server" | grep -v grep
    them by unit name instead of pgrep archaeology.
 2. The session and its helpers die together: teardown belongs on the
    session exit checklist, after the last assertion.
+
+## CYD (ESP32-3248S035) hardware rules
+
+**Never `erase_flash` this board without first dumping the NVS partition**
+(`esptool read-flash 0x9000 0x10000`). This chip **cannot regenerate RF
+calibration data after an NVS wipe** — the factory `cal_data`/`cal_mac`/
+`cal_version` blobs in the `nvs.net80211` namespace are mandatory. A full
+erase destroys them; every subsequent build fails at `esp_wifi_start` with
+`ESP_FAIL` regardless of code, partition layout, or credentials.
+
+Recovery: restore the known-good NVS region from a pre-erase backup.
+Gold copies live in `conwrt-bench/data/bench/cyd-esp-fail-20260929/`
+(nvs-knowngood-20260927.bin, nvs-recovered-20260930.bin). App-only flash
+at `0x20000` is always safe.
+
+Known hardware quirks: touch controller absent on this unit; ch8 (upper
+2.4GHz) association fails (calibration artifact — ch1 portals join fine).
