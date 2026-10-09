@@ -15,7 +15,7 @@ use anyhow::{bail, Context, Result};
 use cashu_core_lite::nuts::nut00;
 use cashu_core_lite::{blind_message, decode_token, Proof, PublicKey, TokenV4, TokenV4Token};
 use micronuts_app::command_handler::handle_command;
-use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+use micronuts_app::hardware::{MicronutsHardware, NfcReader, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Command, Frame, Response, Status};
 use micronuts_app::state::FirmwareState;
 use rand::RngCore;
@@ -94,6 +94,21 @@ impl Scanner for TestHardware {
         Ok(())
     }
     async fn factory_heal(&mut self) -> Result<(), ScanError> {
+        Ok(())
+    }
+}
+
+impl NfcReader for TestHardware {
+    fn nfc_is_connected(&self) -> bool {
+        false
+    }
+    async fn nfc_poll(&mut self) -> Result<bool, ScanError> {
+        Err(ScanError::NotConnected)
+    }
+    async fn nfc_read_ndef(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+    async fn nfc_heal(&mut self) -> Result<(), ScanError> {
         Ok(())
     }
 }

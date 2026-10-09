@@ -20,10 +20,12 @@ use crate::mint_wire::{JsonTransport, WireMintClient};
 /// signut both send `access-control-allow-origin: *`).
 pub type FetchMintClient = WireMintClient<XhrTransport>;
 
-impl FetchMintClient {
-    pub fn new(base_url: &str) -> Self {
-        WireMintClient::with_transport(base_url, XhrTransport)
-    }
+/// Build a client for `base_url` — mirrors `http_mint_client` on native.
+/// A free function, not `FetchMintClient::new`, because `WireMintClient`
+/// lives in wallet-core: an inherent impl through the alias would be an
+/// impl on a foreign type (E0116).
+pub fn fetch_mint_client(base_url: &str) -> FetchMintClient {
+    WireMintClient::with_transport(base_url, XhrTransport)
 }
 
 /// Single-shot synchronous XHR transport. Stateless; `Clone` is a no-op.

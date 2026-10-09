@@ -17,7 +17,7 @@ use sha2::Digest;
 
 use gm65_scanner::ScannerDriver;
 
-use micronuts_app::hardware::{MicronutsHardware, ScanError, Scanner, TouchPoint};
+use micronuts_app::hardware::{MicronutsHardware, NfcReader, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Frame, FrameDecoder, Response, MAX_PAYLOAD_SIZE};
 
 use crate::qr::Gm65ScannerAsync;
@@ -415,5 +415,23 @@ impl MicronutsHardware for FirmwareHardware {
 
     async fn delay_ms(&mut self, ms: u32) {
         embassy_time::Timer::after(Duration::from_millis(ms as u64)).await;
+    }
+}
+
+impl NfcReader for FirmwareHardware {
+    fn nfc_is_connected(&self) -> bool {
+        false
+    }
+
+    async fn nfc_poll(&mut self) -> Result<bool, ScanError> {
+        Err(ScanError::NotConnected)
+    }
+
+    async fn nfc_read_ndef(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+
+    async fn nfc_heal(&mut self) -> Result<(), ScanError> {
+        Err(ScanError::NotConnected)
     }
 }

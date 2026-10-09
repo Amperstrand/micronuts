@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 
 use micronuts_app::command_handler::handle_command;
 use micronuts_app::display::{self, HEIGHT, WIDTH};
-use micronuts_app::hardware::{ScanError, Scanner, TouchPoint};
+use micronuts_app::hardware::{NfcReader, ScanError, Scanner, TouchPoint};
 use micronuts_app::protocol::{Command, Frame, Response, Status};
 use micronuts_app::state::FirmwareState;
 
@@ -157,6 +157,21 @@ impl Scanner for JourneyHardware {
         Ok(())
     }
     async fn factory_heal(&mut self) -> Result<(), ScanError> {
+        Ok(())
+    }
+}
+
+impl NfcReader for JourneyHardware {
+    fn nfc_is_connected(&self) -> bool {
+        false
+    }
+    async fn nfc_poll(&mut self) -> Result<bool, ScanError> {
+        Err(ScanError::NotConnected)
+    }
+    async fn nfc_read_ndef(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+    async fn nfc_heal(&mut self) -> Result<(), ScanError> {
         Ok(())
     }
 }

@@ -115,6 +115,11 @@ Binary framing: `[Status:1][Len:2][Payload:N]`
 | ScannerStatus | 0x10 | empty | connected, initialized, model |
 | ScannerTrigger | 0x11 | empty | Status |
 | ScannerData | 0x12 | empty | raw scan data |
+| ScannerHeal | 0x13 | empty | Status |
+| ScannerFactoryHeal | 0x14 | empty | Status |
+| NfcPoll | 0x15 | empty | Status + tag-present byte (NfcNotConnected until a reader lands) |
+| NfcData | 0x16 | empty | type byte [+ assembler byte] + raw NDEF payload (ScannerData shape) |
+| NfcHeal | 0x17 | empty | Status |
 
 ## Memory Layout
 

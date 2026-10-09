@@ -437,7 +437,7 @@ impl Worker {
         let client = if active == crate::demo_mint::DEMO_MINT_URL {
             ClientForMint::Demo(crate::demo_mint::DemoMintClient::new())
         } else {
-            ClientForMint::Fetch(crate::wasm_http::FetchMintClient::new(&active))
+            ClientForMint::Fetch(crate::wasm_http::fetch_mint_client(&active))
         };
         let engine = WalletEngine::with_pending(
             &active,
@@ -840,7 +840,7 @@ fn worker_add_mint(worker: &mut Worker, url: String) {
                 "demo mint already active",
             )));
         }
-        let mut probe = crate::wasm_http::FetchMintClient::new(&url);
+        let mut probe = crate::wasm_http::fetch_mint_client(&url);
         cashu_core_lite::transport::MintClient::get_info(&mut probe)
     })();
     match info {
