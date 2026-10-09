@@ -243,49 +243,93 @@ where
         Ok(minted)
     }
 
-    /// Select and remove proofs covering `amount` (largest-first, may
-    /// overshoot — exact change requires a NUT-03 swap by the caller).
-    /// Persisted before the proofs leave the wallet; roll back a failed
-    /// transfer with [`Self::undo_spend`].
-    /// Try to spend `amount` using proofs that sum EXACTLY to it — no
-    /// swap, no mint round-trip. Returns None if no such combination
-    /// exists. Critical for pre-auth gated payments (micronuts#79).
-    pub fn try_spend_exact(&mut self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+    /// Spend `amount` using proofs that sum EXACTLY to it — no swap, no
+    /// mint round-trip. Returns `None` when no combination exists.
+    /// Critical for pre-auth gated payments (micronuts#79): power-of-two
+    /// denominations make typical targets 3-proof sums (21 = 16+4+1), so
+    /// this searches any subset size, not just singles and pairs.
+    pub fn try_spend_exact(
+        &mut self,
+        amount: u64,
+    ) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
         #[cfg(not(feature = "std"))]
         use alloc::vec;
+
         if amount == 0 {
             return Ok(None);
         }
 
-        // Exact single proof
-        if let Some(idx) = self.proofs.iter().position(|p| p.amount == amount) {
-            let proof = self.proofs.remove(idx);
-            self.persist()?;
-            return Ok(Some(vec![proof]));
+        let mut order: Vec<usize> = (0..self.proofs.len()).collect();
+        order.sort_by(|&a, &b| self.proofs[b].amount.cmp(&self.proofs[a].amount));
+        let amounts: Vec<u64> = order.iter().map(|&i| self.proofs[i].amount).collect();
+
+        // Suffix sums (saturating: proof amounts are audited elsewhere)
+        // prune branches whose whole tail cannot reach `remaining`.
+        let mut suffix = vec![0u64; amounts.len() + 1];
+        for k in (0..amounts.len()).rev() {
+            suffix[k] = suffix[k + 1].saturating_add(amounts[k]);
         }
 
-        // Subset-sum: try pairs (covers the common pre-split case: a
-        // 1-sat target with a 1-sat proof, or a 2-sat target with two
-        // 1-sat proofs). Full NP subset-sum is overkill for a wallet.
-        let n = self.proofs.len();
-        if n >= 2 {
-            for i in 0..n {
-                for j in (i + 1)..n {
-                    if self.proofs[i].amount + self.proofs[j].amount == amount {
-                        let hi = j;
-                        let lo = i;
-                        let b = self.proofs.remove(hi);
-                        let a = self.proofs.remove(lo);
-                        self.persist()?;
-                        return Ok(Some(vec![a, b]));
-                    }
-                }
+        // Adversarial proof sets must not wedge an embedded wallet: past
+        // the node cap the search gives up and the caller falls back to
+        // the swap path — exactly the pre-this-function behavior.
+        const NODE_CAP: u32 = 100_000;
+
+        fn dfs(
+            amounts: &[u64],
+            suffix: &[u64],
+            start: usize,
+            remaining: u64,
+            chosen: &mut Vec<usize>,
+            nodes: &mut u32,
+        ) -> bool {
+            if remaining == 0 {
+                return true;
             }
+            if *nodes == NODE_CAP || suffix[start] < remaining {
+                return false;
+            }
+            let mut last: Option<u64> = None;
+            for i in start..amounts.len() {
+                let coin = amounts[i];
+                if last == Some(coin) {
+                    continue;
+                }
+                last = Some(coin);
+                if coin > remaining {
+                    continue;
+                }
+                *nodes += 1;
+                chosen.push(i);
+                if dfs(amounts, suffix, i + 1, remaining - coin, chosen, nodes) {
+                    return true;
+                }
+                chosen.pop();
+            }
+            false
         }
 
-        Ok(None)
+        let mut chosen: Vec<usize> = Vec::new();
+        let mut nodes: u32 = 0;
+        if !dfs(&amounts, &suffix, 0, amount, &mut chosen, &mut nodes) {
+            return Ok(None);
+        }
+
+        // Highest original index first so earlier removals stay valid.
+        let mut picked: Vec<usize> = chosen.iter().map(|&k| order[k]).collect();
+        picked.sort_unstable();
+        let mut spent = Vec::with_capacity(picked.len());
+        for idx in picked.into_iter().rev() {
+            spent.push(self.proofs.remove(idx));
+        }
+        self.persist()?;
+        Ok(Some(spent))
     }
 
+    /// Select and remove proofs covering `amount` (largest-first, may
+    /// overshoot — exact change requires a NUT-03 swap by the caller).
+    /// Persisted before the proofs leave the wallet; roll back a failed
+    /// transfer with [`Self::undo_spend`].
     pub fn spend(&mut self, amount: u64) -> Result<Vec<nut00::Proof>, CashuError> {
         if amount == 0 {
             return Err(CashuError::InvalidAmount);
@@ -619,7 +663,6 @@ pub struct MeltOutcome {
 /// Re-exported for doc links; `MemoryStore` is the reference `ProofStore`.
 pub type VolatileWallet<T> = PersistentWallet<T, MemoryStore>;
 
-
 #[cfg(all(test, feature = "std"))]
 mod exact_spend_tests {
     use super::*;
@@ -629,18 +672,69 @@ mod exact_spend_tests {
     /// never observed by these tests.
     struct StubTransport;
     impl crate::transport::MintClient for StubTransport {
-        fn get_info(&mut self) -> Result<crate::nuts::nut06::MintInfo, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn get_keys(&mut self) -> Result<crate::nuts::nut01::KeysResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn get_keysets(&mut self) -> Result<crate::nuts::nut02::KeysetsResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_mint_quote(&mut self, _r: crate::nuts::nut04::MintQuoteRequest) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn get_mint_quote(&mut self, _id: &str) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_mint(&mut self, _r: crate::nuts::nut04::MintRequest) -> Result<crate::nuts::nut04::MintResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_swap(&mut self, _r: crate::nuts::nut03::SwapRequest) -> Result<crate::nuts::nut03::SwapResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_melt_quote(&mut self, _r: crate::nuts::nut05::MeltQuoteRequest) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn get_melt_quote(&mut self, _id: &str) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_melt(&mut self, _r: crate::nuts::nut05::MeltRequest) -> Result<crate::nuts::nut05::MeltResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_check_state(&mut self, _r: crate::nuts::nut07::CheckStateRequest) -> Result<crate::nuts::nut07::CheckStateResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
-        fn post_restore(&mut self, _r: crate::nuts::nut09::RestoreRequest) -> Result<crate::nuts::nut09::RestoreResponse, CashuError> { Err(CashuError::Protocol("stub".into())) }
+        fn get_info(&mut self) -> Result<crate::nuts::nut06::MintInfo, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn get_keys(&mut self) -> Result<crate::nuts::nut01::KeysResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn get_keysets(&mut self) -> Result<crate::nuts::nut02::KeysetsResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_mint_quote(
+            &mut self,
+            _r: crate::nuts::nut04::MintQuoteRequest,
+        ) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn get_mint_quote(
+            &mut self,
+            _id: &str,
+        ) -> Result<crate::nuts::nut04::MintQuoteResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_mint(
+            &mut self,
+            _r: crate::nuts::nut04::MintRequest,
+        ) -> Result<crate::nuts::nut04::MintResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_swap(
+            &mut self,
+            _r: crate::nuts::nut03::SwapRequest,
+        ) -> Result<crate::nuts::nut03::SwapResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_melt_quote(
+            &mut self,
+            _r: crate::nuts::nut05::MeltQuoteRequest,
+        ) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn get_melt_quote(
+            &mut self,
+            _id: &str,
+        ) -> Result<crate::nuts::nut05::MeltQuoteResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_melt(
+            &mut self,
+            _r: crate::nuts::nut05::MeltRequest,
+        ) -> Result<crate::nuts::nut05::MeltResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_check_state(
+            &mut self,
+            _r: crate::nuts::nut07::CheckStateRequest,
+        ) -> Result<crate::nuts::nut07::CheckStateResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
+        fn post_restore(
+            &mut self,
+            _r: crate::nuts::nut09::RestoreRequest,
+        ) -> Result<crate::nuts::nut09::RestoreResponse, CashuError> {
+            Err(CashuError::Protocol("stub".into()))
+        }
     }
 
     fn make_proof(amount: u64, nonce: u8) -> nut00::Proof {
@@ -655,7 +749,13 @@ mod exact_spend_tests {
     }
 
     fn wallet() -> PersistentWallet<StubTransport, MemoryStore> {
-        PersistentWallet::new("http://t.example", StubTransport, MemoryStore::new(), [0u8; 32]).unwrap()
+        PersistentWallet::new(
+            "http://t.example",
+            StubTransport,
+            MemoryStore::new(),
+            [0u8; 32],
+        )
+        .unwrap()
     }
 
     /// Pre-fix regression (micronuts#79 bench 2026-09-30): every gated
@@ -668,16 +768,23 @@ mod exact_spend_tests {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1)]).unwrap();
         let result = w.try_spend_exact(1).unwrap();
-        assert!(result.is_some(), "1-sat proof must be found for 1-sat target");
+        assert!(
+            result.is_some(),
+            "1-sat proof must be found for 1-sat target"
+        );
         assert_eq!(result.unwrap()[0].amount, 1);
     }
 
     #[test]
     fn try_spend_exact_pair() {
         let mut w = wallet();
-        w.add_proofs(vec![make_proof(1, 1), make_proof(1, 2)]).unwrap();
+        w.add_proofs(vec![make_proof(1, 1), make_proof(1, 2)])
+            .unwrap();
         let result = w.try_spend_exact(2).unwrap();
-        assert!(result.is_some(), "two 1-sat proofs must combine for 2-sat target");
+        assert!(
+            result.is_some(),
+            "two 1-sat proofs must combine for 2-sat target"
+        );
         assert_eq!(result.unwrap().len(), 2);
     }
 
@@ -692,10 +799,52 @@ mod exact_spend_tests {
     #[test]
     fn try_spend_exact_uses_and_removes_the_proof() {
         let mut w = wallet();
-        w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)]).unwrap();
+        w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)])
+            .unwrap();
         let spent = w.try_spend_exact(1).unwrap().expect("exact 1 found");
         assert_eq!(spent.len(), 1);
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
         assert_eq!(remaining, 4, "only the exact proof leaves the wallet");
+    }
+
+    /// The case pairs-only search missed (review finding on this PR): a
+    /// 21-sat wallet in canonical power-of-two denominations needs all
+    /// three proofs. This is the terminal demo's own invoice amount.
+    #[test]
+    fn try_spend_exact_three_proof_power_of_two() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(16, 1), make_proof(4, 2), make_proof(1, 3)])
+            .unwrap();
+        let spent = w.try_spend_exact(21).unwrap().expect("16+4+1 must combine");
+        let sum: u64 = spent.iter().map(|p| p.amount).sum();
+        assert_eq!(sum, 21);
+        assert_eq!(spent.len(), 3);
+        assert!(w.proofs().is_empty(), "all three proofs leave the wallet");
+    }
+
+    #[test]
+    fn try_spend_exact_skips_duplicate_coin_subtrees() {
+        let mut w = wallet();
+        w.add_proofs(vec![
+            make_proof(1, 1),
+            make_proof(1, 2),
+            make_proof(1, 3),
+            make_proof(2, 4),
+        ])
+        .unwrap();
+        let spent = w.try_spend_exact(3).unwrap().expect("2+1 must combine");
+        let sum: u64 = spent.iter().map(|p| p.amount).sum();
+        assert_eq!(sum, 3);
+        assert_eq!(spent.len(), 2, "picks the 2-sat proof plus one 1-sat");
+        let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
+        assert_eq!(remaining, 2, "1+1 sats stay");
+    }
+
+    #[test]
+    fn try_spend_exact_none_when_total_short() {
+        let mut w = wallet();
+        w.add_proofs(vec![make_proof(8, 1), make_proof(4, 2)])
+            .unwrap();
+        assert!(w.try_spend_exact(21).unwrap().is_none());
     }
 }
