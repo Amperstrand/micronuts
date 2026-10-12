@@ -30,7 +30,7 @@ rustflags = [
 build-std = ["std", "panic_abort"]
 
 [env]
-ESP_IDF_VERSION = { value = "v5.2.4" } # ccid-firmware-rs pin
+ESP_IDF_VERSION = { value = "v5.5.5" } # Amperstrand house unification (2026-10-12)
 # The shared target dir (~/.cargo/config.toml) breaks embuild's
 # workspace detection (it pops 6 components off OUT_DIR and lands on the
 # target dir itself) — without this, `sdkconfig.defaults` and the

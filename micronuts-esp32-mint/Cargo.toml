@@ -6,6 +6,11 @@ license = "0BSD"
 description = "ESP32 (esp-idf, std Rust) WiFi front-end for the micronuts Cashu mint"
 publish = false
 
+# Belt+braces with the .cargo/config.toml ESP_IDF_VERSION env pin
+# (ccid-firmware-rs mechanism; Amperstrand v5.5.5 unification, 2026-10-12).
+[package.metadata.esp-idf-sys]
+esp_idf_version = "tag:v5.5.5"
+
 # ccid-firmware-rs lib/bin split: library holds the glue so a future
 # host-test tier can exercise it without ESP-IDF; the binary only assembles
 # hardware services.
@@ -36,7 +41,13 @@ hex = "0.4"
 serde_json = "1"
 
 [build-dependencies]
-embuild = { version = "=0.32.0", features = ["espidf"] }
+embuild = { version = "=0.33.5", features = ["espidf"] }
+
+# Patched hal (ccid-firmware-rs pattern): 0.46.2 + the
+# sdmmc_host_t::unaligned_multi_block_rw_max_chunk_size initializer
+# backported from 0.47.0 — required for the IDF v5.5.5 bindings.
+[patch.crates-io]
+esp-idf-hal = { path = "../vendor/esp-idf-hal" }
 
 [profile.release]
 opt-level = "s"

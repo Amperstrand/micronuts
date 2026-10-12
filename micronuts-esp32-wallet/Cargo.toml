@@ -6,6 +6,11 @@ license = "0BSD"
 description = "ESP32 (esp-idf, std Rust) Cashu wallet — the nucula-mode device (micronuts#68 M1)"
 publish = false
 
+# Belt+braces with the .cargo/config.toml ESP_IDF_VERSION env pin
+# (ccid-firmware-rs mechanism; Amperstrand v5.5.5 unification, 2026-10-12).
+[package.metadata.esp-idf-sys]
+esp_idf_version = "tag:v5.5.5"
+
 [lib]
 name = "micronuts_esp32_wallet"
 path = "src/lib.rs"
@@ -57,7 +62,13 @@ embedded-graphics = { version = "=0.8.2", optional = true }
 qrcode = { version = "0.14", default-features = false, optional = true }
 
 [build-dependencies]
-embuild = { version = "=0.32.0", features = ["espidf"] }
+embuild = { version = "=0.33.5", features = ["espidf"] }
+
+# Patched hal (ccid-firmware-rs pattern): 0.46.2 + the
+# sdmmc_host_t::unaligned_multi_block_rw_max_chunk_size initializer
+# backported from 0.47.0 — required for the IDF v5.5.5 bindings.
+[patch.crates-io]
+esp-idf-hal = { path = "../vendor/esp-idf-hal" }
 
 [profile.release]
 opt-level = "s"

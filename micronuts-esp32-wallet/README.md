@@ -10,7 +10,7 @@ ESP32 (esp-idf, std Rust) Cashu wallet — the nucula-mode device
 cargo +esp build
 ```
 
-Default target: plain ESP32 (`xtensa-esp32-espidf`, esp-idf v5.2.4).
+Default target: plain ESP32 (`xtensa-esp32-espidf`, esp-idf v5.5.5).
 WiFi credentials come from the environment at build time —
 `MICRONUTS_WIFI_SSID` / `MICRONUTS_WIFI_PASS` — and are never committed.
 
