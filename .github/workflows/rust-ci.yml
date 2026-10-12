@@ -428,15 +428,18 @@ jobs:
         # espup queries the GitHub API for the latest Xtensa Rust version;
         # unauthenticated that 403s (rate limit) on shared runner IPs.
         # Documented CI usage: provide GITHUB_TOKEN.
+        # Toolchain PINNED: an unpinned install grabs the latest crosstool,
+        # which breaks exact-build-string tool_version_check on IDF release
+        # bumps (the 2026-10-09 ccid-firmware-rs CI breakage).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: espup install
+        run: espup install -c 14.2.0_20260121
 
       - name: Cache Espressif tools
         uses: actions/cache@v4
         with:
           path: ~/.espressif
-          key: espressif-${{ runner.os }}-v1
+          key: espressif-${{ runner.os }}-v2
 
       - name: Build micronuts-esp32-mint (Xtensa)
         shell: bash
@@ -446,7 +449,7 @@ jobs:
           MICRONUTS_WIFI_SSID: ci
           MICRONUTS_WIFI_PASS: ci
         run: |
-          . $HOME/.espressif/esp-idf-v5.2.4/export-esp.sh 2>/dev/null || . $HOME/export-esp.sh
+          . $HOME/export-esp.sh
           cargo +esp build --locked
           file target/xtensa-esp32-espidf/debug/micronuts-esp32-mint | tee /dev/stderr | grep -q Xtensa
 

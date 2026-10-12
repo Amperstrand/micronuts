@@ -1,0 +1,11 @@
+/.vscode
+/.idea
+/.espressif
+/.embuild
+/target
+/Cargo.lock
+**/*.rs.bk
+ulp/ulp_start.o
+install-rust-toolchain.sh
+/.devcontainer
+components_esp32.lock
