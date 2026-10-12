@@ -62,6 +62,10 @@ fn append_len_prefixed(msg: &mut Vec<u8>, bytes: &[u8]) {
 mod tests {
     use super::*;
     use crate::keypair::{PublicKey, SecretKey};
+    #[cfg(not(feature = "std"))]
+    use alloc::string::ToString;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     fn point(seed: u8) -> PublicKey {
         SecretKey::from_slice(&[seed; 32]).unwrap().public_key()

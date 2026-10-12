@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Nightly full battery on main (#74): without this, a red main is
+    # only visible on push runs while the green scheduled workflows
+    # (fuzz-nightly, gitleaks) make the Actions list look healthy.
+    - cron: "23 2 * * *"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

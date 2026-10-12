@@ -247,6 +247,12 @@ fn decode_32_bytes(hex_str: &str) -> Option<[u8; 32]> {
 mod tests {
     use super::*;
     use crate::nuts::nut11::P2pkError;
+    #[cfg(not(feature = "std"))]
+    use alloc::format;
+    #[cfg(not(feature = "std"))]
+    use alloc::string::ToString;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     const DATA_PUBKEY: &str = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7";
     // The spec §Hash lock example pair: SHA256(0x00..01) = ec4916dd….
