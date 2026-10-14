@@ -1,0 +1,46 @@
+{
+  "provenance": {
+    "captured": "2026-10-14T12:56:10",
+    "reader": "Nucula VPCD 00 00",
+    "atr": "3B858131FE458073C8211084",
+    "chain": "pcscd > libifdvpcd > nucula wifi-vpcd (ccid-firmware-rs) > PN7160 > SatoCash v0.1"
+  },
+  "vectors": [
+    {
+      "name": "select_satocash",
+      "command": "00A40400085361746F63617368",
+      "sw": "9000",
+      "response": "00010001000000000000000100060010002000008000000000"
+    },
+    {
+      "name": "select_satocash_case4_le",
+      "command": "00A40400085361746F6361736800",
+      "sw": "9000",
+      "response": "00010001000000000000000100060010002000008000000000"
+    },
+    {
+      "name": "get_status_case2",
+      "command": "B03C000000",
+      "sw": "9000",
+      "response": "00010001000000000000000100"
+    },
+    {
+      "name": "satocash_status_case2",
+      "command": "B0B0000000",
+      "sw": "9000",
+      "response": "00010001000000000000000100060010002000008000000000"
+    },
+    {
+      "name": "select_wrong_aid",
+      "command": "00A4040005FFFFFFFFFF00",
+      "sw": "6A82",
+      "response": ""
+    },
+    {
+      "name": "import_mint_locked",
+      "command": "B0B10000151468747470733A2F2F6D696E742E6578616D706C65",
+      "sw": "9C20",
+      "response": ""
+    }
+  ]
+}
