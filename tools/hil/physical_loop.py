@@ -29,7 +29,7 @@ import mnscan
 import urtoken
 from tollgate_lab import acquire_bench_lock
 
-COORDINATOR = "192.168.13.221:20408"
+COORDINATOR = "192.168.13.208:20408"
 PLACE = "micronuts-qr-rig"
 BACKUP_DIR = Path(__file__).parent / "results"
 EXAMPLE = Path(

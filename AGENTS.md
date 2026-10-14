@@ -70,6 +70,10 @@ harness lineage: BenchLock FIRST, then the labgrid place `micronuts-qr-rig`
 (tokens from the microfips bench exporter — acquiring it excludes gm65
 sessions). `make hil-place`, `make test-qr-scanin`. The F469 is shared with
 gm65-scanner: sessions backup the 2 MiB image and restore it in `finally`.
+Bench/labgrid canon (coordinator address, queueing via `reserve --wait`,
+exclusion domains, exporter state) lives in **conwrt-bench
+`docs/labgrid-coordination.md`** — the cross-project single source of
+truth.
 Hard-won protocol facts live in docs/QR-RIG-SESSION-PLAN-2026-09-11.md
 (60 s splash before CDC; quiet cadence after trigger; silent continuous
 mode 0x92; ACK-leak strip; module degradation → xHCI power-cycle).

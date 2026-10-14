@@ -5,7 +5,7 @@
 # acquiring this place excludes gm65-qr-loopback and microfips-bench).
 set -euo pipefail
 
-COORDINATOR="${LABGRID_COORDINATOR:-192.168.13.221:20408}"
+COORDINATOR="${LABGRID_COORDINATOR:-192.168.13.208:20408}"
 EXPORTER_NAME="${LABGRID_EXPORTER_NAME:-ai-legion-small-microfips}"
 PLACE="micronuts-qr-rig"
 LG="${LABGRID_CLIENT:-labgrid-client}"
