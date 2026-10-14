@@ -354,6 +354,18 @@ jobs:
           greatspectate check --config specquotes.toml
           --comment-start "// " --comment-continue "//"
           --comment-aside "// Note:" $FILES
+      - name: Satocash wire-spec drift check
+        # Spec is IN-TREE (micronuts-satocash/SPEC-wire.md, extracted from
+        # Toporin/Satocash-Applet master @ ee413cc702f79e53f2238d5efce5cfc94a498a1e)
+        # — no clone needed. When Toporin changes a wire format, regenerate
+        # SPEC-wire.md (scripts/extract_wire_spec.py) and this gate forces
+        # the encoders to be revisited.
+        run: >
+          cd micronuts-satocash &&
+          FILES=$(find src -name "*.rs") &&
+          greatspectate check --config specquotes.toml
+          --comment-start "// " --comment-continue "//"
+          --comment-aside "// Note:" $FILES
 
   cashuts-conformance:
     # Real-wallet conformance (graduation of the 2026-09-04 wire finding):

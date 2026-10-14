@@ -1,0 +1,19 @@
+[package]
+name = "micronuts-satocash"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SatoCash JavaCard (Cashu ecash wallet) client for micronuts"
+
+[features]
+default = []
+# Real-reader transport over PC/SC (host builds only).
+pcsc = ["dep:pcsc"]
+
+[dependencies]
+pcsc = { version = "2.9", optional = true }
+
+[dev-dependencies]
+serde_json = "1"

@@ -23,6 +23,7 @@ mints.
 | `micronuts-wallet/` | Host Cashu wallet: Slint UI (native) **and** a wasm browser build (deployed to GitHub Pages, Playwright post-deploy gate). `--demo` runs the full mint/send/receive/melt cycle |
 | `micronuts-fips-bridge/` | microfips service-boundary adapter (`ServiceHandlerTransport` etc.) |
 | `micronuts-fips-responder/` | Host-side FIPS responder: microfips service envelope → `CashuRpcServiceAdapter`, plus the FSP-datagram segmentation codec (`frag`) for replies above the 2048/768 B frame caps |
+| `micronuts-satocash/` | SatoCash JavaCard client: Cashu token custody on a smartcard (APDU codec + PC/SC transport; bench e2e through the nucula CCID/vpcd reader chain — see its README) |
 | `micronuts-esp32-mint/` | ESP32 esp-idf (std Rust) WiFi front-end for the mint — NVS-persisted own keyset seed; build from that dir with the `esp` toolchain (excluded from the host workspace) |
 | `firmware/` | The STM32F469I board binary |
 | `host-mint-tool/` | USB-CDC demo signer for the hardware wallet flow |
@@ -340,8 +341,7 @@ Near-term (tracked in issues; sequencing in
 - **Upstreaming** — publish `gm65-scanner`, `nt35510`, and the BSP to
   crates.io once #43's hardware gates close (#41/#42).
 
-Longer-term explorations: JavaCard secure-element custody (Satocash applet
-over SDIO), standalone networking via the FIPS sidecar, offline P2P QR
+Longer-term explorations: JavaCard secure-element custody via SatoCash (bench-proven: applet installed and answering through the nucula CCID/vpcd reader chain — `micronuts-satocash/`; secure-channel port is the next milestone), standalone networking via the FIPS sidecar, offline P2P QR
 swap between two devices, a dedicated mint signing module with
 touch-confirmed signing.
 
