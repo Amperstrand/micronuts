@@ -1,0 +1,17 @@
+# greatspectations spec-quote drift config for micronuts-satocash
+#
+# Tool: https://github.com/rustyrussell/greatspectations
+# Spec: SPEC-wire.md — verbatim wire blocks extracted from
+#   Toporin/Satocash-Applet master @ ee413cc702f79e53f2238d5efce5cfc94a498a1e
+#   (regenerate: python3 scripts/extract_wire_spec.py <Satocash.java> > SPEC-wire.md)
+#
+# Comment marker syntax in Rust source:
+#   // SATO: <verbatim SPEC-wire.md quote>
+#
+# Run (from micronuts-satocash/):
+#   greatspectate check --config specquotes.toml --comment-start "// " --comment-continue "//" --comment-aside "// Note:" $(find src -name "*.rs")
+
+[sources.SATO]
+format = "markdown"
+file = "SPEC-wire.md"
+comment_marker = "SATO"
