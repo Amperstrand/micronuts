@@ -91,12 +91,12 @@ impl ProofRecord {
 }
 
 impl<T: CardTransport> SatocashClient<T> {
+    /// `IMPORT_MINT` (0xB1): store a mint URL, returns its mint index.
     // SATO: ins: 0xB1
     // p1: RFU
     // p2: RFU
     // data: [mint_url_size(1b) | mint_url]
     // return: [MINT_INDEX(1b)]
-    /// `IMPORT_MINT` (0xB1): store a mint URL, returns its mint index.
     pub fn import_mint(&mut self, url: &[u8]) -> Result<u8, Error> {
         if url.len() > 48 {
             return Err(Error::Malformed("mint url longer than MAX_MINT_URL_SIZE"));
@@ -113,12 +113,12 @@ impl<T: CardTransport> SatocashClient<T> {
             .ok_or(Error::Malformed("empty mint index"))
     }
 
+    /// `EXPORT_MINT` (0xB2): read mint URL by index.
     // SATO: ins: 0xB2
     // p1: index
     // p2: RFU
     // data: none
     // return: [URL_size (1b) | URL ]
-    /// `EXPORT_MINT` (0xB2): read mint URL by index.
     pub fn export_mint(&mut self, mint_index: u8) -> Result<Vec<u8>, Error> {
         let (resp, sw) = self.xfer(ins::EXPORT_MINT, mint_index, 0x00, &[])?;
         if sw != 0x9000 {
@@ -133,12 +133,12 @@ impl<T: CardTransport> SatocashClient<T> {
             .ok_or(Error::Malformed("mint url truncated"))
     }
 
+    /// `IMPORT_KEYSET` (0xB4): bind a Cashu keyset to a stored mint.
     // SATO: ins: 0xB4
     // p1: RFU
     // p2: RFU
     // data: [keyset_id(8b) | mint_index(1b) | unit(1b) ]
     // return: [KEYSET_INDEX(1b)]
-    /// `IMPORT_KEYSET` (0xB4): bind a Cashu keyset to a stored mint.
     pub fn import_keyset(
         &mut self,
         keyset_id: [u8; 8],
@@ -158,12 +158,12 @@ impl<T: CardTransport> SatocashClient<T> {
             .ok_or(Error::Malformed("empty keyset index"))
     }
 
+    /// `IMPORT_PROOF` (0xB7): store one ecash token.
     // SATO: ins: 0xB7
     // p1: RFU
     // p2: RFU
     // data: [keyset_index(1b) | amount_exponent(1b) | unblinded_key(33b) | secret(32b)]
     // return: [index(2b)]
-    /// `IMPORT_PROOF` (0xB7): store one ecash token.
     pub fn import_proof(
         &mut self,
         keyset_index: u8,
@@ -186,11 +186,11 @@ impl<T: CardTransport> SatocashClient<T> {
         Ok(u16::from_be_bytes([resp[0], resp[1]]))
     }
 
+    /// `EXPORT_PROOFS` (0xB8, OP_INIT): read proofs by on-card index,
+    /// optionally restricted to `indices`. Returns parsed proof records.
     // SATO: data (OP_INIT): [ proof_index_list_size(1b) | proof_index(2b) ... | 2FA_size(1b) | 2FA ] else
     // data (OP_PROCESS): []
     // return: [proof_index(2b) | proof_state(1b) | keyset_index(1b) | amount_exponent(1b) | unblinded_key(33b) | secret(32b)]
-    /// `EXPORT_PROOFS` (0xB8, OP_INIT): read proofs by on-card index,
-    /// optionally restricted to `indices`. Returns parsed proof records.
     pub fn export_proofs(&mut self, indices: &[u16]) -> Result<Vec<ProofRecord>, Error> {
         let mut data = Vec::with_capacity(2 + indices.len() * 2);
         data.push(indices.len() as u8);
