@@ -160,10 +160,10 @@ diagnostics for soak-class campaigns.
 
 ## Gap issue index (filed 2026-10-15)
 
-- multi-mint runtime management — Amperstrand/micronuts#97
-- NFC reader silicon + NDEF parser — #98
-- invoice/claim/melt console verbs — #99
-- BIP-39 restore/wipe — #100
-- persistence witness + reboot e2e — #101
-- NUT-18/NUT-23 — #102
-- console polish bundle — #103
+- runtime multi-mint management — Amperstrand/micronuts#98
+- NFC reader silicon + NDEF parser — #99
+- invoice/claim/melt console verbs — #100
+- BIP-39 restore/wipe — #101
+- persistence witness + reboot e2e — #102
+- NUT-18/NUT-23 — #103
+- console polish bundle — #104
