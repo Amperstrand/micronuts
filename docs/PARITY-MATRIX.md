@@ -2,8 +2,9 @@
 
 Baseline (C side): Amperstrand/nucula firmware console command tree + NUT
 coverage, as enumerated with citations in
-`/root/src/worktrees/nucula/test-framework/docs/rig-inventory-2026-10-15.md`
-§A.1 (cited below as **A.1**). Every C row below traces to that document.
+`docs/rig-inventory-2026-10-15.md` §A.1 of the nucula repo (branch
+`sisyphus/test-framework`, PR Amperstrand/nucula#13 — cited below as
+**A.1**). Every C row below traces to that document.
 
 micronuts side: every `file:line` under "micronuts citation" was verified
 by reading this worktree at commit `16c1f6d` (branch `sisyphus/parity-audit`).
@@ -21,8 +22,10 @@ Classes:
 - **BY-DESIGN** — no counterpart because micronuts hardware/design makes
   the C capability moot; note explains.
 
-Row counts: **49** — HAVE **14** · PARTIAL **17** · MISSING **11** ·
-BY-DESIGN **7**.
+Row counts: **49** — HAVE **13** · PARTIAL **18** · MISSING **12** ·
+BY-DESIGN **6** (post Codex-review corrections: fail-stop and NUT-11
+downgraded to PARTIAL, reboot-persistence upgraded to HAVE, boundary
+probing to PARTIAL, wstat to MISSING).
 
 ---
 
@@ -58,7 +61,7 @@ BY-DESIGN **7**.
 | `nfcdump [pages] [start]` — T4 ISO-DEP NDEF dump / T2 Ultralight pages | exists | NDEF payload read only (via stubbed reader) | PARTIAL | A.1: `cmd_nfcdump` :331 (T4 :355-412, T2 :414-426), reg :517 | `command_handler.rs:100-103` (NfcData → raw NDEF payload), `protocol.rs:19` | Missing: raw page/register dumps, CC/ISO-DEP level access, and any real reader to drive them |
 | `display <on\|off\|fill>` — m5stick only | exists | full UI instead of console display verbs | BY-DESIGN | A.1: `cmd_display` :464, reg :520 (`#if` :463) | `firmware/src/self_test.rs:428` (`test_display`); app screens `micronuts-app/src/display.rs` | F469 has a 480×800 app UI (11 screens) + boot self-test display check; console on/off/fill verbs are m5stick-specific |
 | `button` — 5 s press window (m5stick only) | exists | touch input instead | BY-DESIGN | A.1: `cmd_button` :488, reg :521 | `firmware/src/hardware_impl.rs:405-413` (touch poll) | F469 FT6X06 touch is the input surface; ESP32 lane has no button console verb either |
-| `wstat` — persistence witness: saves/fails/last_err/blob/proofs_loaded + NVS entry stats | exists | blob-size leg only; no witness counters | PARTIAL | A.1: `cmd_wstat` :431, reg :523 | stored-len boot print `main.rs:48-51` → `micronuts-esp32-wallet/src/lib.rs:42-48`; fail-stop errors `lib.rs:66-77` | Missing: save/fail counters, last_err, NVS entry stats, proofs_loaded (grep for `saves\|last_err\|wstat` counters: zero hits in device crates) |
+| `wstat` — persistence witness: saves/fails/last_err/blob/proofs_loaded + NVS entry stats | exists | none | MISSING | A.1: `cmd_wstat` :431, reg :523 | — | The boot `stored blob:` print measures the WALLET_KEY smoke partition (`main.rs:48-57` round-trips a fixed 64 B payload), not the engine_state blob (`main.rs:152-155`) — it is not a wallet witness (Codex finding, verified). Counters/last_err/stats: zero hits in device crates |
 | `reboot` | exists | none | MISSING | A.1: `cmd_reboot` :77, reg :524 | — (no `esp_restart`/reboot handling in `main.rs:206-332`) | Trivial gap; esp-idf `esp_restart()` just not wired to a verb |
 | `heap` — free / largest block / min-ever | exists | free only | PARTIAL | A.1: `cmd_heap` :89, reg :525 | `main.rs:247-249` (`esp_get_free_heap_size`) | Missing: largest-free-block and minimum-ever-free watermark |
 | `tasks` — per-task prio + stack high-water | exists | none | MISSING | A.1: `cmd_tasks` :99, reg :526 | — | No task-listing verb on the ESP32 console |
@@ -77,7 +80,7 @@ BY-DESIGN **7**.
 | NUT-04 — mint quotes | exists | full | HAVE | A.1 §B(v) | `nuts/nut04.rs:17-19,24,43,89,105`; `wallet.rs:70,83,96`; engine `engine.rs:207-242` | — |
 | NUT-05 — melt quotes | exists | full | HAVE | A.1 §B(v) | `nuts/nut05.rs:18-20,30,42,78,92`; `wallet.rs:149,161,171`; engine `engine.rs:557,570` | — |
 | NUT-10 — spend conditions / secret kinds | exists | full | HAVE | A.1 §B(v) | `nuts/nut10.rs:30,64,104`; strict embedded-JSON scanner `nuts/mod.rs:25-26`; witness build `micronuts-wallet-core/src/conditions.rs:92` (`witness_for_secret`), used `engine.rs:323-331` | — |
-| NUT-11 — P2PK locking | exists | full (receive-side unlock + identity) | HAVE | A.1 §B(v) | `nuts/nut11.rs:91-296` (conditions/requirements/witness), `:115,202,271`; identity `conditions.rs:69,76`; console `p2pk` verb `main.rs:251` → `engine.rs:358` | micronuts exposes its lock-facing pubkey on the device console |
+| NUT-11 — P2PK locking | exists | receive-side unlock + identity only | PARTIAL | A.1 §B(v) | `nuts/nut11.rs:91-296` (conditions/requirements/witness), `:115,202,271`; identity `conditions.rs:69,76`; console `p2pk` verb `main.rs:251` → `engine.rs:358` | Missing: SIG_ALL receive (explicitly errors today) and P2PK send-side locking — both named unfinished in `docs/HANDOFF-2026-09-19.md` #72 remaining scope |
 | NUT-12 — DLEQ proofs | exists | full, enforced on receive | HAVE | A.1 §B(v) | `nuts/nut12.rs:230,278,315`; verification `engine.rs:697-710`, enforced `engine.rs:345-348` | Every credited proof is DLEQ-verified or rolled back |
 | NUT-13 — deterministic secrets/blinders from seed | exists | derivation only, no mnemonic entry | PARTIAL | A.1 §B(v); seed cmd A.1 `commands_seed.cpp:21` | `nuts/nut13.rs:106` (`derive_secret`), `:135` (`derive_blinder`), spec vectors `:224-239`; consumed via `persistent.rs:492` | Missing: BIP-39 mnemonic→seed — the 64-byte BIP-39 seed appears only as a test vector (`nut13.rs:210-215`); device seed is raw 32 B (`main.rs:116-137`) |
 | NUT-18 — payment requests | exists | none | MISSING | A.1 §B(v) | — (grep `nut18\|NUT-18\|payment_request` across `cashu-core-lite/src`, `micronuts-wallet-core/src`, `micronuts-esp32-wallet/src`, `micronuts-app/src`: zero hits; module list `nuts/mod.rs:7-23` has no nut18) | No payment-request type anywhere in the micronuts device stack |
@@ -109,10 +112,10 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
 | Capability | C status | micronuts status | Class | C citation | micronuts citation | Note |
 |---|---|---|---|---|---|---|
 | Atomic single-key NVS wallet blob (write+commit one call) | exists | exists | HAVE | A.1: `wstat` :431 (witnesses the saves), §A.5 soak reboot-persistence | `micronuts-esp32-wallet/src/lib.rs:51-77` (`NvsProofStore`, one `set_blob` per save; contract doc :1-13); persist-on-success `cashu-core-lite/src/persistent.rs:242,325,356,403,445,514-522`; store load at boot `persistent.rs:179` | Encodes the nucula#1 lesson explicitly (lib.rs header) |
-| Fail-stop blob size bound (refuse unsavable state; anti-silent-RAM-wallet) | implicit in C (the ~790-sat boundary is the failure this prevents) | exists | HAVE | A.1 §A.6 item 9 (`boundary_probe.rs`, ~790-sat boundary) | `lib.rs:66-73` (oversize save returns error), bound set 32 KiB at `main.rs:44` (wallet) and `:152-153` (engine state) | micronuts fails loudly instead of silently degrading — the direct antidote to the C failure class |
+| Fail-stop blob size bound (refuse unsavable state; anti-silent-RAM-wallet) | implicit in C (the ~790-sat boundary is the failure this prevents) | save refuses loudly, but no rollback/halt | PARTIAL | A.1 §A.6 item 9 (`boundary_probe.rs`, ~790-sat boundary) | `lib.rs:66-73` (oversize save returns error), bound 32 KiB `main.rs:44`/`:152-153` | The bound exists, but `persistent.rs:510-515` mutates RAM proofs before `persist()?` — a save error propagates without rolling back or halting, so the console can continue on un-persisted state (Codex PR-review finding, verified). Missing: rollback or fail-stop on persist error |
 | Persistence witness — runtime counters (saves/fails/last_err/proofs_loaded) queryable on demand | exists (`wstat`) | none (blob size at boot only) | MISSING | A.1: `cmd_wstat` :431-444 | — (no counter/stats accumulator in `lib.rs` or `engine.rs`) | Capability view of the §3 `wstat` gap (PARTIAL there via the blob-size leg): the counters themselves exist nowhere |
-| Balance survives reboot (NVS-persisted proofs reloaded) | exists (soak reboots + verifies every 25th cycle) | wired + boot-smoked; no on-device reboot-persistence verification | PARTIAL | A.1 §A.5 (`soak.rs:271-297`) | engine store wired `main.rs:152-166`; `PersistentWallet` loads proofs at construction `persistent.rs:179`; boot blob print `main.rs:48-51` | Missing: a reboot-verification harness on device (nucula soak proves it every 25th cycle; micronuts has no equivalent e2e) |
-| Persistence-failure boundary probing (blob growth vs NVS capacity) | exists (`boundary_probe`) | obviated by fail-stop design | BY-DESIGN | A.1 §A.5 (`boundary_probe.rs:1-4`), §A.6 item 9 | `lib.rs:66-73` + `main.rs:44` | With a loud 32 KiB fail-stop bound there is no silent boundary to probe; saves that cannot fit refuse loudly at `save()` time |
+| Balance survives reboot (NVS-persisted proofs reloaded) | exists (soak reboots + verifies every 25th cycle) | verified on M5Stick silicon (receive 5 → send 1 → balance 4 → reboot → 4 sats, identical seed) | HAVE | A.1 §A.5 (`soak.rs:271-297`) | `docs/HANDOFF-2026-09-19.md` commit 154cbbb (M2 loop, on-device); engine store wired `main.rs:152-166`; `PersistentWallet` loads at construction `persistent.rs:179` | Single verified cycle (Codex finding, corrected) — the soak-class automated repetition (fork proves it every 25th cycle) remains tracked by #102 |
+| Persistence-failure boundary probing (blob growth vs NVS capacity) | exists (`boundary_probe`) | not obviated — the save error path continues on RAM state | PARTIAL | A.1 §A.5 (`boundary_probe.rs:1-4`), §A.6 item 9 | `lib.rs:66-73` + `main.rs:44` | Since a failed persist neither rolls back nor halts (see fail-stop row), a boundary probe remains meaningful: WHEN saves start failing and WHAT the wallet does afterwards are still open questions (Codex finding, verified) |
 
 ---
 
@@ -120,10 +123,10 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
 
 | Class | Rows |
 |---|---|
-| HAVE | 14 |
-| PARTIAL | 17 |
-| MISSING | 11 |
-| BY-DESIGN | 7 |
+| HAVE | 13 |
+| PARTIAL | 18 |
+| MISSING | 12 |
+| BY-DESIGN | 6 |
 | **Total** | **49** |
 
 ## Top 5 load-bearing gaps
@@ -148,11 +151,13 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
    seed is raw 32-byte hex with automatic first-boot generation only
    (`main.rs:116-137`); no 12-word entry, no wipe/erase path. Cross-device
    recovery from a nucula (or any CDK) wallet is impossible.
-5. **No persistence witness / on-device reboot-persistence proof** — the
-   nucula `wstat` counters + soak reboot verification are exactly the
-   instrumentation that caught their ~790-sat silent-corruption class;
-   micronuts has the superior fail-stop *design* (`lib.rs:66-73`) but zero
-   runtime witnesses or reboot e2e to prove it on silicon.
+5. **No persistence witness, and the fail-stop bound is not yet fail-stop** —
+   the nucula `wstat` counters + soak reboot verification are the
+   instrumentation that caught their ~790-sat silent-corruption class.
+   micronuts refuses oversize saves (`lib.rs:66-73`) and has ONE verified
+   on-device reboot cycle (154cbbb), but a failed persist neither rolls
+   back nor halts (`persistent.rs:510-515`) — the runtime witnesses and
+   the rollback/halt semantics are both open (#102).
 
 Runners-up: NUT-18/NUT-23 absence (blocks boltcard-style send-direction and
 wallet-to-wallet flows outright) and the missing `tasks`/`log`/`bench`

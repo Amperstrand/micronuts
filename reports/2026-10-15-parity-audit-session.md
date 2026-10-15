@@ -61,7 +61,7 @@ session state; **issue #12** opened for the PN7160-silence anomaly.
 | payer vs live mint | 2 ignored tests | **2/2** — 1-sat token (374 B) embeds the .208 mint URL | lane2 log |
 | Money loop e2e | `console_relay_money_loop` on m5stick hardware | **GREEN** — receive → NUT-12-verified swap → balance (+1) | rig test run, 2026-10-15 ~16:2x |
 | Soak v1 | 4 h intended | **ABORT cycle 5** → root-caused to invisible-success + needless reboot (not a wallet bug) | `rig/results/soak-131626.jsonl` |
-| Soak v2 (running) | money loops, wstat/heap/tasks snapshots, reboot-persistence every 25th | **in flight, 0 fails** — see appendix | `rig/results/soak-132250.jsonl` |
+| Soak v2 (final) | money loops, wstat/heap/tasks snapshots, reboot-persistence every 25th | **49 cycles, 1 designed-ceiling fail, abort at cycle 50 (console-loss after recovery reboot); wallet-state reset caught at cycle 46 (713→458)** — see appendix | `rig/results/soak-132250.jsonl` + analyzer in soak-close.log |
 | Fork wallet on production PCB | boot, WiFi, console, `status`, `mint info` | **working** (mint info served live from the Rust mint) | session console captures |
 | PN7160 on production PCB | `nci_init` probe | **silent** — probe-timeout/SDA-stuck class; power-cycle + bisect pending | fork issue #12 |
 | Parity baseline | cited matrix | 49 rows: **14 HAVE / 17 PARTIAL / 11 MISSING / 7 BY-DESIGN** | docs/PARITY-MATRIX.md |
@@ -151,9 +151,10 @@ shows no exhaustion driver (free ~115 KB, largest block 32 KB, min-ever
 - **labgrid**: no places held; `nucula-rig` place persists on the .208
   coordinator for the fork rig.
 - **hil-bench nightly**: re-enabled (active) after a one-day pause.
-- **Mint service**: deliberately left running on `.208:3338`
-  (micronuts-audit-adapter + FakeWallet; durable recipe
-  `rig/scripts/start-mint.sh`; ufw open to the bench LAN) — shared bench
-  infrastructure used by fork PR #13's rig tests.
+- **Mint service**: left running only for the continued session window
+  on `.208:3338` (micronuts-audit-adapter + FakeWallet; recipe
+  `rig/scripts/start-mint.sh`) — per the adopted-helper policy it is
+  torn down at final session exit (Codex finding; final state noted in
+  the session close addendum).
 - **M5STACK PICO-D4 board** (micronuts QR-rig atom stand-in): recovered from
   a ROM download-latch early in the session; otherwise untouched.
