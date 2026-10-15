@@ -157,3 +157,13 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
 Runners-up: NUT-18/NUT-23 absence (blocks boltcard-style send-direction and
 wallet-to-wallet flows outright) and the missing `tasks`/`log`/`bench`
 diagnostics for soak-class campaigns.
+
+## Gap issue index (filed 2026-10-15)
+
+- multi-mint runtime management — Amperstrand/micronuts#97
+- NFC reader silicon + NDEF parser — #98
+- invoice/claim/melt console verbs — #99
+- BIP-39 restore/wipe — #100
+- persistence witness + reboot e2e — #101
+- NUT-18/NUT-23 — #102
+- console polish bundle — #103
