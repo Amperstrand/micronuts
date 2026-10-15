@@ -104,4 +104,56 @@ session state; **issue #12** opened for the PN7160-silence anomaly.
    (not session scope; surfaced by pushes).
 
 ## 6. Bench restore (final state)
-Appendix updated at session close.
+See appendix below (added at session close).
+
+## Appendix — soak finals + bench restore (added at session close)
+
+### Soak results (rig/results/, 2 slices)
+
+| Metric | Value |
+|---|---|
+| Money-loop cycles completed | **49** (slice 1: 4, slice 2: 45) + 4 pre-soak e2e/manual receives |
+| Wallet-logic failures | **0** — every credited receive matched its amount exactly |
+| Peak balance | **713 sat** (cycle 45) |
+| Final wallet balance (slice 2) | 486 sat at cycle 49 |
+| Cycle time | 1.4–7.6 s typical (amounts 1/2/5/21/42); 11.1 s on the reset cycle |
+| Aborts | 2 — both console-transport class, neither a wallet fault (below) |
+
+**Abort 1 (slice 1, cycle 5)** — invisible success: the device credited the
+token while the Hades2002 bridge swallowed the confirmation; the rig misread
+it as failure and rebooted a healthy device. Root cause of the fix commit
+`3a1bc52` (balance-delta guard). Post-hoc verification: all 74 sat present.
+
+**Abort 2 (slice 2, cycle 50)** — the *designed* 100-sat ceiling probe broke
+the console stream (documented deterministic class) and the post-reboot
+console recovery timed out. The rig stopped honestly; the wallet was
+healthy throughout.
+
+**Crash-consistency event (the soak's purpose):** cycle 46 — balance
+713+1 expected, **458 reloaded** (~256-sat loss; snapshot reload), cycle
+time 11.1 s. This places a wallet-state-reset boundary in the **~714-sat
+region — below the fork's documented ~790-sat boundary** — with the wstat/
+heap/tasks snapshots (every 10 cycles, added this session) and the
+`log i wallet_nvs` forensics stream captured around it. Actionable for the
+fork's persistence work (streaming-blob serializer lineage): heap telemetry
+shows no exhaustion driver (free ~115 KB, largest block 32 KB, min-ever
+31.6 KB across the run), so the boundary is not heap-driven.
+
+### Bench restore (final state, verified)
+
+- **nucula**: ccid `wifi-vpcd` image rev=`40d391e` (PT@0x8000 + app@0x40000) —
+  FWID-verified; both `Nucula VPCD` readers back in pcscd; PN7160 probe
+  `Ok(())` at boot (chip-alive evidence, fork issue #12).
+- **m5stick**: ccid `wifi-vpcd` image rev=`683c879` at **ota_0@0x40000** —
+  FWID-verified, station up at 192.168.13.234. Bench lesson recorded: this
+  image runs from the OTA slot; writing it at 0x30000 under the OTA table
+  boot-loops with `0x40000 has invalid magic byte`.
+- **labgrid**: no places held; `nucula-rig` place persists on the .208
+  coordinator for the fork rig.
+- **hil-bench nightly**: re-enabled (active) after a one-day pause.
+- **Mint service**: deliberately left running on `.208:3338`
+  (micronuts-audit-adapter + FakeWallet; durable recipe
+  `rig/scripts/start-mint.sh`; ufw open to the bench LAN) — shared bench
+  infrastructure used by fork PR #13's rig tests.
+- **M5STACK PICO-D4 board** (micronuts QR-rig atom stand-in): recovered from
+  a ROM download-latch early in the session; otherwise untouched.
