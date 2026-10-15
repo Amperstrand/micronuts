@@ -158,3 +158,38 @@ shows no exhaustion driver (free ~115 KB, largest block 32 KB, min-ever
   the session close addendum).
 - **M5STACK PICO-D4 board** (micronuts QR-rig atom stand-in): recovered from
   a ROM download-latch early in the session; otherwise untouched.
+
+## Addendum — continued unattended window (Codex round + boundary probe)
+
+**Codex review landed on all three PRs (12 findings) — every one triaged,
+verified against the tree, and answered:**
+- PR #13's P1 OLED finding was the **root cause of the "silent PN7160"**:
+  the unconditional SSD1309 reset on GPIO5 ripped SCL out of I2C mode
+  before `nfc_init()` on the NUCULAPCB lane. Fixed (68b93ff + typed
+  sentinel) and **bench-verified: the fork wallet now boots with
+  `nfc: idle`** — fork issue #12 resolved with the corrected root cause.
+- PR #105: five matrix rows reclassified on verified citations
+  (fail-stop→PARTIAL: no rollback/halt after failed persist; boundary
+  probe→PARTIAL; reboot-persistence→HAVE per 154cbbb; NUT-11→PARTIAL:
+  SIG_ALL + send-side missing; wstat→MISSING: blob print measures the
+  smoke partition). Counts now **13 HAVE / 18 PARTIAL / 12 MISSING /
+  6 BY-DESIGN**.
+- PR #200: the m5stick restore recipe now erases otadata@0x30000 —
+  **exercised live during the final restore** in this window.
+
+**Boundary probe result (the window's headline finding):** the fork
+wallet's persistence enters a **permanent all-saves-fail state** — fresh
+boot, first receive: `saves=0 fails=N last=FAIL err=0xffffffff blob=0`
+(NVS not full), balance grows in RAM only, and a **reboot silently rolls
+back to the last good blob (1214 → 458 sat, 756 test sats gone)** with
+`wstat` as the only witness. The dead state survives reboots and full
+reflashes. Filed as the fork's top persistence issue with the repro rig
+(`boundary_probe`, now env-tunable). Cross-repo note: micronuts has the
+identical semantic gap (failed persist neither rolls back nor halts) —
+documented in the matrix the same day; both sides now track it.
+
+**Final bench state (end of continued window):** m5stick ccid vpcd
+rev=683c879 (otadata-erase recipe, FWID-verified), nucula ccid wifi-vpcd
+(both `Nucula VPCD` readers in pcscd), all labgrid places released,
+hil-bench nightly active, **mint torn down per the adopted-helper
+policy** (recipe remains: `rig/scripts/start-mint.sh`).
