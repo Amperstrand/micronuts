@@ -22,8 +22,8 @@ Classes:
 - **BY-DESIGN** — no counterpart because micronuts hardware/design makes
   the C capability moot; note explains.
 
-Row counts: **49** — HAVE **13** · PARTIAL **18** · MISSING **12** ·
-BY-DESIGN **6** (post Codex-review corrections: fail-stop and NUT-11
+Row counts: **49** — HAVE **12** · PARTIAL **19** · MISSING **12** ·
+BY-DESIGN **6** (post Codex-review corrections: fail-stop, NUT-11 and NUT-12
 downgraded to PARTIAL, reboot-persistence upgraded to HAVE, boundary
 probing to PARTIAL, wstat to MISSING).
 
@@ -40,8 +40,8 @@ probing to PARTIAL, wstat to MISSING).
 | `mint [list\|add\|remove\|info]` — runtime multi-mint management | exists | none — single build-time-baked mint URL | MISSING | A.1: `cmd_mint` :200 (add :220, info :249, remove :294), reg :603 | `main.rs:9-12` (`MICRONUTS_MINT_URL` compile-time default, no runtime override) | No list/add/remove/info verbs, no mint storage, no `w=` mint index anywhere in the console loop (`main.rs:206-332`) |
 | `invoice <amount> [u= m= w=]` — NUT-04 quote → BOLT11 | exists | engine + kiosk bin have it; wallet console does not | PARTIAL | A.1: `cmd_invoice` :325, reg :604 | engine: `engine.rs:207-218` (`mint_via_invoice`), `:220-228` (`poll_mint_quote`); on-ESP32 invoice display: `micronuts-esp32-wallet/src/bin/terminal_kiosk.rs:207` (`invoice_cycle`) | Missing: `invoice` verb in the esp32-wallet console (money ops in `main.rs` cover receive/send only) |
 | `claim <quote_id> [m= w=]` — mint paid quote | exists | engine has it; wallet console does not | PARTIAL | A.1: `cmd_claim` :382, reg :605 | `engine.rs:230-242` (`mint_paid_quote`) | Missing: console verb; also no quote-id input surface on device |
-| `melt <request> [u= m= a= w=]` — pay invoice with ecash | exists | engine has full melt; wallet console does not | PARTIAL | A.1: `cmd_melt` :458, reg :606 | `engine.rs:557-569` (`quote_melt`), `:570-` (`melt`) | Missing: console verb on the esp32-wallet device |
-| `stickup` — drain all funds as V4 tokens | exists | `send <amount>` composes exact-amount tokens; no drain-all | PARTIAL | A.1: `cmd_stickup` :528, reg :607 | `main.rs:266-273` → `engine.rs:390-410` (`send_token`, V4 wire string) | Missing: single drain-all verb (equivalent is `send <balance>`, but balance is total-only and the two-step is manual) |
+| `melt <request> [u= m= a= w=]` — pay invoice with ecash | exists | engine has full melt; wallet console does not | PARTIAL | A.1: `cmd_melt` :458, reg :606 | `engine.rs:557-569` (`quote_melt`), `:570-` (`melt`) | Missing: console verb on the esp32-wallet device; AND amountless-invoice melts (`a=` in the C surface) are structurally unsupported — `quote_melt`/`melt` take only an invoice string and `nut05::MeltQuoteRequest` omits the optional NUT-05 `amount` field (Codex round 2, verified) |
+| `stickup` — drain all funds as V4 tokens | exists | `send <amount>` composes exact-amount tokens; no drain-all | PARTIAL | A.1: `cmd_stickup` :528, reg :607 | `main.rs:266-273` → `engine.rs:390-410` (`send_token`, V4 wire string) | Missing: single drain-all verb — and the `send <balance>` workaround drains only ZERO-FEE keysets: with a nonzero NUT-08 input fee `compose_exact` spends `balance + fee`, which necessarily fails (Codex round 2, verified) |
 
 ## 2. Seed console command (A.1 `main/commands_seed.cpp`)
 
@@ -81,7 +81,7 @@ probing to PARTIAL, wstat to MISSING).
 | NUT-05 — melt quotes | exists | full | HAVE | A.1 §B(v) | `nuts/nut05.rs:18-20,30,42,78,92`; `wallet.rs:149,161,171`; engine `engine.rs:557,570` | — |
 | NUT-10 — spend conditions / secret kinds | exists | full | HAVE | A.1 §B(v) | `nuts/nut10.rs:30,64,104`; strict embedded-JSON scanner `nuts/mod.rs:25-26`; witness build `micronuts-wallet-core/src/conditions.rs:92` (`witness_for_secret`), used `engine.rs:323-331` | — |
 | NUT-11 — P2PK locking | exists | receive-side unlock + identity only | PARTIAL | A.1 §B(v) | `nuts/nut11.rs:91-296` (conditions/requirements/witness), `:115,202,271`; identity `conditions.rs:69,76`; console `p2pk` verb `main.rs:251` → `engine.rs:358` | Missing: SIG_ALL receive (explicitly errors today) and P2PK send-side locking — both named unfinished in `docs/HANDOFF-2026-09-19.md` #72 remaining scope |
-| NUT-12 — DLEQ proofs | exists | full, enforced on receive | HAVE | A.1 §B(v) | `nuts/nut12.rs:230,278,315`; verification `engine.rs:697-710`, enforced `engine.rs:345-348` | Every credited proof is DLEQ-verified or rolled back |
+| NUT-12 — DLEQ proofs | exists | verified at receive; not durably | PARTIAL | A.1 §B(v) | `nuts/nut12.rs:230,278,315`; verification `engine.rs:697-710`, enforced `engine.rs:345-348` | Receive-path enforcement is real, but `PersistentWallet::swap_deterministic` appends AND persists before `receive_token_with` verifies — a crash in that window leaves unverified proofs that startup reloads without re-checking (Codex round 2, verified); the durable guarantee needs verify-before-persist or re-verify-on-load |
 | NUT-13 — deterministic secrets/blinders from seed | exists | derivation only, no mnemonic entry | PARTIAL | A.1 §B(v); seed cmd A.1 `commands_seed.cpp:21` | `nuts/nut13.rs:106` (`derive_secret`), `:135` (`derive_blinder`), spec vectors `:224-239`; consumed via `persistent.rs:492` | Missing: BIP-39 mnemonic→seed — the 64-byte BIP-39 seed appears only as a test vector (`nut13.rs:210-215`); device seed is raw 32 B (`main.rs:116-137`) |
 | NUT-18 — payment requests | exists | none | MISSING | A.1 §B(v) | — (grep `nut18\|NUT-18\|payment_request` across `cashu-core-lite/src`, `micronuts-wallet-core/src`, `micronuts-esp32-wallet/src`, `micronuts-app/src`: zero hits; module list `nuts/mod.rs:7-23` has no nut18) | No payment-request type anywhere in the micronuts device stack |
 | NUT-23 — wallet-to-wallet (pure/quote tokens) | exists | none | MISSING | A.1 §B(v) | — (grep `nut23\|NUT-23`: zero hits; `token.rs`/`token_compat.rs` carry no pure/quote-token variant) | Blocks boltcard-style in-person transfer flows |
@@ -94,7 +94,7 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
 
 | Capability | C status | micronuts status | Class | C citation | micronuts citation | Note |
 |---|---|---|---|---|---|---|
-| NFC receive flow — poll tag, read NDEF, extract token, redeem | exists (`nfc request`; proven by rig e2e `relay_token_over_the_air_via_boltcard`) | protocol + handler + QR/NFC differential import path, mock-tested; no silicon | PARTIAL | A.1: `cmd_nfc` :46-67; §A.3 e2e :55 | `protocol.rs:18-20`; `command_handler.rs:89-107`; shared capture-import path `command_handler.rs:111-147` (differential-pair contract :111-117); mock test `command_handler.rs:703` | Missing: an NFC reader driver — F469 impl is a stub returning `NotConnected` (`firmware/src/hardware_impl.rs:421-436`); no ESP32-lane NFC at all |
+| NFC receive flow — poll tag, read NDEF, extract token, redeem | exists (`nfc request`; proven by rig e2e `relay_token_over_the_air_via_boltcard`) | protocol + handler + QR/NFC differential import path, mock-tested; no silicon | PARTIAL | A.1: `cmd_nfc` :46-67; §A.3 e2e :55 | `protocol.rs:18-20`; `command_handler.rs:89-107`; shared capture-import path `command_handler.rs:111-147` (differential-pair contract :111-117); mock test `command_handler.rs:703` | Missing: an NFC reader driver — F469 impl is a stub returning `NotConnected` (`firmware/src/hardware_impl.rs:421-436`); no ESP32-lane NFC at all. ALSO: the cited import path handles only CashuV4 payloads — `decode_qr` classifies `#token=`/`?token=`/embedded-text/cashuA forms as PlainText and `ScanAssembler::process` imports only `CashuV4`, so the wrapped-token extraction does NOT run on device (Codex round 2, verified) |
 | NDEF token extraction (bare / `#token=` / `token=` / embedded text) | exists (device-side extraction) | payload classification + token import shared with QR; NDEF record stripping sits behind the (stub) reader | PARTIAL | A.1 §A.2 `ndef_t2t.rs:143` (mirrors device strategies) | `command_handler.rs:123-131` (`decode_qr` classifies CashuV4/V3/UR/plain/binary and imports), `:139-147` (UR assembler + import) | Missing: in-repo NDEF TLV/text-record parser — `nfc_read_ndef` is expected to hand over the payload (`command_handler.rs:100-103`) and the hw impl that would strip NDEF does not exist yet |
 | Card emulation / send-direction NFC (boltcard-style present) | PN7160 CE is the XIAO firmware feature; not console-exposed | none | MISSING | A.1 §B(ii) (`nfc` is receive/reader mode only; CE = XIAO firmware) | — (no emulation code path in any micronuts device crate) | Also blocked upstream of micronuts by NUT-18/NUT-23 absence |
 
@@ -123,8 +123,8 @@ NUT-07 check-state (`wallet.rs:184`, `engine.rs:367`), NUT-09 restore
 
 | Class | Rows |
 |---|---|
-| HAVE | 13 |
-| PARTIAL | 18 |
+| HAVE | 12 |
+| PARTIAL | 19 |
 | MISSING | 12 |
 | BY-DESIGN | 6 |
 | **Total** | **49** |

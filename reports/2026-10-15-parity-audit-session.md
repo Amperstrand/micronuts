@@ -64,7 +64,7 @@ session state; **issue #12** opened for the PN7160-silence anomaly.
 | Soak v2 (final) | money loops, wstat/heap/tasks snapshots, reboot-persistence every 25th | **49 cycles, 1 designed-ceiling fail, abort at cycle 50 (console-loss after recovery reboot); wallet-state reset caught at cycle 46 (713→458)** — see appendix | `rig/results/soak-132250.jsonl` + analyzer in soak-close.log |
 | Fork wallet on production PCB | boot, WiFi, console, `status`, `mint info` | **working** (mint info served live from the Rust mint) | session console captures |
 | PN7160 on production PCB | `nci_init` probe | **silent** — probe-timeout/SDA-stuck class; power-cycle + bisect pending | fork issue #12 |
-| Parity baseline | cited matrix | 49 rows: **14 HAVE / 17 PARTIAL / 11 MISSING / 7 BY-DESIGN** | docs/PARITY-MATRIX.md |
+| Parity baseline | cited matrix | 49 rows: **12 HAVE / 19 PARTIAL / 12 MISSING / 6 BY-DESIGN** (post Codex-review corrections — see matrix preamble) | docs/PARITY-MATRIX.md |
 
 ## 3. Performance observed (soak JSONL, m5stick console path)
 - Money-loop cycle time: **1.6–6.5 s** across amounts 1/2/5/21/42 (first 23
@@ -77,8 +77,10 @@ session state; **issue #12** opened for the PN7160-silence anomaly.
 
 ## 4. Parity scorecard (from docs/PARITY-MATRIX.md)
 - **Strong**: NUT-00..13 coverage in `cashu-core-lite` is essentially complete;
-  micronuts is *ahead* on receive-path DLEQ enforcement (every credited proof
-  NUT-12-verified) and on the fail-stop persistence design.
+  micronuts leads on receive-path DLEQ enforcement — with the round-2
+durability qualification (verify-after-persist window) recorded in the
+  matrix — and its persistence bound is now classified PARTIAL like the
+  C side's (no rollback/halt after a failed save on either side).
 - **The real gaps** (issues filed): runtime multi-mint management (#98), NFC
   reader silicon behind the existing protocol/mocks (#99), interactive
   invoice/claim/melt verbs (#100), BIP-39 restore/wipe (#101), runtime
