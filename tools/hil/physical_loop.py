@@ -29,6 +29,8 @@ import mnscan
 import urtoken
 from tollgate_lab import acquire_bench_lock
 
+import bench_hold
+
 COORDINATOR = "192.168.13.208:20408"
 PLACE = "micronuts-qr-rig"
 BACKUP_DIR = Path(__file__).parent / "results"
@@ -74,6 +76,7 @@ def main() -> int:
     ap.add_argument("--send", type=int, default=21)
     args = ap.parse_args()
 
+    bench_hold.sign_identity('scan-loop')
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     with acquire_bench_lock("amperstrand-bench"):
@@ -83,8 +86,8 @@ def main() -> int:
         if hygiene.acted:
             note(f"disk hygiene: {hygiene.actions}")
 
-        acquired = lg(["acquire"])
-        note(f"place acquire rc={acquired.returncode}")
+        token = bench_hold.acquire(PLACE, COORDINATOR, wait=args.wait_place)
+        note("place acquired" + (" (reserved)" if token else ""))
 
         backup = None
         cdc = None
@@ -165,7 +168,7 @@ def main() -> int:
                 note("restoring pre-session F469 image")
                 rig.restore_stm32(backup)
                 note("restore done")
-            lg(["release"])
+            bench_hold.release(PLACE, COORDINATOR, token)
             note("place released")
 
 
