@@ -58,7 +58,7 @@ impl NfcFrontend {
 /// M5StickC Plus Grove I2C pins (SDA 32 / SCL 33) — the same map the
 /// nucula fork's `board.h` M5STICK lane uses for its MFRC522.
 pub fn m5stick_i2c(
-    i2c0: impl esp_idf_svc::hal::peripheral::Peripheral<P = esp_idf_svc::hal::i2c::I2C0> + 'static,
+    i2c0: esp_idf_svc::hal::i2c::I2C0<'static>,
     sda: impl esp_idf_svc::hal::gpio::InputPin + esp_idf_svc::hal::gpio::OutputPin + 'static,
     scl: impl esp_idf_svc::hal::gpio::InputPin + esp_idf_svc::hal::gpio::OutputPin + 'static,
 ) -> Result<i2c::I2cDriver<'static>, String> {
