@@ -134,7 +134,12 @@ impl<T: JsonTransport> MintClient for WireMintClient<T> {
         &mut self,
         request: nut05::MeltQuoteRequest,
     ) -> Result<nut05::MeltQuoteResponse, CashuError> {
-        let body = json!({ "request": request.request, "unit": request.unit });
+        // NUT-05 optional amount: serialize only when present (amountless
+        // invoices REQUIRE it; omitting keeps legacy request shapes).
+        let mut body = json!({ "request": request.request, "unit": request.unit });
+        if let Some(a) = request.amount {
+            body["amount"] = json!(a);
+        }
         let response = self
             .transport
             .post_json(&self.url("/v1/melt/quote/bolt11"), &body)?;

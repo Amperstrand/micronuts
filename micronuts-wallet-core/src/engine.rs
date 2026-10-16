@@ -583,11 +583,21 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         &mut self,
         invoice: &str,
     ) -> Result<(nut05::MeltQuoteResponse, MeltOutcome), CashuError> {
+        self.melt_with(invoice, None)
+    }
+
+    /// NUT-05 melt with the optional explicit amount (REQUIRED for
+    /// amountless invoices — the mint cannot derive it from the request).
+    pub fn melt_with(
+        &mut self,
+        invoice: &str,
+        amount: Option<u64>,
+    ) -> Result<(nut05::MeltQuoteResponse, MeltOutcome), CashuError> {
         self.ensure_connected()?;
         let quote = self.meta.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: self.unit.clone(),
-            amount: None,
+            amount,
         })?;
         let base = quote
             .amount
