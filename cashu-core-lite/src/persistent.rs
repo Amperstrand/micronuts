@@ -238,6 +238,7 @@ where
             .inner
             .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
         let minted: u64 = proofs.iter().map(|p| p.amount).sum();
+        self.verify_fresh(&proofs, mint_keys)?;
         self.proofs.extend(proofs);
         self.persist()?;
         Ok(minted)
@@ -478,6 +479,42 @@ where
         self.persist()
     }
 
+    /// Fail-closed NUT-12 gate for freshly-unblinded proofs: nothing
+    /// enters RAM state — and therefore nothing persists — until every
+    /// proof's DLEQ verifies against the mint keyset's amount key.
+    /// Closes the verify-after-persist crash window (parity matrix
+    /// round-2 finding: a crash between persist and the engine's verify
+    /// left unverified proofs that startup reloaded without checking).
+    fn verify_fresh(
+        &self,
+        proofs: &[nut00::Proof],
+        mint_keys: &nut01::KeySet,
+    ) -> Result<(), CashuError> {
+        for proof in proofs {
+            let dleq = proof.dleq.as_ref().ok_or_else(|| {
+                CashuError::Crypto(String::from(
+                    "mint signature carries no NUT-12 dleq — refusing to credit",
+                ))
+            })?;
+            let key = mint_keys
+                .keys
+                .iter()
+                .find(|k| k.amount == proof.amount)
+                .ok_or(CashuError::KeysetNotFound)?;
+            if !crate::nuts::nut12::verify_proof_dleq(
+                proof.secret.as_bytes(),
+                &proof.c,
+                dleq,
+                &key.pubkey,
+            ) {
+                return Err(CashuError::Crypto(String::from(
+                    "NUT-12 DLEQ verification failed — refusing to credit",
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// NUT-03 swap with NUT-13 deterministic outputs.
     ///
     /// Spends `inputs` — proofs the caller has already taken out of the
@@ -510,6 +547,7 @@ where
         let proofs = self
             .inner
             .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
+        self.verify_fresh(&proofs, mint_keys)?;
         self.proofs.extend(proofs.iter().cloned());
         self.persist()?;
         Ok(proofs)
