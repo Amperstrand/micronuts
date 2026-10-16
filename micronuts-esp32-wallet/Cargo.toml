@@ -80,5 +80,3 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
-[package.metadata.esp-idf-sys]
-esp_idf_version = "tag:v5.5.5"
