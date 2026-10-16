@@ -195,3 +195,23 @@ rev=683c879 (otadata-erase recipe, FWID-verified), nucula ccid wifi-vpcd
 (both `Nucula VPCD` readers in pcscd), all labgrid places released,
 hil-bench nightly active, **mint torn down per the adopted-helper
 policy** (recipe remains: `rig/scripts/start-mint.sh`).
+
+## Addendum 2 — the 8-hour unattended window (2026-10-16)
+
+### Phase A — micronuts correctness (PR #107, host-green)
+- **verify-before-persist** (NUT-12 crash window closed): the deterministic mint/swap paths now run a fail-closed DLEQ gate BEFORE extend+persist; mock mint upgraded to real `prove_dleq` witnesses with omit/corrupt hooks; **the 15 pre-existing tests had been passing with `dleq: None` because nothing verified** — two new regression tests prove tampered/missing witnesses persist nothing. 17/17.
+- **persistence witness** (#102 first half): lock-free save/load/fail counters + `wstat` verb (fork-compatible report).
+- **NUT-05 `amount`** field + `quote_melt_with` (amountless-invoice melts unblocked).
+
+### Phase B — fork NPB1 binary persistence blob (PR #13, bench-proven; fork issue #15 CLOSED)
+Binary form halves the blob; JSON fallback loader (self-migrating). Bench: **18/18 saves at 756 sat** (blob 9890 B) where the JSON path permanently failed; driven to **1176 sat / 84 proofs / 27 saves**, and **reboot persisted everything** (the JSON-era rollback point was 458). The wall moved from ~70 proofs to the 32 KiB bound (~2.6× tested balance).
+
+### Phase C — micronuts NFC silicon lane begins (PR #108)
+Feature-gated MFRC522 frontend (pinned Amperstrand driver, Grove 32/33 @0x28, proven bring-up pattern, lazy `nfc` verb). Builds clean for xtensa; the wallet boots on m5stick silicon (4 MB headers, live-mint engine init: NUT-01 1 keyset/8 keys, NUT-06, seed-from-NVS). The on-hardware `nfc` scan capture is blocked by the pre-existing `engine.connect()` blocking variance (their #79 lineage — boot wedged between wifi-up and keyset probes with the mint reachable); documented honestly in the PR with the build recipe.
+
+### Bench notes (both valuable)
+- **m5stick bootloader**: the ccid-lane bootloader binary (shared esp-idf-sys release tree) goes SILENT on this board after ROM entry — the fork's IDF-5.5.5 `build-m5stick/bootloader/bootloader.bin` at 0x1000 boots both fork AND ccid apps reliably; that's what the board runs now. Root-cause (likely a stale 2 MB sdkconfig baked into that shared-tree bootloader — it rejected 4 MB partition tables) parked as a bench-lore line here.
+- micronuts-esp32-wallet builds under the esp fork toolchain need `MICRONUTS_MINT_URL` baked (default .221:8383 wedges engine init) + 4 MB image headers via elf2image.
+
+### End state
+m5stick + nucula on ccid wifi-vpcd serving (FWID-verified, both VPCD readers in pcscd), mint torn down, places clean, nightly green (it ran SUCCESS during the window). PRs open: fork #13, micronuts #105/#107/#108, ccid #200. **Tomorrow's phone session**: phone replaces the ACR stand-in — test both readers (fork m5stick MFRC522 + micronuts #108 lane once its console unblocks), HCE/NDEF characterization per fork issue #1 Session-2.
