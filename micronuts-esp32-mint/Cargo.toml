@@ -24,9 +24,9 @@ path = "src/main.rs"
 
 [dependencies]
 # House pins (bolty-rs apps/bolty-esp32, tollgate-s3-rs apps/bolty-esp32).
-esp-idf-sys = { version = "=0.37.2", features = ["binstart"] }
-esp-idf-hal = "=0.46.2"
-esp-idf-svc = "=0.52.1"
+esp-idf-sys = { version = "0.38", features = ["binstart"] }
+esp-idf-hal = "0.47"
+esp-idf-svc = "0.53"
 log = "=0.4.29"
 anyhow = "1"
 
@@ -55,3 +55,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[package.metadata.esp-idf-sys]
+esp_idf_version = "tag:v5.5.5"
