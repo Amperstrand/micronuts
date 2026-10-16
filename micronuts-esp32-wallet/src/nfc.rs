@@ -12,10 +12,8 @@ use esp_idf_svc::hal::i2c;
 use esp_idf_svc::hal::units::Hertz;
 
 pub struct NfcFrontend {
-    reader: mfrc522::Mfrc522<
-        mfrc522::comm::blocking::i2c::I2cInterface<i2c::I2cDriver>,
-        mfrc522::state::Initialized,
-    >,
+    reader:
+        mfrc522::Mfrc522<mfrc522::comm::blocking::i2c::I2cInterface<i2c::I2cDriver<'static>>, mfrc522::Initialized>,
 }
 
 impl NfcFrontend {
@@ -60,11 +58,10 @@ impl NfcFrontend {
 /// M5StickC Plus Grove I2C pins (SDA 32 / SCL 33) — the same map the
 /// nucula fork's `board.h` M5STICK lane uses for its MFRC522.
 pub fn m5stick_i2c(
-    peripherals: &mut esp_idf_svc::hal::peripherals::Peripherals,
-) -> Result<i2c::I2cDriver, String> {
-    let sda = peripherals.pins.gpio32.downgrade();
-    let scl = peripherals.pins.gpio33.downgrade();
+    i2c0: impl esp_idf_svc::hal::peripheral::Peripheral<P = esp_idf_svc::hal::i2c::I2C0> + 'static,
+    sda: impl esp_idf_svc::hal::gpio::InputPin + esp_idf_svc::hal::gpio::OutputPin + 'static,
+    scl: impl esp_idf_svc::hal::gpio::InputPin + esp_idf_svc::hal::gpio::OutputPin + 'static,
+) -> Result<i2c::I2cDriver<'static>, String> {
     let config = i2c::config::Config::new().baudrate(Hertz(100_000).into());
-    i2c::I2cDriver::new(peripherals.i2c0.take().ok_or("i2c0 taken")?, sda, scl, &config)
-        .map_err(|e| format!("i2c0: {e:?}"))
+    i2c::I2cDriver::new(i2c0, sda, scl, &config).map_err(|e| format!("i2c0: {e:?}"))
 }

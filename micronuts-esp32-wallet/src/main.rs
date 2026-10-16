@@ -250,7 +250,12 @@ fn run() -> anyhow::Result<()> {
                 if nfc.is_none() {
                     match esp_idf_svc::hal::peripherals::Peripherals::take() {
                         Some(mut peripherals) => {
-                            match micronuts_esp32_wallet::nfc::m5stick_i2c(&mut peripherals) {
+                            let i2c = micronuts_esp32_wallet::nfc::m5stick_i2c(
+                                peripherals.i2c0,
+                                peripherals.pins.gpio32,
+                                peripherals.pins.gpio33,
+                            );
+                            match i2c {
                                 Ok(i2c) => match micronuts_esp32_wallet::nfc::NfcFrontend::new(i2c) {
                                     Ok(front) => {
                                         println!("nfc: MFRC522 up (Grove I2C @0x28)");
