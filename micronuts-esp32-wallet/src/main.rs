@@ -233,7 +233,7 @@ fn run() -> anyhow::Result<()> {
         }
         match trimmed {
             "help" => {
-                println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status")
+                println!("help | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status")
             }
             "connect" => match engine.connect() {
                 Ok(()) => println!(
@@ -244,6 +244,12 @@ fn run() -> anyhow::Result<()> {
                 Err(e) => println!("connect error: {e:?}"),
             },
             "balance" => println!("balance: {} sats", engine.balance()),
+            "wstat" => {
+                println!(
+                    "{}",
+                    micronuts_wallet_core::witness::STORE_WITNESS.report()
+                );
+            }
             "heap" => println!("free: {} B", unsafe {
                 esp_idf_svc::hal::sys::esp_get_free_heap_size()
             }),

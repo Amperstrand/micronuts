@@ -51,28 +51,53 @@ impl<T: NvsPartitionId> NvsProofStore<T> {
 impl<T: NvsPartitionId> ProofStore for NvsProofStore<T> {
     fn load(&mut self) -> Result<Option<Vec<u8>>, StoreError> {
         match self.nvs.blob_len(self.key) {
-            Ok(None) => Ok(None),
+            Ok(None) => {
+                micronuts_wallet_core::witness::STORE_WITNESS.load_ok();
+                Ok(None)
+            }
             Ok(Some(len)) => {
                 let mut buf = vec![0u8; len];
-                self.nvs
-                    .get_blob(self.key, &mut buf)
-                    .map_err(|e| StoreError::Failed(format!("nvs read: {e:?}")))?;
-                Ok(Some(buf))
+                match self.nvs.get_blob(self.key, &mut buf) {
+                    Ok(_) => {
+                        micronuts_wallet_core::witness::STORE_WITNESS.load_ok();
+                        Ok(Some(buf))
+                    }
+                    Err(e) => {
+                        let msg = format!("nvs read: {e:?}");
+                        micronuts_wallet_core::witness::STORE_WITNESS.load_fail(&msg);
+                        Err(StoreError::Failed(msg))
+                    }
+                }
             }
-            Err(e) => Err(StoreError::Failed(format!("nvs stat: {e:?}"))),
+            Err(e) => {
+                let msg = format!("nvs stat: {e:?}");
+                micronuts_wallet_core::witness::STORE_WITNESS.load_fail(&msg);
+                Err(StoreError::Failed(msg))
+            }
         }
     }
 
     fn save(&mut self, blob: &[u8]) -> Result<(), StoreError> {
+        use micronuts_wallet_core::witness::STORE_WITNESS;
         if blob.len() > self.max_blob {
-            return Err(StoreError::Failed(format!(
+            let msg = format!(
                 "blob {} B exceeds the {} B fail-stop bound — wallet refuses to run on unsavable state",
                 blob.len(),
                 self.max_blob
-            )));
+            );
+            STORE_WITNESS.save_fail(blob.len(), &msg);
+            return Err(StoreError::Failed(msg));
         }
-        self.nvs
-            .set_blob(self.key, blob)
-            .map_err(|e| StoreError::Failed(format!("nvs write: {e:?}")))
+        match self.nvs.set_blob(self.key, blob) {
+            Ok(_) => {
+                STORE_WITNESS.save_ok(blob.len());
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("nvs write: {e:?}");
+                STORE_WITNESS.save_fail(blob.len(), &msg);
+                Err(StoreError::Failed(msg))
+            }
+        }
     }
 }
