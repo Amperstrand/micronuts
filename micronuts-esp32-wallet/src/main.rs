@@ -167,6 +167,11 @@ fn run() -> anyhow::Result<()> {
         }
     };
 
+    // NFC frontend (feature nfc-mfrc522): lazy — initialized on the
+    // first `nfc` verb; boot never depends on optional hardware.
+    #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+    let mut nfc: Option<micronuts_esp32_wallet::nfc::NfcFrontend> = None;
+
     // hostapd deauths a silent station (~30-60s inactivity) — and the
     // k256 swap stretches run minutes with zero TX (bench 2026-09-27:
     // every long-compute phase ended in "Host is unreachable"). One UDP
@@ -233,7 +238,46 @@ fn run() -> anyhow::Result<()> {
         }
         match trimmed {
             "help" => {
-                println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status")
+                let extra = if cfg!(all(target_arch = "xtensa", feature = "nfc-mfrc522")) {
+                    " | nfc"
+                } else {
+                    ""
+                };
+                println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status{extra}")
+            }
+            #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+            "nfc" => {
+                if nfc.is_none() {
+                    match esp_idf_svc::hal::peripherals::Peripherals::take() {
+                        Some(mut peripherals) => {
+                            match micronuts_esp32_wallet::nfc::m5stick_i2c(&mut peripherals) {
+                                Ok(i2c) => match micronuts_esp32_wallet::nfc::NfcFrontend::new(i2c) {
+                                    Ok(front) => {
+                                        println!("nfc: MFRC522 up (Grove I2C @0x28)");
+                                        nfc = Some(front);
+                                    }
+                                    Err(e) => println!("nfc init error: {e}"),
+                                },
+                                Err(e) => println!("nfc i2c error: {e}"),
+                            }
+                        }
+                        None => println!("nfc: peripherals already taken (reboot to retry init)"),
+                    }
+                }
+                if let Some(front) = nfc.as_mut() {
+                    match front.scan_once() {
+                        Ok(Some((atqa, uid))) => {
+                            let uid_hex: String = uid
+                                .as_bytes()
+                                .iter()
+                                .map(|b| format!("{b:02X}"))
+                                .collect();
+                            println!("nfc: tag ATQA={:02X}{:02X} UID={uid_hex}", atqa.as_bytes()[1], atqa.as_bytes()[0]);
+                        }
+                        Ok(None) => println!("nfc: no tag in field"),
+                        Err(e) => println!("nfc scan error: {e}"),
+                    }
+                }
             }
             "connect" => match engine.connect() {
                 Ok(()) => println!(
