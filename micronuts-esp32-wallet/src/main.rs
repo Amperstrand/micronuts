@@ -249,7 +249,7 @@ fn run() -> anyhow::Result<()> {
             "nfc" => {
                 if nfc.is_none() {
                     match esp_idf_svc::hal::peripherals::Peripherals::take() {
-                        Some(mut peripherals) => {
+                        Ok(mut peripherals) => {
                             let i2c = micronuts_esp32_wallet::nfc::m5stick_i2c(
                                 peripherals.i2c0,
                                 peripherals.pins.gpio32,
@@ -266,7 +266,7 @@ fn run() -> anyhow::Result<()> {
                                 Err(e) => println!("nfc i2c error: {e}"),
                             }
                         }
-                        None => println!("nfc: peripherals already taken (reboot to retry init)"),
+                        Err(_) => println!("nfc: peripherals already taken (reboot to retry init)"),
                     }
                 }
                 if let Some(front) = nfc.as_mut() {
