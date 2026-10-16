@@ -9,7 +9,7 @@
 //! ISO 14443-3 cascade levels internally and returns the full UID).
 
 use esp_idf_svc::hal::i2c;
-use esp_idf_svc::hal::prelude::*;
+use esp_idf_svc::hal::units::Hertz;
 
 pub struct NfcFrontend {
     reader: mfrc522::Mfrc522<
@@ -64,7 +64,7 @@ pub fn m5stick_i2c(
 ) -> Result<i2c::I2cDriver, String> {
     let sda = peripherals.pins.gpio32.downgrade();
     let scl = peripherals.pins.gpio33.downgrade();
-    let config = i2c::config::Config::new().baudrate(100.kHz().into());
+    let config = i2c::config::Config::new().baudrate(Hertz(100_000).into());
     i2c::I2cDriver::new(peripherals.i2c0.take().ok_or("i2c0 taken")?, sda, scl, &config)
         .map_err(|e| format!("i2c0: {e:?}"))
 }
