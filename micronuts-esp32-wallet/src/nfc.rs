@@ -17,8 +17,8 @@ pub struct NfcFrontend {
 }
 
 impl NfcFrontend {
-    pub fn new(i2c: i2c::I2cDriver) -> Result<Self, String> {
-        let reader = mfrc522::Mfrc522::new(
+    pub fn new(i2c: i2c::I2cDriver<'static>) -> Result<Self, String> {
+        let mut reader = mfrc522::Mfrc522::new(
             mfrc522::comm::blocking::i2c::I2cInterface::new(i2c, 0x28),
         )
         .init()
