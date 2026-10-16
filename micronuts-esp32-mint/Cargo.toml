@@ -46,9 +46,6 @@ embuild = { version = "=0.33.5", features = ["espidf"] }
 # Patched hal (ccid-firmware-rs pattern): 0.46.2 + the
 # sdmmc_host_t::unaligned_multi_block_rw_max_chunk_size initializer
 # backported from 0.47.0 — required for the IDF v5.5.5 bindings.
-[patch.crates-io]
-esp-idf-hal = { path = "../vendor/esp-idf-hal" }
-
 [profile.release]
 opt-level = "s"
 lto = true
