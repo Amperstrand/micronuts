@@ -41,18 +41,15 @@ impl Witness {
 
     pub fn save_ok(&self, blob_len: usize) {
         self.saves.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len
-            .store(blob_len as u64, Ordering::Relaxed);
+        self.last_blob_len.store(blob_len as u64, Ordering::Relaxed);
         self.last_save_ok.store(1, Ordering::Relaxed);
     }
 
     pub fn save_fail(&self, blob_len: usize, err: &str) {
         self.save_fails.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len
-            .store(blob_len as u64, Ordering::Relaxed);
+        self.last_blob_len.store(blob_len as u64, Ordering::Relaxed);
         self.last_save_ok.store(0, Ordering::Relaxed);
-        self.last_err_len
-            .store(err.len() as u64, Ordering::Relaxed);
+        self.last_err_len.store(err.len() as u64, Ordering::Relaxed);
         if let Ok(mut slot) = self.last_err.lock() {
             slot.clear();
             slot.push_str(err);
@@ -79,11 +76,7 @@ impl Witness {
         } else {
             "FAIL"
         };
-        let err = self
-            .last_err
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or_default();
+        let err = self.last_err.lock().map(|s| s.clone()).unwrap_or_default();
         format!(
             "saves={} fails={} last={} err={} blob={} loads={} load_fails={}",
             self.saves.load(Ordering::Relaxed),
@@ -107,7 +100,9 @@ mod tests {
         assert!(w.report().contains("saves=0 fails=0 last=FAIL"));
         w.save_ok(409);
         w.save_ok(512);
-        assert!(w.report().contains("saves=2 fails=0 last=ok err=- blob=512"));
+        assert!(w
+            .report()
+            .contains("saves=2 fails=0 last=ok err=- blob=512"));
         w.save_fail(600, "nvs write: no space");
         assert!(w.report().contains("fails=1 last=FAIL err=nvs write"));
     }

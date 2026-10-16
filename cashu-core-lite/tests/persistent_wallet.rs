@@ -696,7 +696,9 @@ fn mint_rejects_missing_dleq_and_persists_nothing() {
     let store = SharedStore::new();
 
     let mut w = wallet_with(&mock, store.clone());
-    let err = w.mint_deterministic("q1", 8, KEYSET_ID, &keyset).unwrap_err();
+    let err = w
+        .mint_deterministic("q1", 8, KEYSET_ID, &keyset)
+        .unwrap_err();
     assert!(
         err.to_string().contains("dleq"),
         "expected a dleq error, got: {err}"

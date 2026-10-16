@@ -516,6 +516,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         self.meta.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: self.unit.clone(),
+            amount: None,
         })
     }
 
@@ -532,6 +533,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         let quote = self.meta.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: self.unit.clone(),
+            amount: None,
         })?;
         let base = quote
             .amount

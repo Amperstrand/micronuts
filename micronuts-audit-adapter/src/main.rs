@@ -739,6 +739,7 @@ fn parse_melt_quote_request(body: &Value) -> Result<nut05::MeltQuoteRequest, Res
     Ok(nut05::MeltQuoteRequest {
         request: request.to_string(),
         unit: unit.to_string(),
+        amount: None,
     })
 }
 

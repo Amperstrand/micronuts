@@ -1497,6 +1497,7 @@ mod tests {
         let result = mint.post_melt_quote(nut05::MeltQuoteRequest {
             request: "garbage".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         });
         assert!(result.is_err());
     }
