@@ -84,6 +84,7 @@ fn rpc_request_roundtrip_covers_all_demo_methods() {
             method: MintRpcMethod::MeltQuote(nut05::MeltQuoteRequest {
                 request: "lnbcdemo64sat1micronuts".to_string(),
                 unit: "sat".to_string(),
+                amount: None,
             }),
         },
         MintRpcRequest {

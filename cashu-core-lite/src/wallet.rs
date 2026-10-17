@@ -154,6 +154,7 @@ impl<T: MintClient> Wallet<T> {
         self.transport.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: String::from(unit),
+            amount: None,
         })
     }
 

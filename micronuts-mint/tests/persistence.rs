@@ -305,6 +305,7 @@ fn melt_rollback_survives_restart() {
             .post_melt_quote(nut05::MeltQuoteRequest {
                 request: "lnbcdemo3sat1micronuts".to_string(),
                 unit: "sat".to_string(),
+                amount: None,
             })
             .unwrap();
         melt_quote_id = melt_quote.quote.clone();
@@ -550,6 +551,7 @@ fn matrix_melt_rollback_survives(make_store: &dyn Fn() -> Box<dyn StateStore>) {
             .post_melt_quote(nut05::MeltQuoteRequest {
                 request: "lnbcdemo3sat1micronuts".to_string(),
                 unit: "sat".to_string(),
+                amount: None,
             })
             .unwrap();
         melt_quote_id = melt_quote.quote.clone();

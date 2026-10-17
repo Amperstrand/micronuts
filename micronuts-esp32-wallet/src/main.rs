@@ -256,7 +256,7 @@ fn run() -> anyhow::Result<()> {
                 } else {
                     ""
                 };
-                println!("help | connect | balance | heap | seed | p2pk | tollgate join/pay/status{extra}")
+                println!("help | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status{extra}")
             }
             #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
             "nfc" => {
@@ -302,6 +302,12 @@ fn run() -> anyhow::Result<()> {
                 Err(e) => println!("connect error: {e:?}"),
             },
             "balance" => println!("balance: {} sats", engine.balance()),
+            "wstat" => {
+                println!(
+                    "{}",
+                    micronuts_wallet_core::witness::STORE_WITNESS.report()
+                );
+            }
             "heap" => println!("free: {} B", unsafe {
                 esp_idf_svc::hal::sys::esp_get_free_heap_size()
             }),

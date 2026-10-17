@@ -736,9 +736,13 @@ fn parse_melt_quote_request(body: &Value) -> Result<nut05::MeltQuoteRequest, Res
         .get("unit")
         .and_then(|v| v.as_str())
         .ok_or_else(|| bad_request("unit", "missing or not a string"))?;
+    // NUT-05 optional amount: REQUIRED for amountless invoices — forward
+    // whatever the wallet sent instead of discarding it.
+    let amount = body.get("amount").and_then(|v| v.as_u64());
     Ok(nut05::MeltQuoteRequest {
         request: request.to_string(),
         unit: unit.to_string(),
+        amount,
     })
 }
 
