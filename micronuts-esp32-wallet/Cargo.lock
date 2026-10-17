@@ -1139,6 +1139,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "mfrc522"
+version = "0.8.0"
+source = "git+https://github.com/Amperstrand/mfrc522-rs.git?rev=e9ced1e#e9ced1e2acc5a724cc0da4f2be6cf4968dc92aff"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "heapless 0.8.0",
+]
+
+[[package]]
 name = "micromath"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1157,6 +1166,7 @@ dependencies = [
  "esp-idf-svc",
  "esp-idf-sys",
  "log",
+ "mfrc522",
  "micronuts-wallet-core",
  "mipidsi",
  "qrcode",
@@ -2098,3 +2108,7 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "esp-idf-hal"
+version = "0.46.2"

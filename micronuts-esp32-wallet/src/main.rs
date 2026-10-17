@@ -57,9 +57,20 @@ fn run() -> anyhow::Result<()> {
     assert_eq!(back.as_deref(), Some(payload.as_slice()));
     println!("store round-trip: OK (64 B)");
 
+    // One take() for the whole app: the modem feeds WiFi here, and the
+    // NFC lane (feature nfc-mfrc522) reserves I2C0 + the Grove pins NOW —
+    // a second take() later always fails (ESP_ERR_INVALID_STATE), which
+    // is exactly how the first cut of the lazy `nfc` verb was dead on
+    // arrival (Codex P1).
+    let mut single_peripherals = Peripherals::take()?;
+    #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+    let nfc_i2c_parts = Some((
+        single_peripherals.i2c0,
+        single_peripherals.pins.gpio32,
+        single_peripherals.pins.gpio33,
+    ));
     let mut wifi = {
-        let peripherals = Peripherals::take()?;
-        micronuts_esp32_wallet::wifi::WifiManager::new(peripherals.modem, partition)?
+        micronuts_esp32_wallet::wifi::WifiManager::new(single_peripherals.modem, partition)?
     };
     let (ssid, pass) = match (WIFI_SSID, WIFI_PASS) {
         (Some(s), Some(p)) => (s, p),
@@ -167,6 +178,13 @@ fn run() -> anyhow::Result<()> {
         }
     };
 
+    // NFC frontend (feature nfc-mfrc522): lazy — initialized on the
+    // first `nfc` verb; boot never depends on optional hardware.
+    #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+    let mut nfc: Option<micronuts_esp32_wallet::nfc::NfcFrontend> = None;
+    #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+    let mut nfc_i2c_parts = nfc_i2c_parts;
+
     // hostapd deauths a silent station (~30-60s inactivity) — and the
     // k256 swap stretches run minutes with zero TX (bench 2026-09-27:
     // every long-compute phase ended in "Host is unreachable"). One UDP
@@ -233,7 +251,47 @@ fn run() -> anyhow::Result<()> {
         }
         match trimmed {
             "help" => {
-                println!("help | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status")
+                let extra = if cfg!(all(target_arch = "xtensa", feature = "nfc-mfrc522")) {
+                    " | nfc"
+                } else {
+                    ""
+                };
+                println!("help | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status{extra}")
+            }
+            #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+            "nfc" => {
+                if nfc.is_none() {
+                    // I2C0 + Grove pins were reserved at boot — consume
+                    // them once here.
+                    if let Some((i2c0, sda, scl)) = nfc_i2c_parts.take() {
+                        match micronuts_esp32_wallet::nfc::m5stick_i2c(i2c0, sda, scl) {
+                            Ok(i2c) => match micronuts_esp32_wallet::nfc::NfcFrontend::new(i2c) {
+                                Ok(front) => {
+                                    println!("nfc: MFRC522 up (Grove I2C @0x28)");
+                                    nfc = Some(front);
+                                }
+                                Err(e) => println!("nfc init error: {e}"),
+                            },
+                            Err(e) => println!("nfc i2c error: {e}"),
+                        }
+                    } else {
+                        println!("nfc: I2C parts already consumed (reboot to retry)");
+                    }
+                }
+                if let Some(front) = nfc.as_mut() {
+                    match front.scan_once() {
+                        Ok(Some((atqa, uid))) => {
+                            let uid_hex: String = uid
+                                .as_bytes()
+                                .iter()
+                                .map(|b| format!("{b:02X}"))
+                                .collect();
+                            println!("nfc: tag ATQA={:02X}{:02X} UID={uid_hex}", atqa.as_bytes()[1], atqa.as_bytes()[0]);
+                        }
+                        Ok(None) => println!("nfc: no tag in field"),
+                        Err(e) => println!("nfc scan error: {e}"),
+                    }
+                }
             }
             "connect" => match engine.connect() {
                 Ok(()) => println!(

@@ -14,6 +14,8 @@
 
 use cashu_core_lite::store::{ProofStore, StoreError};
 pub mod http_transport;
+#[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
+pub mod nfc;
 pub mod led_matrix;
 pub mod tollgate;
 pub mod wifi;
