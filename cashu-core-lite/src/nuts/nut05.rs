@@ -35,6 +35,10 @@ pub struct MeltQuoteRequest {
     /// Unit (e.g. "sat").
     #[n(1)]
     pub unit: String,
+    /// NUT-05: "amount": <int> — REQUIRED for amountless invoices
+    /// (bolt12/offline), optional otherwise.
+    #[n(2)]
+    pub amount: Option<u64>,
 }
 
 /// Response body for melt quote endpoints (NUT-05).

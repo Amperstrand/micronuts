@@ -29,9 +29,38 @@ struct MockMint {
     signed: Rc<RefCell<BTreeMap<[u8; 33], nut00::BlindSignature>>>,
     /// Test hook: when set, post_melt reports PENDING/unpaid.
     melt_pending: Rc<std::cell::Cell<bool>>,
+    /// Test hook: mint-side NUT-12 behavior (default Valid).
+    dleq_mode: Rc<std::cell::Cell<u8>>, // 0=Valid 1=None 2=Corrupt
 }
 
 impl MockMint {
+    /// Mint-side NUT-12 witness for a blinded output, honoring the
+    /// dleq_mode test hook (0 real witness, 1 omitted, 2 corrupted).
+    fn mint_dleq(
+        &self,
+        b: &cashu_core_lite::keypair::PublicKey,
+        privkey: &SecretKey,
+    ) -> Option<cashu_core_lite::nuts::nut12::BlindSignatureDleq> {
+        use cashu_core_lite::nuts::nut12;
+        // Deterministic per-output nonce: fine for a mock (a real mint
+        // draws randomly); prove_dleq needs one explicitly in no_std.
+        let mut nonce_bytes = [7u8; 32];
+        let b_bytes = b.to_bytes();
+        nonce_bytes[..b_bytes.len().min(32)].copy_from_slice(&b_bytes[..b_bytes.len().min(32)]);
+        let nonce = SecretKey::from_slice(&nonce_bytes).ok()?;
+        match self.dleq_mode.get() {
+            1 => None,
+            2 => {
+                let mut d = nut12::prove_dleq(b, privkey, Some(nonce)).ok()?;
+                let mut bytes = d.e.to_bytes();
+                bytes[10] ^= 1;
+                d.e = SecretKey::from_slice(&bytes).ok()?;
+                Some(d)
+            }
+            _ => nut12::prove_dleq(b, privkey, Some(nonce)).ok(),
+        }
+    }
+
     fn new() -> Self {
         let mut keys = Vec::new();
         let mut privkeys = BTreeMap::new();
@@ -53,6 +82,7 @@ impl MockMint {
             privkeys,
             signed: Rc::new(RefCell::new(BTreeMap::new())),
             melt_pending: Rc::new(std::cell::Cell::new(false)),
+            dleq_mode: Rc::new(std::cell::Cell::new(0)),
         }
     }
 
@@ -85,7 +115,7 @@ impl MockMint {
                 amount: give,
                 id: out.id.clone(),
                 c: sign_message(privkey, &out.b),
-                dleq: None,
+                dleq: self.mint_dleq(&out.b, privkey),
             });
             remaining -= give;
         }
@@ -134,11 +164,12 @@ impl MintClient for MockMint {
                 .get(&output.amount)
                 .ok_or(CashuError::KeysetNotFound)?;
             let c = sign_message(privkey, &output.b);
+            let dleq = self.mint_dleq(&output.b, privkey);
             let sig = nut00::BlindSignature {
                 amount: output.amount,
                 id: output.id.clone(),
                 c,
-                dleq: None,
+                dleq,
             };
             self.signed
                 .borrow_mut()
@@ -213,7 +244,7 @@ impl MintClient for MockMint {
                 amount: output.amount,
                 id: output.id.clone(),
                 c: sign_message(privkey, &output.b),
-                dleq: None,
+                dleq: self.mint_dleq(&output.b, privkey),
             };
             self.signed
                 .borrow_mut()
@@ -625,4 +656,55 @@ fn remove_proofs_removes_only_the_given_slice() {
 
     let restarted = wallet_with(&mock, medium);
     assert_eq!(restarted.balance(), 31);
+}
+
+#[test]
+fn swap_rejects_tampered_dleq_and_persists_nothing() {
+    let mock = MockMint::new();
+    mock.dleq_mode.set(2); // corrupted mint witness
+    let keyset = mock.keys.clone();
+    let store = SharedStore::new();
+
+    let mut w = wallet_with(&mock, store.clone());
+    mock.dleq_mode.set(0); // mint the inputs honestly
+    w.mint_deterministic("q1", 8, KEYSET_ID, &keyset).unwrap();
+    let selected = w.spend(8).unwrap();
+
+    mock.dleq_mode.set(2); // now corrupt the swap response
+    let err = w
+        .swap_deterministic(selected, &[4, 2, 2], KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("NUT-12"),
+        "expected a NUT-12 error, got: {err}"
+    );
+    assert_eq!(w.balance(), 0, "tampered proofs never entered RAM state");
+
+    let restarted = wallet_with(&mock, store);
+    assert_eq!(
+        restarted.balance(),
+        0,
+        "nothing persisted: a crash can no longer store unverified proofs"
+    );
+}
+
+#[test]
+fn mint_rejects_missing_dleq_and_persists_nothing() {
+    let mock = MockMint::new();
+    mock.dleq_mode.set(1); // witness omitted
+    let keyset = mock.keys.clone();
+    let store = SharedStore::new();
+
+    let mut w = wallet_with(&mock, store.clone());
+    let err = w
+        .mint_deterministic("q1", 8, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("dleq"),
+        "expected a dleq error, got: {err}"
+    );
+    assert_eq!(w.balance(), 0);
+
+    let restarted = wallet_with(&mock, store);
+    assert_eq!(restarted.balance(), 0);
 }

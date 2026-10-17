@@ -555,10 +555,22 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
 
     /// NUT-05 step 1: fetch a melt quote for an invoice without paying.
     pub fn quote_melt(&mut self, invoice: &str) -> Result<nut05::MeltQuoteResponse, CashuError> {
+        self.quote_melt_with(invoice, None)
+    }
+
+    /// NUT-05 melt quote with the optional explicit `amount` — REQUIRED
+    /// for amountless invoices (bolt12 class), where the mint cannot
+    /// derive the amount from the request string alone.
+    pub fn quote_melt_with(
+        &mut self,
+        invoice: &str,
+        amount: Option<u64>,
+    ) -> Result<nut05::MeltQuoteResponse, CashuError> {
         self.ensure_connected()?;
         self.meta.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: self.unit.clone(),
+            amount,
         })
     }
 
@@ -571,10 +583,21 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         &mut self,
         invoice: &str,
     ) -> Result<(nut05::MeltQuoteResponse, MeltOutcome), CashuError> {
+        self.melt_with(invoice, None)
+    }
+
+    /// NUT-05 melt with the optional explicit amount (REQUIRED for
+    /// amountless invoices — the mint cannot derive it from the request).
+    pub fn melt_with(
+        &mut self,
+        invoice: &str,
+        amount: Option<u64>,
+    ) -> Result<(nut05::MeltQuoteResponse, MeltOutcome), CashuError> {
         self.ensure_connected()?;
         let quote = self.meta.post_melt_quote(nut05::MeltQuoteRequest {
             request: String::from(invoice),
             unit: self.unit.clone(),
+            amount,
         })?;
         let base = quote
             .amount

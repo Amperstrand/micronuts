@@ -22,6 +22,7 @@ fn test_melt_quote_request_cbor_roundtrip() {
     let request = MeltQuoteRequest {
         request: "lnbc1000n1...".to_string(),
         unit: "sat".to_string(),
+        amount: None,
     };
 
     let mut buf = vec![];

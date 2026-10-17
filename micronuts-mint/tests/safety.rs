@@ -218,6 +218,7 @@ fn double_spend_across_operations_rejected() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo1sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
     let result = mint.post_melt(nut05::MeltRequest {
@@ -245,6 +246,7 @@ fn melt_change_overask_signs_only_what_fits() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo5sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
 
@@ -327,6 +329,7 @@ fn melt_change_signs_what_fits_under_fee_accounting() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo10sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
     assert_eq!(melt_quote.amount, 10);
@@ -353,6 +356,7 @@ fn melt_change_signs_what_fits_under_fee_accounting() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo10sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
     let (outputs, _) = blind_outputs(&[32, 16, 4, 1], mint.keyset_id(), &mut rng).unwrap();
@@ -379,6 +383,7 @@ fn failing_payment_releases_proofs_and_fails_quote() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo2sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
     let result = mint.post_melt(nut05::MeltRequest {
@@ -416,6 +421,7 @@ fn melt_blank_outputs_receive_overpay_decomposition() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo10sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
 
@@ -454,6 +460,7 @@ fn melt_quote_is_single_shot() {
         .post_melt_quote(nut05::MeltQuoteRequest {
             request: "lnbcdemo2sat1micronuts".to_string(),
             unit: "sat".to_string(),
+            amount: None,
         })
         .unwrap();
 

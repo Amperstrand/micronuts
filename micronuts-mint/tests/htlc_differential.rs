@@ -175,6 +175,7 @@ fn melt_quote(mint: &mut DemoMint, amount: u64) -> String {
     mint.post_melt_quote(nut05::MeltQuoteRequest {
         request: format!("lnbcdemo{amount}sat1micronuts"),
         unit: "sat".to_string(),
+        amount: None,
     })
     .expect("melt quote")
     .quote
