@@ -45,9 +45,9 @@ display-m5stick = ["dep:mipidsi", "dep:embedded-graphics"]
 
 [dependencies]
 # House pins (micronuts-esp32-mint, bolty-rs apps/bolty-esp32).
-esp-idf-sys = { version = "=0.37.2", features = ["binstart"] }
-esp-idf-hal = "=0.46.2"
-esp-idf-svc = "=0.52.1"
+esp-idf-sys = { version = "0.38", features = ["binstart"] }
+esp-idf-hal = "0.47"
+esp-idf-svc = "0.53"
 embedded-svc = "0.29"
 log = "=0.4.29"
 anyhow = "1"
@@ -70,12 +70,10 @@ embuild = { version = "=0.33.5", features = ["espidf"] }
 # Patched hal (ccid-firmware-rs pattern): 0.46.2 + the
 # sdmmc_host_t::unaligned_multi_block_rw_max_chunk_size initializer
 # backported from 0.47.0 — required for the IDF v5.5.5 bindings.
-[patch.crates-io]
-esp-idf-hal = { path = "../vendor/esp-idf-hal" }
-
 [profile.release]
 opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+

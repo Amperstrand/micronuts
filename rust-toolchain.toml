@@ -1,0 +1,7 @@
+# One authority per repo: CI reads this file (dtolnay/rust-toolchain with no
+# explicit version). Fleet standard 2026-10-15: exact-pinned stable (ccid-firmware-rs
+# AGENTS toolchain policy). Exceptions live ONLY where structural: the pinned esp
+# fork (esp-idf targets), nightly for instrumented fuzzing.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]

@@ -57,7 +57,7 @@ jobs:
       # Stable since 2026-09-02 (#48) — the LTO-on-stable failure the
       # nightly pin worked around no longer reproduces.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
           targets: thumbv7em-none-eabihf
 
