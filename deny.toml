@@ -23,6 +23,14 @@ ignore = [
   # ttf-parser: unmaintained. slint/rustybuzz font parsing layer, same
   # chain. Revisit when slint upstream replaces the font stack.
   "RUSTSEC-2026-0192",
+  # zvariant / zvariant_derive / zbus_names: unmaintained as standalone
+  # crates (merged into zbus 6.0 as its `wire` module). Pulled by the
+  # wallet UI's zbus dependency; migrating is a zbus major-bump product
+  # change, not a CI-unblock. NOT vulnerabilities — unmaintained-only.
+  # Revisit with the next zbus upgrade.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
 ]
 
 [bans]
