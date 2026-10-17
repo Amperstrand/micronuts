@@ -25,6 +25,12 @@ pub struct Witness {
     last_err: std::sync::Mutex<String>,
 }
 
+impl Default for Witness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Witness {
     pub const fn new() -> Self {
         Witness {
