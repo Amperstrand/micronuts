@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           components: rustfmt
       - name: Workspace format check
         run: cargo fmt --all --check
@@ -33,6 +34,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       # Plain `cargo test` never prints a summary if a test wedges (the
       # microfips #178 lesson); nextest terminates hung tests per
@@ -168,6 +171,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           targets: wasm32-unknown-unknown
 
       - name: Install trunk
@@ -217,6 +221,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           components: clippy
 
       - name: Install USB system deps (host-mint-tool -> rusb -> libudev; wallet UI -> winit/fontconfig)
@@ -246,6 +251,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           targets: thumbv7em-none-eabihf
           components: clippy
 
@@ -265,6 +271,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - name: Install wallet UI system deps (slint link deps)
         run: sudo apt-get update && sudo apt-get install -y libudev-dev libusb-1.0-0-dev libxkbcommon-dev libfontconfig1-dev
@@ -381,6 +389,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -407,6 +417,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
