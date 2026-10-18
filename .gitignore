@@ -47,6 +47,12 @@ target/
 **/*.rs.bk
 *.pdb
 
+# esp-idf build trees (also covered per-dir in micronuts-esp32-*)
+.embuild/
+
+# Flashable/binary build outputs (firmware.bin, NVS/flash dumps)
+*.bin
+
 # IDE
 .idea/
 .vscode/
