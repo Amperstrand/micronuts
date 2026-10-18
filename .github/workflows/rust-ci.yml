@@ -420,20 +420,24 @@ jobs:
         with:
           toolchain: 1.99.0
       - name: Install cargo-deny
+        # Pinned (#111/#88): an unpinned install drifts between local and
+        # CI verdicts — license/advisory decisions must be reproducible.
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny
-      - name: Advisories + bans
-        run: cargo deny --workspace --all-features check advisories bans
+          tool: cargo-deny@0.20.2
+      - name: Advisories + bans + licenses
+        run: cargo deny --workspace --all-features check advisories bans licenses
 
       # Gate-2 W5: the ESP crates are excluded from the workspace, so the
       # root deny run never traverses them — check them by manifest path
       # (both inherit the root deny.toml; locks are committed).
       # (micronuts-esp32-bridge was removed by the 2026-09-11
-      # modularity audit; only the mint front-end remains.)
-      - name: Advisories + bans (ESP crate)
+      # modularity audit; the mint front-end and the wallet side-workspace
+      # remain.)
+      - name: Advisories + bans + licenses (ESP workspaces)
         run: |
-          cargo deny --manifest-path micronuts-esp32-mint/Cargo.toml check advisories bans
+          cargo deny --manifest-path micronuts-esp32-mint/Cargo.toml check advisories bans licenses
+          cargo deny --manifest-path micronuts-esp32-wallet/Cargo.toml check advisories bans licenses
 
   esp32-build:
     # Cross-build the ESP32 (esp-idf std) mint front-end. ccid-firmware-rs

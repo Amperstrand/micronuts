@@ -40,7 +40,116 @@ multiple-versions = "warn"
 wildcards = "allow"
 
 [licenses]
-# License checking disabled for now: the workspace is a mix of
-# MIT/Apache-2.0/0BSD with vendored embassy forks; a full license audit
-# is its own task before enabling.
-confidence-threshold = 0.0
+# License gate (#111): every crate in the resolved graph — the root
+# workspace AND both excluded ESP workspaces — must be satisfied by this
+# list. Standard permissive licenses are allowed wholesale; anything
+# copyleft, non-OSI, or custom gets an entry naming the dependency chain
+# that pulls it and why it is acceptable. Copyleft licenses are NOT in
+# the global allow list: they live in [[licenses.exceptions]] scoped to
+# the exact crate, so any NEW copyleft dependency still hard-fails.
+#
+# Note: confidence-threshold only gates how confident cargo-deny must be
+# about a detected SPDX expression — it never disables checking. 0.8
+# (cargo-deny's default) accepts every explicitly declared `license =`
+# field in this tree.
+confidence-threshold = 0.8
+allow = [
+  # The standard permissive core (all OSI-approved): the bulk of the tree.
+  "MIT",
+  "Apache-2.0",
+  # Apache with the LLVM runtime exception — bindgen/LLVM-toolchain
+  # crates in the ESP build graphs.
+  "Apache-2.0 WITH LLVM-exception",
+  # This workspace's own license; nt35510 BSP.
+  "0BSD",
+  # ring/rustls-webpki/untrusted (ureq TLS chain), rqrr, libloading.
+  "ISC",
+  # rav1e/v_frame/av1-grain — the slint image chain.
+  "BSD-2-Clause",
+  # bindgen, tiny-skia (resvg), subtle (secp256k1), exr.
+  "BSD-3-Clause",
+  # Image/x11 corner: zune-*, fontdue, glow, cursor-icon, xkeysym, ...
+  "Zlib",
+  # Boost Software License: ryu, clipboard-win, error-code.
+  "BSL-1.0",
+  # ICU4X chain + unicode-ident (slint text stack): permissive,
+  # attribution-only Unicode License v3.
+  "Unicode-3.0",
+  # Public-domain dedication; some ESP-graph crates declare it.
+  "Unlicense",
+  # minicbor — cashu-core-lite's CBOR codec (RUNTIME dep of the no_std
+  # core). Blue Oak is a permissive one-clause MIT-style license.
+  "BlueOak-1.0.0",
+  # rust-bitcoin stack via `cashu` 0.18 (runtime crypto provider in
+  # micronuts-mint; dev-oracle elsewhere). CC0 is a public-domain
+  # dedication: not OSI-approved, but attaches no obligations.
+  "CC0-1.0",
+  # hex_lit (rust-bitcoin): MIT + no-false-attribution clause. Enters
+  # only through the `cashu` dev-oracle chain.
+  "MITNFA",
+  # libfuzzer-sys, reached via rav1e's cfg(fuzzing) target-gated dep —
+  # linked only into cargo-fuzz builds (fuzz-nightly), never shipped.
+  # NCSA is LLVM's permissive license.
+  "NCSA",
+  # serialport (host-mint-tool, micronuts-wallet): file-level copyleft —
+  # MPL-2.0 obligations are confined to modified MPL files, and we ship
+  # it unmodified.
+  "MPL-2.0",
+  # webpki-roots: the root-CA store consumed by ureq/rustls HTTPS in the
+  # mint's upstream-settlement path. A DATA license with permissive
+  # distribution terms, standard pairing with rustls — not software code.
+  "CDLA-Permissive-2.0",
+  # slint 1.15 chain (micronuts-wallet desktop/web UI only — the
+  # firmware/wasm core never links it). slint's expression is
+  # GPL-3.0-only OR this OR the paid Software-3.0 plan; we exercise ONLY
+  # the royalty-free branch. NOTE its attribution condition (AboutSlint
+  # widget or a public "Made with Slint" badge) — owner action item,
+  # tracked in #111.
+  "LicenseRef-Slint-Royalty-free-2.0",
+]
+
+[[licenses.exceptions]]
+# unescaper: GPL-3.0-only RUNTIME dep of serialport's linux (non-musl)
+# udev enumeration, linked into the HOST binaries host-mint-tool and
+# micronuts-wallet. Distributing those two binaries therefore carries
+# GPL-3.0-only obligations — explicitly flagged for owner sign-off in
+# #111; the firmware, no_std core, and wasm wallet never touch
+# serialport. Scoped to this one crate so any other GPL dependency
+# still fails the check.
+allow = ["GPL-3.0-only"]
+crate = "unescaper"
+
+[[licenses.exceptions]]
+# r-efi: LGPL-2.1-or-later, pulled by getrandom 0.3 only under
+# cfg(target_os = "uefi") — a target nothing in this repo builds (we
+# build linux host, thumbv7em-none-eabihf, wasm32, xtensa-esp32-espidf).
+# Never compiled into any artifact; scoped exception, not a general
+# LGPL allowance.
+allow = ["LGPL-2.1-or-later"]
+crate = "r-efi"
+
+[[licenses.clarify]]
+# The Amperstrand/microfips git dep (rev b20859b) ships a top-level MIT
+# LICENSE and declares `license = "MIT"` in its workspace root manifest,
+# but the four member crates consumed here lack per-crate license fields
+# — clarify from upstream's own declaration rather than failing them as
+# unlicensed.
+crate = "microfips-build"
+expression = "MIT"
+license-files = [{ path = "../../LICENSE", hash = 0x0 }]  # hash 0x0: path is verified, content hash unpinned
+
+[[licenses.clarify]]
+crate = "microfips-core"
+expression = "MIT"
+license-files = [{ path = "../../LICENSE", hash = 0x0 }]
+
+[[licenses.clarify]]
+crate = "microfips-protocol"
+expression = "MIT"
+license-files = [{ path = "../../LICENSE", hash = 0x0 }]
+
+[[licenses.clarify]]
+crate = "microfips-service"
+expression = "MIT"
+license-files = [{ path = "../../LICENSE", hash = 0x0 }]
+
