@@ -19,6 +19,13 @@ jobs:
   fuzz:
     name: ${{ matrix.dir }}/${{ matrix.target }}
     runs-on: ubuntu-latest
+    # rustup walks up from */fuzz dirs to the root rust-toolchain.toml
+    # (stable 1.99.0, 72c74b4), which rejects cargo-fuzz's -Zsanitizer.
+    # This job is the toml header's structural exception: "nightly for
+    # instrumented fuzzing" — same escape hatch as the deny job's
+    # RUSTUP_TOOLCHAIN in rust-ci.yml (#110).
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     strategy:
       fail-fast: false
       matrix:
