@@ -82,21 +82,21 @@ truncates. The reliable channel:
    links. The `cashu:` scheme opens the wallet's Receive-Ecash sheet
    with amount/mint/fee parsed.
 
-## State at last light (2026-10-17)
+## State at last light (2026-10-17, updated after LAN recovery)
 
-Wallet created; **testnut.cashu.exchange** added (needs swapping for
-`.cashu.space` per directive); browser-link token path proven to the
-Receive screen (₿0 only because the token was from the stale
-`.exchange` mint); NFC/HCE service present but not yet exercised.
-**The bench LAN dropped mid-session** (AP SSID "2" off the air,
-.208 unreachable — infra outage, watch-loop in place); phone e2e
-resumes from exactly here.
+Wallet created; mint swapped to **testnut.cashu.space** (the stale
+`.cashu.exchange` keysets decoded as ₿0 — see the directive above);
+browser-link token path **proven end-to-end**: phone received a ₿20
+`.space` token (balance ₿10,019); NFC/HCE service present but not yet
+exercised. The bench LAN dropped mid-session (AP SSID "2" off the air,
+.208 unreachable — infra outage) and was recovered after the swap +
+funding completed; phone e2e resumes from exactly here.
 
 ## Next steps (the actual e2e)
 
-- [ ] Swap the phone's mint to `https://testnut.cashu.space`
-- [ ] Fresh `.space` token → browser link → phone shows real amount →
-      Receive → balance > 0
+- [x] Swap the phone's mint to `https://testnut.cashu.space`
+- [x] Fresh `.space` token → browser link → phone shows real amount →
+      Receive → balance > 0 (₿20 received, balance ₿10,019)
 - [ ] Phone **Send → NFC**: presents the HCE tag; m5stick (fork wallet
       reader mode) reads it and redeems — the fork rig's
       `relay_token_over_the_air_via_boltcard` path with a phone
