@@ -47,12 +47,10 @@ target/
 **/*.rs.bk
 *.pdb
 
-# Embedded build trees: esp-idf cargo builds drop .embuild/ next to the
-# crate (the esp32 workspaces keep local copies of this rule too)
+# esp-idf build trees (also covered per-dir in micronuts-esp32-*)
 .embuild/
 
-# Firmware build outputs (release *.bin lands under target/; nothing
-# tracked matches this today)
+# Flashable/binary build outputs (firmware.bin, NVS/flash dumps)
 *.bin
 
 # IDE
