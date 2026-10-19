@@ -436,8 +436,8 @@ jobs:
       # remain.)
       - name: Advisories + bans + licenses (ESP workspaces)
         run: |
-          cargo deny --manifest-path micronuts-esp32-mint/Cargo.toml check advisories bans licenses
-          cargo deny --manifest-path micronuts-esp32-wallet/Cargo.toml check advisories bans licenses
+          cargo deny --manifest-path micronuts-esp32-mint/Cargo.toml --all-features check advisories bans licenses
+          cargo deny --manifest-path micronuts-esp32-wallet/Cargo.toml --all-features check advisories bans licenses
 
   esp32-build:
     # Cross-build the ESP32 (esp-idf std) mint front-end. ccid-firmware-rs
