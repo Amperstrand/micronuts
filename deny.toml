@@ -31,6 +31,18 @@ ignore = [
   "RUSTSEC-2026-0370",
   "RUSTSEC-2026-0371",
   "RUSTSEC-2026-0372",
+  # webpki-roots 0.26.11: bundled root store still contains the
+  # distrusted emSign intermediates (RUSTSEC-2026-0381). SHIPPED dep —
+  # ureq 2.12.1 pins ^0.26 in walletport/micronuts-wallet (and optional
+  # micronuts-mint) TLS configs; no patched 0.26.x exists (fix is
+  # webpki-roots 1.0.10+, which needs the ureq 3 migration). The 1.x
+  # copy in this graph is already bumped to 1.0.10 and rustls-webpki
+  # to 0.103.16 (RUSTSEC-2026-0382 fixed). This ignore is a VULNERABILITY
+  # accept with a hard trigger: drop it the moment a ureq 3 migration
+  # lane lands. Exposure: client-side TLS to mints/POS over LAN/VPN —
+  # an on-path attacker with an emSign-signed intermediate could
+  # impersonate those endpoints to the wallet.
+  "RUSTSEC-2026-0381",
 ]
 
 [bans]
