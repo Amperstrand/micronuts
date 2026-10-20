@@ -102,9 +102,9 @@ allow = [
   # slint 1.15 chain (micronuts-wallet desktop/web UI only — the
   # firmware/wasm core never links it). slint's expression is
   # GPL-3.0-only OR this OR the paid Software-3.0 plan; we exercise ONLY
-  # the royalty-free branch. NOTE its attribution condition (AboutSlint
-  # widget or a public "Made with Slint" badge) — owner action item,
-  # tracked in #111.
+  # the royalty-free branch. Its attribution condition is satisfied by
+  # the "Made with Slint" notice in the wallet Settings footer (#119);
+  # the other #111 owner flag (unescaper GPL) remains open.
   "LicenseRef-Slint-Royalty-free-2.0",
 ]
 
