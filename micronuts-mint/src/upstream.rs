@@ -59,10 +59,15 @@ impl UpstreamCashuBackend {
         bootstrap_sats: u64,
         reserve_state_file: Option<std::path::PathBuf>,
     ) -> Self {
-        let http = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(10))
-            .timeout(Duration::from_secs(60))
-            .build();
+        // ureq 3: status errors are off and the status is checked in the
+        // helpers below — the error bodies feed the melt-failure
+        // diagnostics (see upstream_post).
+        let http = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_global(Some(Duration::from_secs(60)))
+            .build()
+            .new_agent();
         let mut reserve = ReserveWallet::new(base_url, unit, bootstrap_sats);
         if let Some(path) = reserve_state_file {
             reserve = reserve.with_state_file(path);
@@ -198,11 +203,21 @@ pub fn upstream_backend_from_env(
 // ---- shared upstream HTTP + JSON helpers (also used by the reserve) ----
 
 pub(crate) fn upstream_get(http: &ureq::Agent, url: &str) -> Result<Value, CashuError> {
-    let response = http
+    let mut response = http
         .get(url)
         .call()
         .map_err(|err| CashuError::Transport(format!("upstream GET {url}: {err}")))?;
-    serde_json::from_reader(response.into_reader())
+    let status = response.status().as_u16();
+    if status >= 400 {
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .unwrap_or_else(|_| "<unreadable body>".to_string());
+        return Err(CashuError::Transport(format!(
+            "upstream GET {url}: status {status}: {text}"
+        )));
+    }
+    serde_json::from_reader(response.into_body().into_reader())
         .map_err(|err| CashuError::Protocol(format!("upstream GET {url}: invalid JSON: {err}")))
 }
 
@@ -211,20 +226,22 @@ pub(crate) fn upstream_post(
     url: &str,
     body: &Value,
 ) -> Result<Value, CashuError> {
-    match http.post(url).send_json(body.clone()) {
-        Ok(response) => serde_json::from_reader(response.into_reader()).map_err(|err| {
-            CashuError::Protocol(format!("upstream POST {url}: invalid JSON: {err}"))
-        }),
-        Err(ureq::Error::Status(code, response)) => {
-            let text = response
-                .into_string()
-                .unwrap_or_else(|_| "<unreadable body>".to_string());
-            Err(CashuError::Protocol(format!(
-                "upstream POST {url}: status {code}: {text}"
-            )))
-        }
-        Err(err) => Err(CashuError::Transport(format!("upstream POST {url}: {err}"))),
+    let mut response = http
+        .post(url)
+        .send_json(body)
+        .map_err(|err| CashuError::Transport(format!("upstream POST {url}: {err}")))?;
+    let status = response.status().as_u16();
+    if status >= 400 {
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .unwrap_or_else(|_| "<unreadable body>".to_string());
+        return Err(CashuError::Protocol(format!(
+            "upstream POST {url}: status {status}: {text}"
+        )));
     }
+    serde_json::from_reader(response.into_body().into_reader())
+        .map_err(|err| CashuError::Protocol(format!("upstream POST {url}: invalid JSON: {err}")))
 }
 
 /// Amounts may arrive as JSON numbers or decimal strings (cashu-ts/cashu-cf

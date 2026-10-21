@@ -103,6 +103,18 @@ fn pay_invoice_parks_proofs_on_ambiguous_pending_state() {
     assert!(backend.reserve_balance_sats() < 1010);
 }
 
+/// Same agent shape as `UpstreamCashuBackend::new` (status errors off,
+/// handled in the shared helpers) so the manual status paths run under
+/// test.
+fn mock_http() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(std::time::Duration::from_secs(60)))
+        .build()
+        .new_agent()
+}
+
 /// Register a melt quote with the mock and return its id — NUT-08 blank
 /// imprinting needs the quote amount server-side to compute the overpay.
 fn mock_melt_quote(mock: &MockUpstream, http: &ureq::Agent, amount: u64) -> String {
@@ -114,14 +126,14 @@ fn mock_melt_quote(mock: &MockUpstream, http: &ureq::Agent, amount: u64) -> Stri
         }))
         .expect("mock melt quote");
     let body: serde_json::Value =
-        serde_json::from_reader(response.into_reader()).expect("mock melt quote JSON");
+        serde_json::from_reader(response.into_body().into_reader()).expect("mock melt quote JSON");
     body["quote"].as_str().expect("quote id").to_string()
 }
 
 #[test]
 fn reserve_bootstrap_and_topup_math() {
     let mock = MockUpstream::start();
-    let http = ureq::Agent::new();
+    let http = mock_http();
     let mut reserve = ReserveWallet::new(&mock.base_url, "sat", 1000);
 
     reserve.bootstrap(64, &http).unwrap();
@@ -152,7 +164,7 @@ fn garbage_upstream_responses_are_protocol_errors_not_panics() {
     assert!(matches!(err, CashuError::Protocol(_)));
 
     let mut reserve = ReserveWallet::new(&mock.base_url, "sat", 1000);
-    let err = reserve.bootstrap(21, &ureq::Agent::new()).unwrap_err();
+    let err = reserve.bootstrap(21, &mock_http()).unwrap_err();
     assert!(matches!(err, CashuError::Protocol(_)));
 }
 
@@ -201,7 +213,7 @@ fn testnut_live_roundtrip() {
 #[test]
 fn reserve_state_survives_restart() {
     let mock = MockUpstream::start();
-    let http = ureq::Agent::new();
+    let http = mock_http();
     let path = std::env::temp_dir().join(format!(
         "micronuts-reserve-restart-{}-{}.json",
         std::process::id(),
@@ -243,7 +255,7 @@ fn reserve_state_survives_restart() {
 #[should_panic(expected = "era mismatch")]
 fn reserve_state_refuses_cross_era_restore() {
     let mock = MockUpstream::start();
-    let http = ureq::Agent::new();
+    let http = mock_http();
     let path = std::env::temp_dir().join(format!(
         "micronuts-reserve-era-{}-{}.json",
         std::process::id(),
