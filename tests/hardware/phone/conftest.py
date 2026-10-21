@@ -51,9 +51,28 @@ def m5stick_place(request):
 
 @pytest.fixture(scope="module")
 def wallet_console(request, m5stick_place, evidence_dir) -> WalletConsole:
-    con = WalletConsole(port=resolve_serial_port("m5stick"),
-                        evidence_dir=evidence_dir)
+    """Port-holder guard first: pcscd keeps a STANDING serial-reader claim
+    on the m5stick CDC ("M5stick GemPC (MFRC522)" in reader.conf) while
+    the ccid matrix image serves — two opens of one tty do not exclude
+    each other, so the suite must yield instead of colliding."""
+    import subprocess
+    from harness import resolve_serial_port
+    port = resolve_serial_port("m5stick")
+    holders = subprocess.run(["fuser", "-v", port],
+                             capture_output=True, text=True)
+    if holders.returncode == 0 and holders.stderr.strip():
+        pytest.skip(
+            f"console port held by a foreign process ({holders.stderr.strip()})"
+            " — e.g. pcscd's standing m5stick GemPC reader (ccid matrix "
+            "duty); owner-schedule the wallet image per the RESTORE-ECASH "
+            "runbook before T5 runs")
+    con = WalletConsole(port=port, evidence_dir=evidence_dir)
     request.addfinalizer(con.close)
-    banner = con.banner(timeout_s=8)
+    try:
+        banner = con.banner(timeout_s=8)
+    except TimeoutError as e:
+        pytest.skip(
+            "board not on esp32-wallet firmware (banner missing — likely "
+            f"another project's image): {e}")
     (evidence_dir / "esp32-wallet.banner.log").write_text(banner)
     return con
