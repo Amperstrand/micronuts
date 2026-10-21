@@ -53,11 +53,15 @@ impl JsonTransport for UreqTransport {
     }
 
     fn post_json(&self, url: &str, body: &Value) -> Result<Value, CashuError> {
+        // ureq 3's send_json pretty-prints; serialize compact bytes to
+        // keep the ureq 2 wire format (the http_client tests pin it).
+        let payload = serde_json::to_vec(body)
+            .map_err(|e| CashuError::Transport(format!("serialize request body: {e}")))?;
         let response = self
             .agent
             .post(url)
             .header("Content-Type", "application/json")
-            .send_json(body)
+            .send(payload)
             .map_err(map_ureq_error)?;
         read_json_body(response)
     }

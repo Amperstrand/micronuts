@@ -226,9 +226,14 @@ pub(crate) fn upstream_post(
     url: &str,
     body: &Value,
 ) -> Result<Value, CashuError> {
+    // Compact bytes, not send_json: ureq 3 pretty-prints JSON bodies and
+    // upstream wire shapes stay byte-stable (ureq 2 behavior).
+    let payload = serde_json::to_vec(body)
+        .map_err(|err| CashuError::Protocol(format!("upstream POST {url}: serialize: {err}")))?;
     let mut response = http
         .post(url)
-        .send_json(body)
+        .header("Content-Type", "application/json")
+        .send(payload)
         .map_err(|err| CashuError::Transport(format!("upstream POST {url}: {err}")))?;
     let status = response.status().as_u16();
     if status >= 400 {
