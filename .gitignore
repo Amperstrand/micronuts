@@ -90,3 +90,4 @@ tests/results/
 # Local secrets (gate-2 W5: never commit credentials)
 .env
 .env.*
+hil-results/

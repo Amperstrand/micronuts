@@ -1,0 +1,70 @@
+# Phone-vs-device HIL — micronuts half (T5) on the ai-legion bench.
+#
+# SECURITY (root runner): workflow_dispatch + schedule ONLY — never
+# pull_request/pull_request_target (fork code must never execute on
+# the bench host; ccid-firmware-rs #183 doctrine, same runner).
+#
+# The m5stick is a SHARED board: when it serves another project's
+# image the suites skip loudly (that skip is the coordination record).
+
+name: hil-phone
+
+on:
+  workflow_dispatch:
+    inputs:
+      mint_url:
+        description: 'mint the rig pays from (fake-sat)'
+        required: false
+        default: 'https://testnut.cashu.space'
+  schedule:
+    - cron: '37 3 * * *'   # nightly opt-in; comment out to disarm
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  # Host adb server socket (user root) — see nucula hil.yml note.
+  ADB_SERVER_SOCKET: 'tcp:127.0.0.1:5037'
+
+jobs:
+  hil:
+    runs-on: [self-hosted, bench]
+    name: esp32-wallet + MFRC522 phone HIL
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: 'false' }
+
+      - name: bench inventory (coordinator view)
+        run: |
+          set +e
+          labgrid-client -x ai-legion:20408 places > hil-places.txt 2>&1
+          echo "rc=$?" >> hil-places.txt
+          cat hil-places.txt
+          exit 0
+
+      - name: run T5 suite
+        run: >
+          python3 -m pytest tests/hardware/phone/ -v --hil
+          --mint-url "${{ inputs.mint_url || 'https://testnut.cashu.space' }}"
+          --timeout=600 --timeout-method=signal
+          --junitxml=hil-junit.xml
+
+      - name: junit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: hil-junit, path: hil-junit.xml }
+
+      - name: evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hil-evidence
+          path: hil-results/
+          if-no-files-found: ignore
+
+      - name: bench inventory artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: hil-places, path: hil-places.txt, if-no-files-found: ignore }
