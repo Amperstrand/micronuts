@@ -16,7 +16,7 @@ hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 k256 = "0.13"
-ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
 serde_json = "1"
 sha2 = "0.10"
 cashu = "0.18.0"

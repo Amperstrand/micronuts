@@ -25,10 +25,17 @@ pub struct UreqTransport {
 
 impl UreqTransport {
     pub fn new() -> Self {
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build();
+        // ureq 3: `http_status_as_error` is on by default and its
+        // `Error::StatusCode` carries no response — the mint's error body
+        // (whose `code` field maps to CashuError variants) would be
+        // dropped. Keep it off and check the status in `read_json_body`,
+        // which preserves the ureq 2 semantics exactly.
+        let agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_global(Some(Duration::from_secs(30)))
+            .build()
+            .new_agent();
         Self { agent }
     }
 }
@@ -46,51 +53,62 @@ impl JsonTransport for UreqTransport {
     }
 
     fn post_json(&self, url: &str, body: &Value) -> Result<Value, CashuError> {
+        // ureq 3's send_json pretty-prints; serialize compact bytes to
+        // keep the ureq 2 wire format (the http_client tests pin it).
+        let payload = serde_json::to_vec(body)
+            .map_err(|e| CashuError::Transport(format!("serialize request body: {e}")))?;
         let response = self
             .agent
             .post(url)
-            .set("Content-Type", "application/json")
-            .send_json(body.clone())
+            .header("Content-Type", "application/json")
+            .send(payload)
             .map_err(map_ureq_error)?;
         read_json_body(response)
     }
 }
 
 fn map_ureq_error(err: ureq::Error) -> CashuError {
-    match err {
-        ureq::Error::Status(_code, response) => {
-            let body: Value = response.into_json().unwrap_or(Value::Null);
-            let detail = body
-                .get("detail")
-                .and_then(Value::as_str)
-                .unwrap_or("mint returned an error")
-                .to_string();
-            match body.get("code").and_then(Value::as_str) {
-                Some("QUOTE_NOT_FOUND") => CashuError::QuoteNotFound,
-                Some("KEYSET_NOT_FOUND") => CashuError::KeysetNotFound,
-                Some("INVALID_AMOUNT") => CashuError::InvalidAmount,
-                Some("INVALID_PROOF") => CashuError::InvalidProof,
-                Some("AMOUNT_MISMATCH") => CashuError::AmountMismatch,
-                Some("INSUFFICIENT_INPUTS") => CashuError::InsufficientInputs,
-                Some("QUOTE_NOT_PAID") => CashuError::QuoteNotPaid,
-                Some("QUOTE_ALREADY_ISSUED") => CashuError::QuoteAlreadyIssued,
-                Some("TOKENS_ALREADY_SPENT") => CashuError::TokensAlreadySpent,
-                Some("MELT_ALREADY_PAID") => CashuError::MeltAlreadyPaid,
-                Some("SPEND_CONDITIONS_NOT_MET") => CashuError::SpendConditionsNotMet,
-                Some("PAYMENT_FAILED") => CashuError::PaymentFailed,
-                Some("QUOTE_SIGNATURE_INVALID") => CashuError::QuoteSignatureInvalid,
-                Some("BATCH_TOO_LARGE") => CashuError::BatchTooLarge,
-                Some("TOO_MANY_OUTPUTS") => CashuError::TooManyOutputs,
-                Some("BATCH_QUOTE_NOT_UNIQUE") => CashuError::BatchQuoteNotUnique,
-                _ => CashuError::Protocol(detail),
-            }
-        }
-        ureq::Error::Transport(transport) => CashuError::Transport(transport.to_string()),
+    // 4xx/5xx never surface here (see UreqTransport::new): every Err is
+    // transport-level.
+    CashuError::Transport(err.to_string())
+}
+
+/// Map a >=400 mint response body to a CashuError (the ureq 2
+/// `Error::Status` arm, verbatim).
+fn map_mint_error(body: Value) -> CashuError {
+    let detail = body
+        .get("detail")
+        .and_then(Value::as_str)
+        .unwrap_or("mint returned an error")
+        .to_string();
+    match body.get("code").and_then(Value::as_str) {
+        Some("QUOTE_NOT_FOUND") => CashuError::QuoteNotFound,
+        Some("KEYSET_NOT_FOUND") => CashuError::KeysetNotFound,
+        Some("INVALID_AMOUNT") => CashuError::InvalidAmount,
+        Some("INVALID_PROOF") => CashuError::InvalidProof,
+        Some("AMOUNT_MISMATCH") => CashuError::AmountMismatch,
+        Some("INSUFFICIENT_INPUTS") => CashuError::InsufficientInputs,
+        Some("QUOTE_NOT_PAID") => CashuError::QuoteNotPaid,
+        Some("QUOTE_ALREADY_ISSUED") => CashuError::QuoteAlreadyIssued,
+        Some("TOKENS_ALREADY_SPENT") => CashuError::TokensAlreadySpent,
+        Some("MELT_ALREADY_PAID") => CashuError::MeltAlreadyPaid,
+        Some("SPEND_CONDITIONS_NOT_MET") => CashuError::SpendConditionsNotMet,
+        Some("PAYMENT_FAILED") => CashuError::PaymentFailed,
+        Some("QUOTE_SIGNATURE_INVALID") => CashuError::QuoteSignatureInvalid,
+        Some("BATCH_TOO_LARGE") => CashuError::BatchTooLarge,
+        Some("TOO_MANY_OUTPUTS") => CashuError::TooManyOutputs,
+        Some("BATCH_QUOTE_NOT_UNIQUE") => CashuError::BatchQuoteNotUnique,
+        _ => CashuError::Protocol(detail),
     }
 }
 
-fn read_json_body(response: ureq::Response) -> Result<Value, CashuError> {
+fn read_json_body(mut response: ureq::http::Response<ureq::Body>) -> Result<Value, CashuError> {
+    if response.status().as_u16() >= 400 {
+        let body: Value = response.body_mut().read_json().unwrap_or(Value::Null);
+        return Err(map_mint_error(body));
+    }
     response
-        .into_json()
+        .body_mut()
+        .read_json()
         .map_err(|e| CashuError::Transport(format!("invalid mint response body: {e}")))
 }

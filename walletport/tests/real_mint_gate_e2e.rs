@@ -22,20 +22,21 @@ use walletport::{encode_token_wire, GateDecision, OfflineGateValidator};
 
 const MINT: &str = "https://testnut.cashu.exchange";
 
+fn http() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(15)))
+        .build()
+        .new_agent()
+}
+
 fn jget(url: &str) -> serde_json::Value {
-    let resp = ureq::get(url)
-        .timeout(Duration::from_secs(15))
-        .call()
-        .expect("HTTP GET");
-    serde_json::from_reader(resp.into_reader()).expect("JSON body")
+    let resp = http().get(url).call().expect("HTTP GET");
+    serde_json::from_reader(resp.into_body().into_reader()).expect("JSON body")
 }
 
 fn jpost(url: &str, body: serde_json::Value) -> serde_json::Value {
-    let resp = ureq::post(url)
-        .timeout(Duration::from_secs(15))
-        .send_json(body)
-        .expect("HTTP POST");
-    serde_json::from_reader(resp.into_reader()).expect("JSON body")
+    let resp = http().post(url).send_json(body).expect("HTTP POST");
+    serde_json::from_reader(resp.into_body().into_reader()).expect("JSON body")
 }
 
 fn unused(_: &str) -> CashuError {

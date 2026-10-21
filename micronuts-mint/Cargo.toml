@@ -27,7 +27,7 @@ serde_json = "1"
 uuid = { version = "1", features = ["v7"] }
 # Host-only upstream-mint settlement backend (same pins walletport already
 # uses; serde_json arrives with ureq's `json` feature anyway).
-ureq = { version = "2", default-features = false, features = ["tls", "json"], optional = true }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"], optional = true }
 
 [features]
 # Upstream Cashu mint settlement backend (rugs02 model): host-only HTTP via
