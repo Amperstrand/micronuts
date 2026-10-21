@@ -21,10 +21,22 @@ import serial
 COORDINATOR = os.environ.get("LG_COORDINATOR", "ai-legion:20408")
 PHONE_SERIAL = os.environ.get("HIL_PHONE_SERIAL", "RF8NB01ZYAH")
 
-M5STICK_CONSOLE_PORT = (
-    "/dev/serial/by-id/usb-Hades2001_M5stack_49D6163EBE-if00-port0"
-)
+M5STICK_CONSOLE_PORT = os.environ.get("HIL_M5STICK_CONSOLE_PORT", "")
 WALLET_BANNER = "nucula-mode wallet ready"
+
+
+def resolve_serial_port(place: str = "m5stick") -> str:
+    """SerialPort resource `port` from the labgrid place (no hardcoded
+    device paths); env override for offline collection."""
+    if M5STICK_CONSOLE_PORT:
+        return M5STICK_CONSOLE_PORT
+    r = lg(place, "show")
+    m = re.search(r"'port':\s*'([^']+)'", r.stdout)
+    if not m:
+        raise RuntimeError(
+            f"no SerialPort 'port' param on place {place}; "
+            "set HIL_M5STICK_CONSOLE_PORT explicitly")
+    return m.group(1)
 
 
 # --------------------------------------------------------------------------

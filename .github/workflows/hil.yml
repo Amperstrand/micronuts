@@ -24,6 +24,8 @@ permissions:
 
 env:
   PYTHONDONTWRITEBYTECODE: '1'
+  # Host adb server socket (user root) — see nucula hil.yml note.
+  ADB_SERVER_SOCKET: 'tcp:127.0.0.1:5037'
 
 jobs:
   hil:

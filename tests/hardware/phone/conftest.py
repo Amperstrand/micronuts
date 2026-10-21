@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from harness import AcquiredPlace, LabgridBusy, WalletConsole
+from harness import AcquiredPlace, LabgridBusy, WalletConsole, resolve_serial_port
 
 RESULTS_ROOT = Path(__file__).parent.parent.parent / "hil-results"
 
@@ -51,7 +51,8 @@ def m5stick_place(request):
 
 @pytest.fixture(scope="module")
 def wallet_console(request, m5stick_place, evidence_dir) -> WalletConsole:
-    con = WalletConsole(evidence_dir=evidence_dir)
+    con = WalletConsole(port=resolve_serial_port("m5stick"),
+                        evidence_dir=evidence_dir)
     request.addfinalizer(con.close)
     banner = con.banner(timeout_s=8)
     (evidence_dir / "esp32-wallet.banner.log").write_text(banner)
