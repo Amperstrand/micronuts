@@ -54,18 +54,15 @@ impl Witness {
 
     pub fn save_ok(&self, blob_len: usize) {
         self.saves.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len
-            .store(blob_len as usize, Ordering::Relaxed);
+        self.last_blob_len.store(blob_len as _, Ordering::Relaxed);
         self.last_save_ok.store(1, Ordering::Relaxed);
     }
 
     pub fn save_fail(&self, blob_len: usize, err: &str) {
         self.save_fails.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len
-            .store(blob_len as usize, Ordering::Relaxed);
+        self.last_blob_len.store(blob_len as _, Ordering::Relaxed);
         self.last_save_ok.store(0, Ordering::Relaxed);
-        self.last_err_len
-            .store(err.len() as usize, Ordering::Relaxed);
+        self.last_err_len.store(err.len() as _, Ordering::Relaxed);
         if let Ok(mut slot) = self.last_err.lock() {
             slot.clear();
             slot.push_str(err);
