@@ -214,10 +214,14 @@ fn run() -> anyhow::Result<()> {
     let mut tollgate = micronuts_esp32_wallet::tollgate::TollgateClient::new();
     // A ~400-byte token pasted at 115200 overflows the 128-byte UART FIFO
     // whenever the poll loop sleeps: install the driver so stdin blocks on
-    // a 2 KiB ring buffer instead.
+    // a 2 KiB ring buffer instead. The TX side needs its own ring too —
+    // with tx_buffer=0 a multi-KB token PRINT (the `send` reply) blocks
+    // the console task forever once the line outgrows the hardware FIFO
+    // (bench-proven 2026-10-22: receive/send executed + NVS persisted,
+    // REPL dead after the long reply).
     unsafe {
         use esp_idf_svc::hal::sys::{esp_vfs_dev_uart_use_driver, uart_driver_install};
-        uart_driver_install(0, 2048, 0, 0, core::ptr::null_mut(), 0);
+        uart_driver_install(0, 2048, 2048, 0, core::ptr::null_mut(), 0);
         esp_vfs_dev_uart_use_driver(0);
     }
     println!("nucula-mode wallet ready — type 'help'");
@@ -256,7 +260,17 @@ fn run() -> anyhow::Result<()> {
                 } else {
                     ""
                 };
-                println!("help | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status{extra}")
+                println!("help | status | connect | balance | wstat | heap | seed | p2pk | tollgate join/pay/status{extra}")
+            }
+            // nucula-console parity: one consolidated health line for HIL
+            // suites (mirrors nucula's `status`: wifi + mint + balance +
+            // heap in a stable, machine-parseable shape).
+            "status" => {
+                println!("wifi:    {}", if wifi.is_connected() { "connected" } else { "disconnected" });
+                println!("nfc:     {}", if cfg!(all(target_arch = "xtensa", feature = "nfc-mfrc522")) { "idle (MFRC522 lazy)" } else { "absent (no nfc-mfrc522 feature)" });
+                println!("mint:    {} keyset={}", engine.mint_url(), engine.keyset_id());
+                println!("balance: {} sats", engine.balance());
+                println!("heap:    {} B free", unsafe { esp_idf_svc::hal::sys::esp_get_free_heap_size() });
             }
             #[cfg(all(target_arch = "xtensa", feature = "nfc-mfrc522"))]
             "nfc" => {
