@@ -16,8 +16,50 @@ pub struct NfcFrontend {
         mfrc522::Mfrc522<mfrc522::comm::blocking::i2c::I2cInterface<i2c::I2cDriver<'static>>, mfrc522::Initialized>,
 }
 
+/// Latched-RC522 recovery (port of the nucula `axp192_grove_power`
+/// pattern, display_st7789.c): the M5Stick's AXP192 PMU (I2C1 @0x34,
+/// pins 21/22) holds the Grove rail across ESP32 reboots, so a latched
+/// reader (SDA stuck LOW, immune to SCL clocking) only clears when
+/// EXTEN (reg 0x10 bit 2) actually drops. One rail cycle before the
+/// first MFRC522 init clears the latch.
+pub fn axp192_grove_rail_cycle() -> Result<(), String> {
+    use esp_idf_svc::hal::i2c;
+    use esp_idf_svc::hal::peripherals::Peripherals;
+
+    let periph = unsafe { Peripherals::steal() };
+    let config = i2c::config::Config::new().baudrate(esp_idf_svc::hal::units::Hertz(400_000));
+    let mut driver = i2c::I2cDriver::new(
+        periph.i2c1,
+        periph.pins.gpio21,
+        periph.pins.gpio22,
+        &config,
+    )
+    .map_err(|e| format!("axp192 i2c1: {e:?}"))?;
+
+    let mut buf = [0u8; 1];
+    driver
+        .write_read(0x34, &[0x10], &mut buf, 200)
+        .map_err(|e| format!("axp192 read: {e:?}"))?;
+    let cur = buf[0];
+    driver
+        .write(0x34, &[0x10, cur & !0x04], 200) // EXTEN off — rail drops
+        .map_err(|e| format!("axp192 write off: {e:?}"))?;
+    esp_idf_svc::hal::delay::Ets::delay_ms(80);
+    driver
+        .write(0x34, &[0x10, cur | 0x04], 200) // rail back up
+        .map_err(|e| format!("axp192 write on: {e:?}"))?;
+    esp_idf_svc::hal::delay::Ets::delay_ms(20);
+    Ok(())
+}
+
 impl NfcFrontend {
     pub fn new(i2c: i2c::I2cDriver<'static>) -> Result<Self, String> {
+        // Clear any latched reader left by a previous session — the PMU
+        // keeps the rail up across reboots, so plain re-init is not
+        // enough (bench-proven class, AGENTS lore).
+        if let Err(e) = axp192_grove_rail_cycle() {
+            println!("nfc: axp192 rail cycle skipped: {e}");
+        }
         let mut reader = mfrc522::Mfrc522::new(
             mfrc522::comm::blocking::i2c::I2cInterface::new(i2c, 0x28),
         )

@@ -4,24 +4,31 @@
 //! Counters are process-global and lock-free — the single-wallet device
 //! console (`wstat`) reads them on demand.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+// Width is target-dependent: the 32-bit Xtensa ESP32 target has no
+// stable `AtomicU64` (no CAS for 8 bytes). The counters are diagnostics
+// (the `wstat` console verb) — 32 bits cannot wrap in any device
+// session, and host builds keep full width.
+#[cfg(target_pointer_width = "64")]
+use std::sync::atomic::{AtomicU64 as AtomicCount, Ordering};
+#[cfg(not(target_pointer_width = "64"))]
+use std::sync::atomic::{AtomicUsize as AtomicCount, Ordering};
 
 /// Global store-layer witness. Updated by the storage implementation
 /// (NVS on device, any `ProofStore` host-side); read by the console.
 pub static STORE_WITNESS: Witness = Witness::new();
 
 pub struct Witness {
-    saves: AtomicU64,
-    save_fails: AtomicU64,
-    loads: AtomicU64,
-    load_fails: AtomicU64,
-    last_blob_len: AtomicU64,
+    saves: AtomicCount,
+    save_fails: AtomicCount,
+    loads: AtomicCount,
+    load_fails: AtomicCount,
+    last_blob_len: AtomicCount,
     /// 1 = the last save succeeded, 0 = failed.
-    last_save_ok: AtomicU64,
+    last_save_ok: AtomicCount,
     /// Compact error fingerprint of the last failure (length of the
     /// message — enough to distinguish bound-exceeded from nvs-write
     /// classes without a string allocation in the hot path).
-    last_err_len: AtomicU64,
+    last_err_len: AtomicCount,
     last_err: std::sync::Mutex<String>,
 }
 
@@ -34,28 +41,31 @@ impl Default for Witness {
 impl Witness {
     pub const fn new() -> Self {
         Witness {
-            saves: AtomicU64::new(0),
-            save_fails: AtomicU64::new(0),
-            loads: AtomicU64::new(0),
-            load_fails: AtomicU64::new(0),
-            last_blob_len: AtomicU64::new(0),
-            last_save_ok: AtomicU64::new(0),
-            last_err_len: AtomicU64::new(0),
+            saves: AtomicCount::new(0),
+            save_fails: AtomicCount::new(0),
+            loads: AtomicCount::new(0),
+            load_fails: AtomicCount::new(0),
+            last_blob_len: AtomicCount::new(0),
+            last_save_ok: AtomicCount::new(0),
+            last_err_len: AtomicCount::new(0),
             last_err: std::sync::Mutex::new(String::new()),
         }
     }
 
     pub fn save_ok(&self, blob_len: usize) {
         self.saves.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len.store(blob_len as u64, Ordering::Relaxed);
+        self.last_blob_len
+            .store(blob_len as usize, Ordering::Relaxed);
         self.last_save_ok.store(1, Ordering::Relaxed);
     }
 
     pub fn save_fail(&self, blob_len: usize, err: &str) {
         self.save_fails.fetch_add(1, Ordering::Relaxed);
-        self.last_blob_len.store(blob_len as u64, Ordering::Relaxed);
+        self.last_blob_len
+            .store(blob_len as usize, Ordering::Relaxed);
         self.last_save_ok.store(0, Ordering::Relaxed);
-        self.last_err_len.store(err.len() as u64, Ordering::Relaxed);
+        self.last_err_len
+            .store(err.len() as usize, Ordering::Relaxed);
         if let Ok(mut slot) = self.last_err.lock() {
             slot.clear();
             slot.push_str(err);

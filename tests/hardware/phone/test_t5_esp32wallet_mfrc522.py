@@ -57,18 +57,22 @@ def test_wallet_receive_via_console(wallet_console, mint_url, evidence_dir):
     """Full money leg on the SECOND device target: mint a token with the
     nucula rig payer at the bench mint, `receive` it on the esp32-wallet,
     balance grows. Requires the wallet fw to be built with the same mint
-    (MICRONUTS_MINT_URL) and bench WiFi."""
-    from harness import lg  # noqa: F401 — place already held
+    (MICRONUTS_MINT_URL) and bench WiFi.
+
+    Console caveat (bench-characterized 2026-10-22): wallet ops execute
+    and persist correctly, but the REPL dies after any multi-KB line
+    crosses the UART (token in OR token print out) — so the authoritative
+    assert is the BALANCE, read via `status` after a console reopen if
+    the reply was lost."""
     out = wallet_console.cmd("connect", timeout_s=60)
     if "connect error" in out:
         pytest.skip(f"wallet cannot reach its baked mint (wifi/mint "
                     f"mismatch): {out!r}")
-    out = wallet_console.cmd("balance")
+    out = wallet_console.cmd("status")
     m = re.search(r"balance: (\d+) sats", out)
     assert m, out
     before = int(m.group(1))
 
-    # rig payer mints the token (nucula checkout path via env)
     import os
     import sys
     from pathlib import Path
@@ -78,11 +82,30 @@ def test_wallet_receive_via_console(wallet_console, mint_url, evidence_dir):
                     "host-side minting not provided")
     sys.path.insert(0, str(Path(nucula_root) / "tests" / "hil" / "phone"))
     from harness import mint_token_via_rig  # nucula harness payer
-    token = mint_token_via_rig(Path(nucula_root), mint_url, sats=5)
+    token = mint_token_via_rig(Path(nucula_root), mint_url, sats=21)
 
-    out = wallet_console.cmd(f"receive {token}", timeout_s=120)
+    out = wallet_console.cmd(f"receive {token}", timeout_s=180)
     (evidence_dir / "t5_receive.log").write_text(out)
-    assert "receive error" not in out, out
-    assert "received" in out, out
+
+    # authoritative read: balance via status; if the multi-KB exchange
+    # killed the REPL (known fw issue), reopen (RTS reboot) and re-read —
+    # NVS persistence makes the balance the durable truth.
+    out = wallet_console.cmd("status")
+    if "balance:" not in out:
+        from harness import resolve_serial_port, WalletConsole
+        wallet_console.close()
+        con2 = WalletConsole(port=resolve_serial_port("m5stick"))
+        try:
+            con2.banner(40)
+            import time as _t
+            _t.sleep(4); con2._pump(); con2.buf = ""
+            out = con2.cmd("status")
+        finally:
+            con2.close()
+    (evidence_dir / "t5_balance_after.log").write_text(out)
+    m = re.search(r"balance: (\d+) sats", out)
+    assert m, f"no balance readable after receive:\n{out}"
+    assert int(m.group(1)) > before, (
+        f"balance did not grow after receive ({before} -> {m.group(1)})")
     m = re.search(r"balance: (\d+) sats", wallet_console.cmd("balance"))
     assert m and int(m.group(1)) > before, "balance did not grow after receive"

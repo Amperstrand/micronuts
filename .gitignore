@@ -91,3 +91,4 @@ tests/results/
 .env
 .env.*
 hil-results/
+micronuts-esp32-wallet/target-hil/

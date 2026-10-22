@@ -153,11 +153,28 @@ class WalletConsole:
             f"tail: {out[-400:]!r}")
 
     def banner(self, timeout_s: float = 25.0) -> str:
-        return self.read_until(re.escape(WALLET_BANNER), timeout_s)
+        try:
+            return self.read_until(re.escape(WALLET_BANNER), timeout_s)
+        except TimeoutError:
+            # Silent-console recovery (AGENTS.md pattern): a running
+            # board prints nothing (no prompt); pulse RTS to reboot into
+            # a fresh banner.
+            self.ser.rts = True
+            time.sleep(0.1)
+            self.ser.rts = False
+            return self.read_until(re.escape(WALLET_BANNER), timeout_s)
 
     def cmd(self, line: str, timeout_s: float = 60.0) -> str:
-        self.ser.write((line + "\n").encode())
-        self.ser.flush()
+        # Long lines (cashu tokens are ~2-4 KB) overflow the console's
+        # 2 KiB UART ring if written in one burst: chunk + pace so the
+        # poll loop (20 ms sleeps) keeps the ring below watermark.
+        data = (line + "\n").encode()
+        CHUNK, PACE = 512, 0.15
+        for i in range(0, len(data), CHUNK):
+            self.ser.write(data[i:i + CHUNK])
+            self.ser.flush()
+            if i + CHUNK < len(data):
+                time.sleep(PACE)
         # response = read until the line goes idle
         deadline = time.monotonic() + timeout_s
         idle = time.monotonic() + self.IDLE_S
