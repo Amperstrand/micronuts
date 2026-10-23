@@ -79,21 +79,67 @@ impl NfcFrontend {
 
     /// One ISO 14443-3 activation attempt: REQA -> select (full UID,
     /// cascade included) -> HLTA. Ok(None) = field quiet.
+    ///
+    /// Two bench-doctrine rules from nucula's rc522.c, ported whole:
+    /// 1. PER-SCAN frontend reset ritual (antenna cycle, framing
+    ///    restore, 100%-ASK + CRC preset, 4x FIFO flush, RxGain DB33,
+    ///    conductance boost) — clears the marginal front-end states
+    ///    that make every REQA return IncompleteFrame.
+    /// 2. ANTENNA OFF WHEN IDLE ("a co-located writer — e.g. the
+    ///    bench ACR1252 — never sees two fields"). Leaving the carrier
+    ///    on wedges a co-located ACR1252 at ITS next power-on
+    ///    (bench-proven 2026-10-22: a fresh ACR plug wedged in ~10 s
+    ///    next to a radiating coil).
     pub fn scan_once(
         &mut self,
     ) -> Result<Option<(mfrc522::AtqA, mfrc522::Uid)>, String> {
-        match self.reader.reqa() {
-            Ok(atqa) => {
-                let uid = self
+        use mfrc522::Register;
+        macro_rules! w {
+            ($r:expr, $v:expr) => {{
+                let _ = self.reader.write_register($r, $v);
+            }};
+        }
+        macro_rules! antenna_off {
+            () => {{
+                let _ = self
                     .reader
-                    .select(&atqa)
-                    .map_err(|e| format!("select: {e:?}"))?;
-                let _ = self.reader.hlta();
-                Ok(Some((atqa, uid)))
-            }
+                    .rmw_register(Register::TxControlReg, |b| b & !0b11);
+            }};
+        }
+        // -- ritual: reset the front end, then field on --
+        antenna_off!();
+        w!(Register::TxModeReg, 0x00);
+        w!(Register::RxModeReg, 0x00);
+        w!(Register::ModWidthReg, 0x26);
+        w!(Register::TxASKReg, 0x40); // FORCE_100_ASK
+        w!(Register::ModeReg, 0x3D);  // CRC preset 0x6363
+        // Marginal-coupling boost: max n-driver + modulated p-driver
+        // conductance (default GsN=0x08 starves a small antenna).
+        w!(Register::GsNReg, 0xBF);
+        w!(Register::ModGsPReg, 0x3F);
+        for _ in 0..4 {
+            w!(Register::FIFOLevelReg, 0x80); // FIFO flush
+        }
+        w!(Register::RFCfgReg, 0x40); // RxGain DB33
+        let _ = self
+            .reader
+            .rmw_register(Register::TxControlReg, |b| b | 0b11); // field on
+        esp_idf_svc::hal::delay::Ets::delay_ms(10); // settle
+
+        // -- one activation, then field OFF regardless of outcome --
+        let result = match self.reader.reqa() {
+            Ok(atqa) => match self.reader.select(&atqa) {
+                Ok(uid) => {
+                    let _ = self.reader.hlta();
+                    Ok(Some((atqa, uid)))
+                }
+                Err(e) => Err(format!("select: {e:?}")),
+            },
             Err(mfrc522::Error::Timeout) => Ok(None),
             Err(e) => Err(format!("reqa: {e:?}")),
-        }
+        };
+        antenna_off!();
+        result
     }
 }
 
