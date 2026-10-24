@@ -25,6 +25,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
+          # Explicit pin matching rust-ci.yml's invocations and the root
+          # rust-toolchain.toml (1.99.0): the newer action requires the
+          # toolchain input even where the toml exists (#109) — and the
+          # pin keeps the one-authority doctrine intact (no floating).
+          toolchain: 1.99.0
           targets: wasm32-unknown-unknown
 
       - name: Install trunk
