@@ -1,0 +1,18 @@
+[package]
+name = "micronuts-walletd"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "TollGate wallet sidecar daemon backed by micronuts-wallet-core (cashu-core-lite) — the minimal-footprint backend experiment (H5)"
+
+[[bin]]
+name = "micronuts-walletd"
+path = "src/main.rs"
+
+[dependencies]
+micronuts-wallet-core = { path = "../micronuts-wallet-core" }
+cashu-core-lite = { path = "../cashu-core-lite" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+libc = "0.2"
