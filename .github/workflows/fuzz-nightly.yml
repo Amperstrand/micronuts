@@ -59,7 +59,7 @@ jobs:
             }
             for run in $runs; do
               verdict=$(gh api "repos/$repo/actions/runs/$run/jobs" \
-                --jq 'any(.jobs[]; ((.runner_name // "") | startswith("legion-")))' 2>/dev/null || true)
+                --jq 'any(.jobs[]; ((.runner_name // "") | (startswith("legion-") or startswith("ai-legion"))))' 2>/dev/null || true)
               if [ "$verdict" = true ]; then
                 echo "::notice::probe $repo: run $run executed on a legion-* runner"
                 return 0
