@@ -4,6 +4,16 @@
 # costs minutes, not hours; crash artifacts are uploaded on failure.
 #
 # Trigger manually any time with workflow_dispatch.
+#
+# RUNNER POLICY (2026-10-29, mirrors ccid-firmware-rs PR #478 /
+# Amperstrand/ops#43): fuzzing is SELF-HOSTED ONLY — bounded fuzz is the
+# worst minute-value workload on 4-vCPU hosted runners and exactly what
+# the org's runners exist for. `pick-runner` infers legion-vm
+# availability from EXECUTED jobs (the runners API is admin-only to job
+# tokens): heartbeat within 24h -> legs run self-hosted at 600s/target
+# (5x the old hosted budget across the 6-target matrix, serial on one
+# runner ≈ 1h); no heartbeat -> legs SKIP (neutral, not red). A missed
+# nightly beats burning hosted minutes on hardware we own.
 
 name: Fuzz Nightly
 
@@ -16,9 +26,80 @@ permissions:
   contents: read
 
 jobs:
+  pick-runner:
+    name: pick runner (fuzz is self-hosted-only)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      lane: ${{ steps.pick.outputs.lane }}
+      fuzz_seconds: ${{ steps.pick.outputs.fuzz_seconds }}
+    steps:
+      - name: Probe legion-vm availability (secret-free)
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # Availability = "a job executed on a legion-* runner within 24h"
+          # (machine-class heartbeat). This repo's own runs first; the
+          # kali-live-headless CI lane — same fleet, pushed frequently —
+          # bootstraps the signal for repos that never ran self-hosted.
+          cutoff=$(date -u -d '24 hours ago' +%s)
+          case "$cutoff" in ''|*[!0-9]*) echo "::error::bad cutoff"; exit 1 ;; esac
+          saw_legion() {
+            local repo=$1 pages=$2 runs run verdict
+            runs=$(gh api "repos/$repo/actions/runs?per_page=$pages" \
+              --jq ".workflow_runs[]
+                    | select(.status == \"completed\")
+                    | select((.updated_at | fromdateiso8601) > $cutoff)
+                    | .id" 2>&1) || {
+              echo "::notice::probe $repo listing failed: $(printf '%s' "$runs" | tail -1)"
+              return 1
+            }
+            for run in $runs; do
+              verdict=$(gh api "repos/$repo/actions/runs/$run/jobs" \
+                --jq 'any(.jobs[]; ((.runner_name // "") | (startswith("legion-") or startswith("ai-legion"))))' 2>/dev/null || true)
+              if [ "$verdict" = true ]; then
+                echo "::notice::probe $repo: run $run executed on a legion-* runner"
+                return 0
+              fi
+            done
+            echo "::notice::probe $repo: no legion-* job within 24h"
+            return 1
+          }
+          if saw_legion "${{ github.repository }}" 15 \
+             || saw_legion Amperstrand/kali-live-headless 5; then
+            echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
+            echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
+          else
+            echo 'lane=hosted' >> "$GITHUB_OUTPUT"
+            echo 'fuzz_seconds=0' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Lane summary
+        run: |
+          {
+            echo "## Fuzz lane"
+            echo '```'
+            if [ "${{ steps.pick.outputs.lane }}" = selfhosted ]; then
+              echo "lane:         self-hosted (legion-vm)"
+              echo "fuzz budget:  ${{ steps.pick.outputs.fuzz_seconds }}s per target (6 targets, serial)"
+            else
+              echo "lane:         hosted heartbeat absent"
+              echo "fuzz legs:    SKIPPED — self-hosted-only policy (Amperstrand/ops#43)"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   fuzz:
     name: ${{ matrix.dir }}/${{ matrix.target }}
-    runs-on: ubuntu-latest
+    needs: pick-runner
+    if: needs.pick-runner.outputs.lane == 'selfhosted'
+    runs-on: [self-hosted, legion-vm]
+    # Bounds BOTH the leg and the queue-wait on the probe/dispatch race.
+    # 25 min = build + 600s fuzz + margin; 6 legs run serially on one
+    # runner (add a second service for parallel slots).
+    timeout-minutes: 25
     # rustup walks up from */fuzz dirs to the root rust-toolchain.toml
     # (stable 1.99.0, 72c74b4), which rejects cargo-fuzz's -Zsanitizer.
     # This job is the toml header's structural exception: "nightly for
@@ -39,6 +120,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Keep target/ + corpus dirs warm on persistent runners
+          # (hosted legs never reach this branch — it skips without a
+          # heartbeat). Cold builds are most of a nightly's wall time.
+          clean: false
 
       - uses: dtolnay/rust-toolchain@nightly
 
@@ -47,13 +133,13 @@ jobs:
         with:
           tool: cargo-fuzz
 
-      - name: Fuzz (bounded 120s)
+      - name: Fuzz (bounded ${{ needs.pick-runner.outputs.fuzz_seconds }}s)
         working-directory: ${{ matrix.dir }}/fuzz
         run: |
           set +e
           # --target gnu: cargo-fuzz's musl default is ASan-incompatible
           # (statically linked libc) and not preinstalled on the runner.
-          cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=120 -timeout=10
+          cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=${{ needs.pick-runner.outputs.fuzz_seconds }} -timeout=10
           rc=$?
           if [ $rc -ne 0 ]; then
             echo "::group::fuzz artifacts"
