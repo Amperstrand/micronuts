@@ -387,8 +387,20 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
 
         "check_state" => {
             let s = p_str(p, "token");
-            let mint = p_str(p, "mint_url");
-            let c = match d.slot_for(mint) {
+            // The client sends only the token; the mint is derived from
+            // it (a token IS mint-scoped). An explicit param still wins.
+            let mint = {
+                let param = p_str(p, "mint_url");
+                if !param.is_empty() {
+                    param.to_string()
+                } else {
+                    match micronuts_wallet_core::token_compat::decode_token_any(s) {
+                        Ok(t) => t.mint.trim_end_matches('/').to_string(),
+                        Err(_) => String::new(),
+                    }
+                }
+            };
+            let c = match d.slot_for(&mint) {
                 Ok(c) => c,
                 Err(e) => return (Response::err(req.id, format!("check_state: {e}")), false),
             };
@@ -610,7 +622,7 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let slot = mints.get_mut(&c).unwrap();
             match slot.engine.quote_melt(invoice) {
                 Ok(q) => {
-                    cache_melt_quote(&q.quote, invoice);
+                    cache_melt_quote(&q.quote, invoice, &c);
                     (
                         Response::ok(
                             req.id,
@@ -634,8 +646,8 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             // micronuts melts by INVOICE; map quote -> invoice via the
             // in-memory melt quote cache (quotes are short-lived on the
             // bench).
-            let invoice = match melt_cache().lock().unwrap().get(qid) {
-                Some(i) => i.clone(),
+            let (invoice, cached_mint) = match melt_cache().lock().unwrap().get(qid) {
+                Some((i, m)) => (i.clone(), m.clone()),
                 None => {
                     return (
                         Response::err(req.id, format!("melt: unknown quote ID: {qid}")),
@@ -643,8 +655,11 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                     )
                 }
             };
-            let mint = p_str(p, "mint_url");
-            let c = match d.slot_for(mint) {
+            // The client's Melt carries only the quote id — the mint
+            // comes from the quote cache (cdk-walletd's contract; the
+            // mint_url param was always empty, so melts failed before
+            // ever reaching the wire).
+            let c = match d.slot_for(&cached_mint) {
                 Ok(c) => c,
                 Err(e) => return (Response::err(req.id, format!("melt: {e}")), false),
             };
@@ -726,13 +741,17 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
     }
 }
 
-fn melt_cache() -> &'static Mutex<HashMap<String, String>> {
-    static CACHE: std::sync::OnceLock<Mutex<HashMap<String, String>>> = std::sync::OnceLock::new();
+fn melt_cache() -> &'static Mutex<HashMap<String, (String, String)>> {
+    static CACHE: std::sync::OnceLock<Mutex<HashMap<String, (String, String)>>> =
+        std::sync::OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn cache_melt_quote(qid: &str, invoice: &str) {
-    melt_cache().lock().unwrap().insert(qid.to_string(), invoice.to_string());
+fn cache_melt_quote(qid: &str, invoice: &str, mint: &str) {
+    melt_cache()
+        .lock()
+        .unwrap()
+        .insert(qid.to_string(), (invoice.to_string(), mint.to_string()));
 }
 
 fn mint_quote_amounts() -> &'static Mutex<HashMap<String, (u64, String)>> {
