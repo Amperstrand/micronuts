@@ -283,6 +283,11 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                 serde_json::json!({
                     "backend": "micronuts",
                     "kind": "sidecar",
+                    // Router arches this backend serves (capability
+                    // contract parity with cdk-walletd's manifest —
+                    // Amperstrand/micronuts#140). no_std core: any
+                    // 32/64-bit target; these are the packaged ones.
+                    "arches": ["aarch64_cortex-a53", "mipsel_24kc", "x86_64"],
                     "version": env!("CARGO_PKG_VERSION"),
                     "contract": { "nut_07": true, "nut_09": true, "restore": true, "cgo": false },
                     "licence": "0BSD",

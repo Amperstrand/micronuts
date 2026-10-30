@@ -162,11 +162,12 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(())
     }
 
-    fn ensure_connected(&self) -> Result<(), CashuError> {
+    fn ensure_connected(&mut self) -> Result<(), CashuError> {
         if self.keyset_id.is_empty() {
-            return Err(CashuError::Protocol(String::from(
-                "not connected — call connect() first",
-            )));
+            // Lazy connect — protocol parity with cdk-walletd (the
+            // sidecar protocol has no connect verb; money ops connect
+            // on first use). Amperstrand/micronuts#141.
+            self.connect()?;
         }
         Ok(())
     }
