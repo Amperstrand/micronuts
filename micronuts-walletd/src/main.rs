@@ -35,9 +35,25 @@ struct UreqTransport {
     base: String,
 }
 
+impl UreqTransport {
+    /// WireMintClient hands us FULL URLs (it formats base+path itself);
+    /// other callers may hand bare paths. Accept both — the historic
+    /// base+path prepend DOUBLED the URL ("…:3339http://…"), which the
+    /// url crate rejects as InvalidPort (measured 2026-10-30; this is
+    /// why every port-bearing mint URL failed while scheme-only URLs
+    /// with default ports happened to parse).
+    fn resolve(&self, path: &str) -> String {
+        if path.starts_with("http://") || path.starts_with("https://") {
+            path.to_string()
+        } else {
+            format!("{}{}", self.base, path)
+        }
+    }
+}
+
 impl JsonTransport for UreqTransport {
     fn get_json(&self, path: &str) -> Result<Value, cashu_core_lite::error::CashuError> {
-        let resp = ureq::get(&format!("{}{}", self.base, path))
+        let resp = ureq::get(&self.resolve(path))
             .timeout(std::time::Duration::from_secs(60))
             .call();
         match resp {
@@ -53,7 +69,7 @@ impl JsonTransport for UreqTransport {
     }
 
     fn post_json(&self, path: &str, body: &Value) -> Result<Value, cashu_core_lite::error::CashuError> {
-        let resp = ureq::post(&format!("{}{}", self.base, path))
+        let resp = ureq::post(&self.resolve(path))
             .timeout(std::time::Duration::from_secs(60))
             .send_json(body.clone());
         match resp {
@@ -221,6 +237,13 @@ impl Daemon {
         let _ = reclaimed;
         eprintln!("micronuts-walletd: {canonical}: recovery complete");
         slot.recovered = true;
+        // DEADLOCK FIX: sync_persisted locks `mints` itself — calling it
+        // while THIS scope holds the lock self-deadlocks on the
+        // non-reentrant Mutex (pre-existing bug, unreachable until lazy
+        // connect let recovery actually COMPLETE for the first time;
+        // measured 2026-10-30: daemon hung after "recovery complete",
+        // never reached "listening").
+        drop(mints);
         self.sync_persisted(canonical);
         Ok(())
     }
