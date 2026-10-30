@@ -549,6 +549,33 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             }
         }
 
+        "send_p2pk" => {
+            // NUT-11 P2PK send (cdk contract: amount + pubkey + mint_url).
+            let amount = p.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let pk = p_str(p, "pubkey").to_string();
+            let mint = p_str(p, "mint_url");
+            let c = match d.slot_for(mint) {
+                Ok(c) => c,
+                Err(e) => return (Response::err(req.id, format!("send_p2pk: {e}")), false),
+            };
+            if let Err(e) = d.ensure_recovered(&c) {
+                return (Response::err(req.id, format!("send_p2pk: {e}")), false);
+            }
+            let mut mints = d.mints.lock().unwrap();
+            let slot = mints.get_mut(&c).unwrap();
+            match slot.engine.send_p2pk(amount, &pk) {
+                Ok(tok) => {
+                    drop(mints);
+                    d.sync_persisted(&c);
+                    (Response::ok(
+                        req.id,
+                        serde_json::json!({ "token": tok, "mint": c, "amount": amount }),
+                    ), false)
+                }
+                Err(e) => (Response::err(req.id, format!("send_p2pk: {e:?}")), false),
+            }
+        }
+
         "send" => {
             let amount = p.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
             let mint = p_str(p, "mint_url");

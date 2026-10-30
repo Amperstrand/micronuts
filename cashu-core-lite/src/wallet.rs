@@ -145,6 +145,26 @@ impl<T: MintClient> Wallet<T> {
         self.unblind_to_proofs(&pending, &response.signatures, mint_keys)
     }
 
+    /// NUT-03 swap with CALLER-SUPPLIED output secrets (condition-locked
+    /// outputs — the P2PK send path). secrets.len() == new_amounts.len().
+    pub fn swap_with_secrets(
+        &mut self,
+        proofs: Vec<nut00::Proof>,
+        new_amounts: &[u64],
+        secrets: &[String],
+        keyset_id: &str,
+        mint_keys: &nut01::KeySet,
+        rng: &mut dyn RngCore,
+    ) -> Result<Vec<nut00::Proof>, CashuError> {
+        let (blinded_messages, pending) =
+            self.create_blinded_outputs_with_secrets(new_amounts, secrets, keyset_id, rng)?;
+        let response = self.transport.post_swap(nut03::SwapRequest {
+            inputs: proofs,
+            outputs: blinded_messages,
+        })?;
+        self.unblind_to_proofs(&pending, &response.signatures, mint_keys)
+    }
+
     /// NUT-05: Request a melt quote.
     pub fn request_melt_quote(
         &mut self,
@@ -208,13 +228,31 @@ impl<T: MintClient> Wallet<T> {
         keyset_id: &str,
         rng: &mut dyn RngCore,
     ) -> Result<(Vec<nut00::BlindedMessage>, Vec<PendingOutput>), CashuError> {
+        // Random secrets, one per amount — see create_blinded_outputs_with_secrets.
+        let secrets: Vec<String> = (0..amounts.len())
+            .map(|_| {
+                let mut b = [0u8; 32];
+                rng.fill_bytes(&mut b);
+                hex::encode(b)
+            })
+            .collect();
+        self.create_blinded_outputs_with_secrets(amounts, &secrets, keyset_id, rng)
+    }
+
+    /// Blinded outputs with CALLER-SUPPLIED secrets (NUT-10 tagged
+    /// secrets make the resulting proofs condition-locked — P2PK sends).
+    /// secrets.len() must equal amounts.len().
+    pub(crate) fn create_blinded_outputs_with_secrets(
+        &self,
+        amounts: &[u64],
+        secrets: &[String],
+        keyset_id: &str,
+        rng: &mut dyn RngCore,
+    ) -> Result<(Vec<nut00::BlindedMessage>, Vec<PendingOutput>), CashuError> {
         let mut messages = Vec::with_capacity(amounts.len());
         let mut pending = Vec::with_capacity(amounts.len());
 
-        for &amount in amounts {
-            let mut secret_bytes = [0u8; 32];
-            rng.fill_bytes(&mut secret_bytes);
-            let secret_hex = hex::encode(secret_bytes);
+        for (&amount, secret_hex) in amounts.iter().zip(secrets.iter()) {
 
             let mut blinder_bytes = [0u8; 32];
             rng.fill_bytes(&mut blinder_bytes);
@@ -231,7 +269,7 @@ impl<T: MintClient> Wallet<T> {
             });
 
             pending.push(PendingOutput {
-                secret: secret_hex.into_bytes(),
+                secret: secret_hex.as_bytes().to_vec(),
                 blinder: bm.blinder,
                 amount,
             });

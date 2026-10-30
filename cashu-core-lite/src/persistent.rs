@@ -553,6 +553,43 @@ where
         Ok(proofs)
     }
 
+    /// NUT-03 swap with CALLER-SUPPLIED output secrets — NUT-10 tagged
+    /// secrets make the outputs condition-locked (the P2PK send path).
+    /// Custody semantics mirror [`Self::swap_deterministic`] (caller
+    /// spends inputs first, removes the send subset after); unlike the
+    /// deterministic path this consumes NO derivation-counter range
+    /// (caller secrets are not counter-derived).
+    pub fn swap_with_secrets(
+        &mut self,
+        inputs: Vec<nut00::Proof>,
+        new_amounts: &[u64],
+        secrets: &[String],
+        keyset_id: &str,
+        mint_keys: &nut01::KeySet,
+        rng: &mut dyn rand_core::RngCore,
+    ) -> Result<Vec<nut00::Proof>, CashuError> {
+        if new_amounts.is_empty() || secrets.len() != new_amounts.len() {
+            return Err(CashuError::InvalidAmount);
+        }
+        let (outputs, pending) = self.inner.create_blinded_outputs_with_secrets(
+            new_amounts,
+            secrets,
+            keyset_id,
+            rng,
+        )?;
+        let response = self
+            .inner
+            .transport
+            .post_swap(nut03::SwapRequest { inputs, outputs })?;
+        let proofs = self
+            .inner
+            .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
+        self.verify_fresh(&proofs, mint_keys)?;
+        self.proofs.extend(proofs.iter().cloned());
+        self.persist()?;
+        Ok(proofs)
+    }
+
     /// Store external proofs the mint already issued (e.g. re-credited
     /// after an out-of-band transfer). Caller guarantees validity.
     pub fn add_proofs(&mut self, proofs: Vec<nut00::Proof>) -> Result<(), CashuError> {

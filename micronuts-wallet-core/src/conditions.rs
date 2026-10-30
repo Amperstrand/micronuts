@@ -480,3 +480,46 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod send_p2pk_shape_tests {
+    use super::*;
+
+    fn shape(nonce: &str, data: &str) -> String {
+        format!(
+            r#"["P2PK",{{"nonce":"{nonce}","data":"{data}","tags":[["sigflag","SIG_INPUTS"]]}}]"#
+        )
+    }
+
+    #[test]
+    fn send_p2pk_secret_shape_parses_and_locks() {
+        let data = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        // The EXACT string engine::send_p2pk builds (32-hex nonce).
+        let secret = shape("0123456789abcdef0123456789abcdef", data);
+        // Literal-built (known-good parse) vs format-built, byte-compared.
+        let lit = r#"["P2PK",{"nonce":"a","data":"DATA","tags":[["sigflag","SIG_INPUTS"]]}]"#
+            .replace("DATA", data);
+        let fmt = shape("a", data);
+        eprintln!("lit parses: {}  fmt parses: {}", Secret::parse(&lit).is_some(), Secret::parse(&fmt).is_some());
+        eprintln!("equal: {}  len lit={} fmt={}", lit == fmt, lit.len(), fmt.len());
+        if lit != fmt {
+            for (i, (a, b)) in lit.bytes().zip(fmt.bytes()).enumerate() {
+                if a != b { eprintln!("first diff at {i}: lit={a:#x} fmt={b:#x}"); break; }
+            }
+        }
+        // Length sweep: pinpoints a parser length limit if present.
+        for nlen in [1usize, 8, 16, 24, 31, 32, 33, 64] {
+            let probe = shape(&"a".repeat(nlen), data);
+            eprintln!("nonce len {nlen}: parses={}", Secret::parse(&probe).is_some());
+        }
+        let parsed = Secret::parse(&secret)
+            .unwrap_or_else(|| panic!("secret did not parse as a condition: {secret}"));
+        assert!(matches!(parsed.kind, SecretKind::P2PK), "{:?}", parsed.kind);
+        let identity = derive_identity(&[9u8; 32]).unwrap();
+        let w = witness_for_secret(
+            &secret,
+            &UnlockContext { identity: &identity, preimage: None, now: 1_000_000_000 },
+        );
+        assert!(matches!(w, Err(ConditionError::NotOurLock)), "foreign lock must NOT be witnessable: {w:?}");
+    }
+}

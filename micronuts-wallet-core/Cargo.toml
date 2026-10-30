@@ -14,3 +14,4 @@ web-time = "1.1"
 base64 = "0.22"
 sha2 = "0.10"
 k256 = { workspace = true, features = ["schnorr"] }
+rand_core = { workspace = true }

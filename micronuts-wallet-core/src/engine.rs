@@ -427,6 +427,105 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(wire)
     }
 
+    /// NUT-11 P2PK send: swap to fresh outputs whose secrets lock them to
+    /// `recipient_pubkey_hex` (33-byte compressed hex; the recipient must
+    /// provide input signatures to spend). The keep-change outputs use
+    /// fresh random secrets. Returns the wire token carrying ONLY the
+    /// locked outputs.
+    pub fn send_p2pk(
+        &mut self,
+        amount: u64,
+        recipient_pubkey_hex: &str,
+    ) -> Result<String, CashuError> {
+        self.ensure_connected()?;
+        if amount == 0 {
+            return Err(CashuError::InvalidAmount);
+        }
+        if recipient_pubkey_hex.len() != 66
+            || !recipient_pubkey_hex
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        {
+            return Err(CashuError::Protocol(format!(
+                "send_p2pk: expected 33-byte compressed pubkey hex (66 chars), got {}",
+                recipient_pubkey_hex.len()
+            )));
+        }
+
+        let fee = self.swap_fee_hint(amount)?;
+        let selected = self
+            .wallet
+            .spend(amount.checked_add(fee).ok_or(CashuError::InvalidAmount)?)?;
+        let selected_total: u64 = selected.iter().map(|p| p.amount).sum();
+        let keep = selected_total - amount - fee;
+
+        let send_amounts = nut00::decompose_amount(amount);
+        let keep_amounts = nut00::decompose_amount(keep);
+        let mut amounts = send_amounts.clone();
+        amounts.extend(keep_amounts.iter().copied());
+
+        // NUT-10 tagged secrets: a unique nonce per output (mint secrets
+        // are UNIQUE — the nonce is the uniqueness field), data = the
+        // recipient's lock key. Keep-outputs get random secrets.
+        let mut rng = rand_core::OsRng;
+        let mut secrets: Vec<String> = Vec::with_capacity(amounts.len());
+        for _ in &send_amounts {
+            let mut nonce = [0u8; 16];
+            rand_core::RngCore::fill_bytes(&mut rng, &mut nonce);
+            secrets.push(format!(
+                r#"["P2PK",{{"nonce":"{}","data":"{recipient_pubkey_hex}","tags":[["sigflag","SIG_INPUTS"]]}}]"#,
+                hex::encode(nonce)
+            ));
+        }
+        for _ in &keep_amounts {
+            let mut b = [0u8; 32];
+            rand_core::RngCore::fill_bytes(&mut rng, &mut b);
+            secrets.push(hex::encode(b));
+        }
+
+        let fresh = match self.wallet.swap_with_secrets(
+            selected.clone(),
+            &amounts,
+            &secrets,
+            &self.keyset_id,
+            &self.keys,
+            &mut rng,
+        ) {
+            Ok(f) => f,
+            Err(err) => {
+                let _ = self.wallet.undo_spend(selected);
+                return Err(err);
+            }
+        };
+        let send_proofs: Vec<_> = fresh.into_iter().take(send_amounts.len()).collect();
+        let tokens = vec![TokenV4Token {
+            keyset_id: self.keyset_id.clone(),
+            proofs: send_proofs
+                .iter()
+                .map(|p| TokenProof {
+                    amount: p.amount,
+                    keyset_id: p.id.clone(),
+                    secret: p.secret.clone(),
+                    c: p.c.to_bytes().to_vec(),
+                    dleq: p.dleq.clone(),
+                })
+                .collect(),
+        }];
+        let token = TokenV4 {
+            mint: self.mint_url.clone(),
+            unit: self.unit.clone(),
+            memo: Some(String::from("p2pk")),
+            tokens,
+        };
+        let wire = encode_token_wire(&token)
+            .map_err(|e| CashuError::Protocol(format!("token encode failed: {e}")))?;
+        self.wallet.remove_proofs(&send_proofs)?;
+        let history_idx = self.history.len();
+        self.record(HistoryKind::Send, amount, String::from("p2pk to key"));
+        self.history[history_idx].status = HistoryStatus::Pending;
+        Ok(wire)
+    }
+
     /// Check one pending send against the mint (NUT-07): `Claimed` when
     /// every proof is spent, `Awaiting` otherwise. A claimed send is
     /// finalized (pending record dropped, history completed).
