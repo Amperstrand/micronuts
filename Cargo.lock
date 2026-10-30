@@ -4580,6 +4580,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "micronuts-walletd"
+version = "0.1.0"
+dependencies = [
+ "cashu-core-lite",
+ "libc",
+ "micronuts-wallet-core",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
