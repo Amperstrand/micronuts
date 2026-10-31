@@ -47,6 +47,30 @@ jobs:
           # bootstraps the signal for repos that never ran self-hosted.
           cutoff=$(date -u -d '24 hours ago' +%s)
           case "$cutoff" in ''|*[!0-9]*) echo "::error::bad cutoff"; exit 1 ;; esac
+          # Fleet canary: kali's own CI runs a self-hosted gate job on the
+          # fleet on every push. A queued-and-stuck one is the only passive
+          # signal that the fleet is STOPPED right now (a fleet that worked
+          # 3h ago still passes every completed-history check — 2026-10-31:
+          # runners deliberately stopped overnight; a repo whose own legs
+          # completed <24h ago would have queued forever). The canary is
+          # armed by dispatching kali's CI once; when the fleet returns, the
+          # queued canary job simply runs — self-healing.
+          fleet_canary_alive() {
+            local rid job st nm age
+            rid=$(gh api "repos/Amperstrand/kali-live-headless/actions/runs?per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null) || return 1
+            [ -n "$rid" ] || return 1
+            job=$(gh api "repos/Amperstrand/kali-live-headless/actions/runs/$rid/jobs" \
+              --jq '.jobs[] | select(.name | contains("self-hosted")) | (.status)+"/"+(.runner_name // "-")+"/"+(.started_at // "")' 2>/dev/null) || return 1
+            [ -n "$job" ] || return 1
+            st=${job%%/*}
+            case "$st" in
+              queued) return 1 ;;   # self-hosted job that cannot start = fleet dark
+              completed|in_progress)
+                case "$job" in */legion-*|*/ai-legion*) return 0 ;; esac
+                return 1 ;;
+            esac
+            return 1
+          }
           used_fleet_ever() { # repo pages -> EVER used a fleet runner?
             # No date filter: distinguishes "first-timer" (bootstrap via
             # the kali fallback) from "had fleet runners, now DARK" — the
@@ -84,14 +108,18 @@ jobs:
             echo "::notice::probe $repo: no legion-* job within 24h"
             return 1
           }
-          if saw_legion "${{ github.repository }}" 15; then
+          if saw_legion "${{ github.repository }}" 15 && fleet_canary_alive; then
             echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
             echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
+          elif ! fleet_canary_alive; then
+            echo '::notice::fleet canary: kali self-hosted gate queued/stuck — fleet STOPPED; skipping instead of queueing forever'
+            echo 'lane=hosted' >> "$GITHUB_OUTPUT"
+            echo 'fuzz_seconds=0' >> "$GITHUB_OUTPUT"
           elif used_fleet_ever "${{ github.repository }}" 12; then
             echo '::notice::probe: this repo HAS fleet runners but none ran within 24h (dark) — skipping instead of queueing forever on a dead label'
             echo 'lane=hosted' >> "$GITHUB_OUTPUT"
             echo 'fuzz_seconds=0' >> "$GITHUB_OUTPUT"
-          elif saw_legion Amperstrand/kali-live-headless 5; then
+          elif saw_legion Amperstrand/kali-live-headless 5 && fleet_canary_alive; then
             echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
             echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
           else
