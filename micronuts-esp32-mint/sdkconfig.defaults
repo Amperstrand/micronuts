@@ -9,3 +9,11 @@ CONFIG_HTTPD_MAX_URI_HANDLERS=16
 CONFIG_HTTPD_STACK_SIZE=32768
 # NVS: mint state (spent set, quotes) lands here in the persistence milestone.
 CONFIG_NVS_COMPACT_NAMES_THRESHOLD=0
+
+# Crash forensics (ccid-firmware-rs #494 audit adoption): dump panics to
+# the `coredump` partition (ELF, explicit — Kconfig defaults to NONE).
+# Missing/blank partition at boot is non-fatal. Factory shrank by the
+# 0x10000 the coredump row takes; images are far smaller. Deployed at
+# the next bench reflash (table change).
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y

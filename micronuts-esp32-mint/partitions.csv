@@ -6,4 +6,5 @@
 # hence the gap after phy_init).
 nvs,      data, nvs,     0x9000,  0x010000,
 phy_init, data, phy,     0x109000,0x001000,
-factory,  app,  factory, 0x110000,0x2F0000,
+factory,  app,  factory, 0x110000,0x2E0000,
+coredump, data, coredump, 0x3F0000, 0x10000,

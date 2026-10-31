@@ -15,3 +15,11 @@ CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
 # 2026-09-30: "authmode threshold ... impossible to connect to an AP with
 # authmode OWE" flaked every post-first join). Captive portals are open.
 CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
+
+# Crash forensics (ccid-firmware-rs #494 audit adoption): dump panics to
+# the `coredump` partition (ELF, explicit — Kconfig defaults to NONE).
+# Missing/blank partition at boot is non-fatal. Factory shrank by the
+# 0x10000 the coredump row takes; images are far smaller. Deployed at
+# the next bench reflash (table change).
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
