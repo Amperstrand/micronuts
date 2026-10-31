@@ -47,6 +47,22 @@ jobs:
           # bootstraps the signal for repos that never ran self-hosted.
           cutoff=$(date -u -d '24 hours ago' +%s)
           case "$cutoff" in ''|*[!0-9]*) echo "::error::bad cutoff"; exit 1 ;; esac
+          used_fleet_ever() { # repo pages -> EVER used a fleet runner?
+            # No date filter: distinguishes "first-timer" (bootstrap via
+            # the kali fallback) from "had fleet runners, now DARK" — the
+            # dark case must NOT be masked by another repo's heartbeat, or
+            # legs queue forever on a label no live runner serves
+            # (2026-10-31: ccid fuzz queued 16h while the box was healthy).
+            local repo=$1 pages=$2 runs run verdict
+            runs=$(gh api "repos/$repo/actions/runs?per_page=$pages&status=completed" \
+              --jq '.workflow_runs[].id' 2>/dev/null) || return 1
+            for run in $runs; do
+              verdict=$(gh api "repos/$repo/actions/runs/$run/jobs" \
+                --jq 'any(.jobs[]; ((.runner_name // "") | (startswith("legion-") or startswith("ai-legion"))))' 2>/dev/null || true)
+              [ "$verdict" = true ] && return 0
+            done
+            return 1
+          }
           saw_legion() {
             local repo=$1 pages=$2 runs run verdict
             runs=$(gh api "repos/$repo/actions/runs?per_page=$pages" \
@@ -68,8 +84,14 @@ jobs:
             echo "::notice::probe $repo: no legion-* job within 24h"
             return 1
           }
-          if saw_legion "${{ github.repository }}" 15 \
-             || saw_legion Amperstrand/kali-live-headless 5; then
+          if saw_legion "${{ github.repository }}" 15; then
+            echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
+            echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
+          elif used_fleet_ever "${{ github.repository }}" 12; then
+            echo '::notice::probe: this repo HAS fleet runners but none ran within 24h (dark) — skipping instead of queueing forever on a dead label'
+            echo 'lane=hosted' >> "$GITHUB_OUTPUT"
+            echo 'fuzz_seconds=0' >> "$GITHUB_OUTPUT"
+          elif saw_legion Amperstrand/kali-live-headless 5; then
             echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
             echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
           else
