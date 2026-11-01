@@ -915,11 +915,15 @@ mod exact_spend_tests {
     /// parent kept iterating — the search blew straight through the cap.
     #[test]
     fn exact_subset_search_enforces_node_cap() {
-        let amounts: Vec<u64> = vec![1; 30]; // chain search, target unreachable (sum = 30)
-        let (_picked, nodes) = select_exact_subset(&amounts, 31, 10);
+        // Even coins, odd target: unreachable but NOT suffix-pruned — the
+        // full tree must be explored, so the cap has to stop it for real.
+        // An `==` check unwinds exactly one level while the parent keeps
+        // iterating distinct siblings, blowing far past the cap.
+        let amounts: Vec<u64> = (2..=24).step_by(2).collect();
+        let (_picked, nodes) = select_exact_subset(&amounts, 97, 10);
         assert!(
-            nodes as usize <= 10 + amounts.len(),
-            "cap must stop expansion: {nodes} nodes explored (cap 10)"
+            nodes <= 10,
+            "cap must stop expansion at every level: {nodes} nodes explored (cap 10)"
         );
     }
 
