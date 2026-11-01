@@ -94,6 +94,20 @@ pub struct WalletEngine<T: MintClient + Clone, S: ProofStore> {
     pending: Vec<PendingSend>,
 }
 
+/// True when a Transport failure proves the swap request never reached
+/// the mint: connection establishment or request-body write failures.
+/// Response-loss (`submit:`) and parse (`json parse:`) failures are
+/// ambiguous — the mint may already have spent the inputs — so they do
+/// not qualify for the offline fallback (review debt micronuts#82).
+fn transport_request_unsent(err: &CashuError) -> bool {
+    match err {
+        CashuError::Transport(msg) => {
+            msg.starts_with("http conn: ") || msg.starts_with("body write: ")
+        }
+        _ => false,
+    }
+}
+
 impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
     pub fn new(
         mint_url: &str,
@@ -792,7 +806,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 // subset of the held proofs instead. Online, the swap stays
                 // first: it marks the spent secrets at the mint, which the
                 // restore/reconcile contract on other devices depends on.
-                if matches!(err, CashuError::Transport(_)) {
+                if transport_request_unsent(&err) {
                     if let Some(exact) = self.wallet.try_spend_exact(amount)? {
                         return Ok(exact);
                     }
@@ -924,4 +938,30 @@ mod tests {
         let zero: u64 = 0;
         assert_eq!((ppk * zero).div_ceil(1000), 0);
     }
+}
+
+/// r4227128227: the offline fallback must fire ONLY for transport failures
+/// that prove the swap request never reached the mint. Response-loss and
+/// parse failures are ambiguous — the mint may already have spent the
+/// inputs — and an offline token built from spent proofs gets rejected at
+/// the gate and can misclassify a pending send via NUT-07.
+#[test]
+fn transport_request_unsent_gates_by_phase() {
+    let unsent = |msg: &str| transport_request_unsent(&CashuError::Transport(msg.to_string()));
+    assert!(
+        unsent("http conn: EspHttpConnection error"),
+        "connection refused = never sent"
+    );
+    assert!(
+        unsent("body write: broken pipe"),
+        "body write failed = never submitted"
+    );
+    assert!(
+        !unsent("submit: response read failed"),
+        "response loss is ambiguous"
+    );
+    assert!(
+        !unsent("json parse: expected value"),
+        "mint answered = inputs spent"
+    );
 }
