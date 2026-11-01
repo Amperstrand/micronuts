@@ -33,6 +33,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::{BTreeMap, BTreeSet};
@@ -161,6 +163,64 @@ where
     proofs: Vec<nut00::Proof>,
 }
 
+/// Exact-subset DFS over sorted-descending amounts, bounded: the node cap
+/// is enforced at EVERY expansion (`>=`, plus a loop-level guard) — an `==`
+/// check unwinds exactly one level while the parent keeps iterating past
+/// the cap, wedging an embedded wallet on fragmented proof sets
+/// (review debt micronuts#82, r4226624677). Returns the chosen index
+/// subset (indices into `amounts`) and the node count (for tests).
+fn select_exact_subset(amounts: &[u64], target: u64, cap: u32) -> (Option<Vec<usize>>, u32) {
+    // Suffix sums (saturating) prune branches whose whole tail cannot
+    // reach `remaining`.
+    let mut suffix = vec![0u64; amounts.len() + 1];
+    for k in (0..amounts.len()).rev() {
+        suffix[k] = suffix[k + 1].saturating_add(amounts[k]);
+    }
+
+    fn dfs(
+        amounts: &[u64],
+        suffix: &[u64],
+        start: usize,
+        remaining: u64,
+        chosen: &mut Vec<usize>,
+        nodes: &mut u32,
+        cap: u32,
+    ) -> bool {
+        if remaining == 0 {
+            return true;
+        }
+        if *nodes >= cap || suffix[start] < remaining {
+            return false;
+        }
+        let mut last: Option<u64> = None;
+        for i in start..amounts.len() {
+            if *nodes >= cap {
+                return false;
+            }
+            let coin = amounts[i];
+            if last == Some(coin) {
+                continue;
+            }
+            last = Some(coin);
+            if coin > remaining {
+                continue;
+            }
+            *nodes += 1;
+            chosen.push(i);
+            if dfs(amounts, suffix, i + 1, remaining - coin, chosen, nodes, cap) {
+                return true;
+            }
+            chosen.pop();
+        }
+        false
+    }
+
+    let mut chosen: Vec<usize> = Vec::new();
+    let mut nodes: u32 = 0;
+    let found = dfs(amounts, &suffix, 0, target, &mut chosen, &mut nodes, cap);
+    (found.then_some(chosen), nodes)
+}
+
 impl<T, S> PersistentWallet<T, S>
 where
     T: crate::transport::MintClient,
@@ -244,15 +304,15 @@ where
         Ok(minted)
     }
 
-    /// Spend `amount` using proofs that sum EXACTLY to it — no swap, no
-    /// mint round-trip. Returns `None` when no combination exists.
-    /// Critical for pre-auth gated payments (micronuts#79): power-of-two
-    /// denominations make typical targets 3-proof sums (21 = 16+4+1), so
-    /// this searches any subset size, not just singles and pairs.
-    pub fn try_spend_exact(
-        &mut self,
-        amount: u64,
-    ) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+    /// Select proofs that sum EXACTLY to `amount` — no swap, no mint
+    /// round-trip, and (review debt micronuts#82, r4226624672)
+    /// NON-MUTATING: the proofs stay in the wallet; the caller removes
+    /// them at its send commit (after the token encodes). Returns `None`
+    /// when no combination exists. Critical for pre-auth gated payments
+    /// (micronuts#79): power-of-two denominations make typical targets
+    /// 3-proof sums (21 = 16+4+1), so this searches any subset size, not
+    /// just singles and pairs.
+    pub fn try_spend_exact(&self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
         #[cfg(not(feature = "std"))]
         use alloc::vec;
 
@@ -275,56 +335,22 @@ where
         // the node cap the search gives up and the caller falls back to
         // the swap path — exactly the pre-this-function behavior.
         const NODE_CAP: u32 = 100_000;
-
-        fn dfs(
-            amounts: &[u64],
-            suffix: &[u64],
-            start: usize,
-            remaining: u64,
-            chosen: &mut Vec<usize>,
-            nodes: &mut u32,
-        ) -> bool {
-            if remaining == 0 {
-                return true;
-            }
-            if *nodes == NODE_CAP || suffix[start] < remaining {
-                return false;
-            }
-            let mut last: Option<u64> = None;
-            for i in start..amounts.len() {
-                let coin = amounts[i];
-                if last == Some(coin) {
-                    continue;
-                }
-                last = Some(coin);
-                if coin > remaining {
-                    continue;
-                }
-                *nodes += 1;
-                chosen.push(i);
-                if dfs(amounts, suffix, i + 1, remaining - coin, chosen, nodes) {
-                    return true;
-                }
-                chosen.pop();
-            }
-            false
-        }
-
-        let mut chosen: Vec<usize> = Vec::new();
-        let mut nodes: u32 = 0;
-        if !dfs(&amounts, &suffix, 0, amount, &mut chosen, &mut nodes) {
+        let (found, _nodes) = select_exact_subset(&amounts, amount, NODE_CAP);
+        let Some(chosen) = found else {
             return Ok(None);
-        }
+        };
 
-        // Highest original index first so earlier removals stay valid.
-        let mut picked: Vec<usize> = chosen.iter().map(|&k| order[k]).collect();
-        picked.sort_unstable();
-        let mut spent = Vec::with_capacity(picked.len());
-        for idx in picked.into_iter().rev() {
-            spent.push(self.proofs.remove(idx));
-        }
-        self.persist()?;
-        Ok(Some(spent))
+        // Review debt micronuts#82 (r4226624672): selection used to remove
+        // + persist here, so a later encode failure left the caller with no
+        // token and no funds while offline. The proofs stay in the wallet;
+        // send_token's remove_proofs at the commit step is the single
+        // removal point.
+        Ok(Some(
+            chosen
+                .iter()
+                .map(|&k| self.proofs[order[k]].clone())
+                .collect(),
+        ))
     }
 
     /// Select and remove proofs covering `amount` (largest-first, may
@@ -835,14 +861,18 @@ mod exact_spend_tests {
     }
 
     #[test]
-    fn try_spend_exact_uses_and_removes_the_proof() {
+    fn try_spend_exact_selection_stays_in_wallet_until_commit() {
+        // Contract flipped by the micronuts#82 review-debt fix
+        // (r4226624672): selection is NON-mutating — removing the proofs
+        // at selection time destroyed them when the later token encode
+        // failed. Removal belongs to send_token's commit step.
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)])
             .unwrap();
         let spent = w.try_spend_exact(1).unwrap().expect("exact 1 found");
         assert_eq!(spent.len(), 1);
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 4, "only the exact proof leaves the wallet");
+        assert_eq!(remaining, 5, "selection leaves both proofs in the wallet");
     }
 
     /// The case pairs-only search missed (review finding on this PR): a
@@ -857,7 +887,11 @@ mod exact_spend_tests {
         let sum: u64 = spent.iter().map(|p| p.amount).sum();
         assert_eq!(sum, 21);
         assert_eq!(spent.len(), 3);
-        assert!(w.proofs().is_empty(), "all three proofs leave the wallet");
+        assert_eq!(
+            w.proofs().len(),
+            3,
+            "non-mutating selection: all three proofs stay until commit"
+        );
     }
 
     #[test]
@@ -875,7 +909,33 @@ mod exact_spend_tests {
         assert_eq!(sum, 3);
         assert_eq!(spent.len(), 2, "picks the 2-sat proof plus one 1-sat");
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 2, "1+1 sats stay");
+        assert_eq!(remaining, 5, "non-mutating selection: nothing removed yet");
+    }
+
+    /// r4226624677: the node cap must hold at every expansion. With the
+    /// old `==` check, reaching exactly CAP unwound one level while the
+    /// parent kept iterating — the search blew straight through the cap.
+    #[test]
+    fn exact_subset_search_enforces_node_cap() {
+        // Even coins, odd target: unreachable but NOT suffix-pruned — the
+        // full tree must be explored, so the cap has to stop it for real.
+        // An `==` check unwinds exactly one level while the parent keeps
+        // iterating distinct siblings, blowing far past the cap.
+        let amounts: Vec<u64> = (2..=24).step_by(2).collect();
+        let (_picked, nodes) = select_exact_subset(&amounts, 97, 10);
+        assert!(
+            nodes <= 10,
+            "cap must stop expansion at every level: {nodes} nodes explored (cap 10)"
+        );
+    }
+
+    #[test]
+    fn exact_subset_search_still_finds_within_cap() {
+        let amounts = vec![16, 8, 4, 2, 1];
+        let (picked, _nodes) = select_exact_subset(&amounts, 21, 100_000);
+        let picked = picked.expect("16+4+1 must combine for 21");
+        let sum: u64 = picked.iter().map(|&k| amounts[k]).sum();
+        assert_eq!(sum, 21);
     }
 
     #[test]

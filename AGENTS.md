@@ -165,7 +165,7 @@ pgrep -af "micronuts\|mint_server" | grep -v grep
 ## CYD (ESP32-3248S035) hardware rules
 
 **Never `erase_flash` this board without first dumping the NVS partition**
-(`esptool read-flash 0x9000 0x10000`). This chip **cannot regenerate RF
+(`esptool read-flash 0x9000 0x20000` — the FULL nvs partition; the old 0x10000 size pre-dates the partition-table widening and would back up only half of it). This chip **cannot regenerate RF
 calibration data after an NVS wipe** — the factory `cal_data`/`cal_mac`/
 `cal_version` blobs in the `nvs.net80211` namespace are mandatory. A full
 erase destroys them; every subsequent build fails at `esp_wifi_start` with
@@ -174,7 +174,7 @@ erase destroys them; every subsequent build fails at `esp_wifi_start` with
 Recovery: restore the known-good NVS region from a pre-erase backup.
 Gold copies live in `conwrt-bench/data/bench/cyd-esp-fail-20260929/`
 (nvs-knowngood-20260927.bin, nvs-recovered-20260930.bin). App-only flash
-at `0x20000` is always safe.
+at `0x30000` is always safe (the app partition moved to 0x30000 when nvs was widened to 0x20000 bytes — the old 0x20000 address now lands INSIDE nvs and a "safe" app flash there destroys wallet state; review debt micronuts#82, r4151018847).
 
 Known hardware quirks: touch controller absent on this unit; ch8 (upper
 2.4GHz) association fails (calibration artifact — ch1 portals join fine).
