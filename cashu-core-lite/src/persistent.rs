@@ -33,6 +33,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::{BTreeMap, BTreeSet};
@@ -310,10 +312,7 @@ where
     /// (micronuts#79): power-of-two denominations make typical targets
     /// 3-proof sums (21 = 16+4+1), so this searches any subset size, not
     /// just singles and pairs.
-    pub fn try_spend_exact(
-        &self,
-        amount: u64,
-    ) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+    pub fn try_spend_exact(&self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
         #[cfg(not(feature = "std"))]
         use alloc::vec;
 
@@ -347,7 +346,10 @@ where
         // send_token's remove_proofs at the commit step is the single
         // removal point.
         Ok(Some(
-            chosen.iter().map(|&k| self.proofs[order[k]].clone()).collect(),
+            chosen
+                .iter()
+                .map(|&k| self.proofs[order[k]].clone())
+                .collect(),
         ))
     }
 
