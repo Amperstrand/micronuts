@@ -424,10 +424,7 @@ mod parse_hardening_tests {
         for len in [21usize, 22, 23, 24] {
             let r = vec![0u8; len];
             let res = SatocashStatus::parse(&r);
-            assert!(
-                res.is_err(),
-                "len {len} must be Malformed, not panic or Ok"
-            );
+            assert!(res.is_err(), "len {len} must be Malformed, not panic or Ok");
         }
     }
 
