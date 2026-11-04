@@ -793,7 +793,9 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 // first: it marks the spent secrets at the mint, which the
                 // restore/reconcile contract on other devices depends on.
                 if matches!(err, CashuError::Transport(_)) {
-                    if let Some(exact) = self.wallet.try_spend_exact(amount)? {
+                    // #123: find_exact is non-mutating — the proofs are
+                    // removed only by send_token AFTER the token encodes.
+                    if let Some(exact) = self.wallet.find_exact(amount)? {
                         return Ok(exact);
                     }
                 }
