@@ -266,7 +266,7 @@ impl MintClient for MockMint {
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError> {
         let signed = self.signed.borrow();
-        let outputs = request
+        let mut outputs = request
             .outputs
             .iter()
             .filter_map(|b| {
@@ -275,7 +275,15 @@ impl MintClient for MockMint {
                     signature: sig.clone(),
                 })
             })
-            .collect();
+            .collect::<Vec<_>>();
+        // The dleq_mode hook also governs REPLAYED signatures: a mint that
+        // omits witnesses on restore (#136) must be testable even when the
+        // originals were signed honestly.
+        if self.dleq_mode.get() == 1 {
+            for out in &mut outputs {
+                out.signature.dleq = None;
+            }
+        }
         Ok(nut09::RestoreResponse { outputs })
     }
 }
@@ -685,6 +693,69 @@ fn swap_rejects_tampered_dleq_and_persists_nothing() {
         restarted.balance(),
         0,
         "nothing persisted: a crash can no longer store unverified proofs"
+    );
+}
+
+#[test]
+fn melt_change_rejects_tampered_dleq_and_persists_nothing() {
+    // (#136) The NUT-08 change gate: a paid melt whose change witness is
+    // tampered fails closed BEFORE any mutation — nothing enters RAM
+    // state, nothing persists, the invariant mint/swap uphold now holds
+    // for melt too.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let store = SharedStore::new();
+
+    let mut w = wallet_with(&mock, store.clone());
+    w.mint_deterministic("q1", 32, KEYSET_ID, &keyset).unwrap();
+    let before = w.balance();
+
+    mock.dleq_mode.set(2); // corrupt the melt change witness
+    let err = w
+        .melt_deterministic("melt-1", 30, 2, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("NUT-12"),
+        "expected a NUT-12 error, got: {err}"
+    );
+    assert_eq!(
+        w.balance(),
+        before,
+        "unverified change never entered RAM state"
+    );
+
+    let restarted = wallet_with(&mock, store);
+    assert_eq!(
+        restarted.balance(),
+        before,
+        "nothing persisted: no unverified change on crash-reload"
+    );
+}
+
+#[test]
+fn restore_rejects_missing_dleq_and_persists_nothing() {
+    // (#136) The restore gate: signatures returned without a NUT-12
+    // witness never reach RAM state or the store — a crash-reload can
+    // no longer resurrect unverified proofs.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+
+    let mut original = wallet_with(&mock, SharedStore::new());
+    original
+        .mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
+
+    mock.dleq_mode.set(1); // the mint omits witnesses on restore
+    let mut lost = wallet_with(&mock, SharedStore::new());
+    let err = lost.restore(KEYSET_ID, &keyset).unwrap_err();
+    assert!(
+        err.to_string().contains("dleq"),
+        "expected a dleq error, got: {err}"
+    );
+    assert_eq!(
+        lost.balance(),
+        0,
+        "unverified restored proofs never entered RAM state"
     );
 }
 

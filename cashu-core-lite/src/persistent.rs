@@ -411,10 +411,15 @@ where
             });
         }
 
-        self.proofs.retain(|p| !selected.contains(p));
-
-        // Unblind NUT-08 change: signatures zip to blanks by index
-        // (mint-chosen amounts; mint key looked up per signature amount).
+        // (#136) Unblind NUT-08 change into a LOCAL buffer and gate it
+        // through verify_fresh BEFORE any mutation: nothing enters RAM
+        // state — and nothing persists — until every proof verifies (the
+        // invariant mint/swap already uphold). A tampered/missing change
+        // witness fails closed here with the wallet untouched; the inputs
+        // being spent at the mint is recovered by NUT-07 reconcile.
+        // Signatures zip to blanks by index (mint-chosen amounts; mint
+        // key looked up per signature amount).
+        let mut change_proofs: Vec<nut00::Proof> = Vec::new();
         let mut change_sats = 0u64;
         if let Some(change) = response.change.as_ref() {
             for (pending, sig) in pending_blanks.iter().zip(change.iter()) {
@@ -427,7 +432,7 @@ where
                 let c = unblind_signature(&sig.c, &pending.blinder, mint_pubkey)
                     .map_err(|_| CashuError::Crypto(String::from("change unblind failed")))?;
                 change_sats += sig.amount;
-                self.proofs.push(nut00::Proof {
+                change_proofs.push(nut00::Proof {
                     amount: sig.amount,
                     id: sig.id.clone(),
                     secret: String::from_utf8(pending.secret.clone())
@@ -444,6 +449,10 @@ where
                 });
             }
         }
+        self.verify_fresh(&change_proofs, mint_keys)?;
+
+        self.proofs.retain(|p| !selected.contains(p));
+        self.proofs.extend(change_proofs);
 
         self.persist()?;
         Ok(MeltOutcome {
@@ -607,6 +616,11 @@ where
         let mut added: u64 = 0;
         let mut max_idx: Option<u32> = None;
 
+        // (#136) Restored proofs buffer locally and pass verify_fresh
+        // BEFORE any mutation — same nothing-persists-unverified invariant
+        // as mint/swap (a crash-reload must never resurrect unverified
+        // proofs into the wallet).
+        let mut restored: Vec<nut00::Proof> = Vec::new();
         for out in response.outputs {
             let key = hex::encode(out.y.to_bytes());
             let Some(&(idx, ref blinder, ref secret_hex)) = by_blinded.get(&key) else {
@@ -626,7 +640,7 @@ where
             let c = unblind_signature(&out.signature.c, blinder, mint_pubkey)
                 .map_err(|_| CashuError::Crypto(String::from("unblind failed")))?;
 
-            self.proofs.push(nut00::Proof {
+            restored.push(nut00::Proof {
                 amount: out.signature.amount,
                 id: out.signature.id.clone(),
                 secret: secret_hex.clone(),
@@ -640,7 +654,9 @@ where
             added += 1;
             max_idx = Some(max_idx.map_or(idx, |m: u32| m.max(idx)));
         }
+        self.verify_fresh(&restored, mint_keys)?;
 
+        self.proofs.extend(restored);
         if let Some(m) = max_idx {
             self.counter = self.counter.max(m + 1);
         }
