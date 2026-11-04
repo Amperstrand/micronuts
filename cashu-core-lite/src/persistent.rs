@@ -287,7 +287,10 @@ where
             if remaining == 0 {
                 return true;
             }
-            if *nodes == NODE_CAP || suffix[start] < remaining {
+            // (#124) `>=`, never `==`: once a parent loop pushes the count
+            // PAST the cap, an equality check can never fire again and a
+            // fragmented no-solution set expands unboundedly.
+            if *nodes >= NODE_CAP || suffix[start] < remaining {
                 return false;
             }
             let mut last: Option<u64> = None;
@@ -868,6 +871,28 @@ mod exact_spend_tests {
             w.proofs().len(),
             3,
             "#123: selection is non-mutating — all three stay until send removes"
+        );
+    }
+
+    /// (#124) The node cap must be an upper BOUND: with the old `== NODE_CAP`
+    /// check, a count pushed past the cap by a parent loop never matched
+    /// again and a large fragmented no-solution set expanded exponentially.
+    /// This test completing promptly IS the regression proof (the buggy
+    /// version effectively hangs on 2^40 subsets).
+    #[test]
+    fn find_exact_node_cap_bounds_fragmented_no_solution_sets() {
+        let mut w = wallet();
+        let fragmented: Vec<nut00::Proof> = (0..40).map(|i| make_proof(2, i)).collect();
+        w.add_proofs(fragmented).unwrap();
+        let started = std::time::Instant::now();
+        let result = w.find_exact(3).unwrap(); // odd target, even proofs: no subset exists
+        assert!(
+            result.is_none(),
+            "odd target of even proofs has no exact subset"
+        );
+        assert!(
+            started.elapsed().as_secs() < 5,
+            "search must stay bounded by NODE_CAP, not the subset lattice"
         );
     }
 
