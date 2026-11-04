@@ -4,6 +4,12 @@
 
 [advisories]
 ignore = [
+  # crypto-bigint 0.5.5 / RUSTSEC-2026-0387: timing variability in
+  # constant-time ops. Patched line is 0.6.x, reachable only via the
+  # elliptic-curve 0.14 / k256 0.14 major bump (wallet crypto stack
+  # surgery — firmware pins k256 ^0.13). Tracked in micronuts#154;
+  # remove this entry when that migration lands.
+  "RUSTSEC-2026-0387",
   # bare-metal v0.2.5: unmaintained (archived upstream). Pulled by
   # cortex-m 0.7.x, which the embassy-stm32 ecosystem pins — no safe
   # upgrade in-tree. Replacement (critical-section) already used
