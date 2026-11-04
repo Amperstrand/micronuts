@@ -793,6 +793,19 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
                 // first: it marks the spent secrets at the mint, which the
                 // restore/reconcile contract on other devices depends on.
                 if matches!(err, CashuError::Transport(_)) {
+                    // #125: a transport failure of the swap POST is
+                    // AMBIGUOUS — the request may have reached the mint
+                    // with only the response lost, so the inputs may
+                    // already be spent server-side. Make the mint's view
+                    // authoritative before reusing anything: reconcile
+                    // (NUT-07 prunes whatever the mint reports spent) and
+                    // best-effort restore in case the swap's deterministic
+                    // outputs exist. When reconcile cannot reach the mint
+                    // either (the #79 gate), the request never left the
+                    // device and reuse is safe.
+                    if self.reconcile_spent().is_ok() {
+                        let _ = self.restore();
+                    }
                     // #123: find_exact is non-mutating — the proofs are
                     // removed only by send_token AFTER the token encodes.
                     if let Some(exact) = self.wallet.find_exact(amount)? {
@@ -925,5 +938,246 @@ mod tests {
         assert_eq!(ppk.div_ceil(1000), 2);
         let zero: u64 = 0;
         assert_eq!((ppk * zero).div_ceil(1000), 0);
+    }
+
+    // -- #125: ambiguous swap fallback --------------------------------------
+
+    use cashu_core_lite::crypto::hash_to_curve;
+    use cashu_core_lite::nuts::nut01;
+    use cashu_core_lite::nuts::{nut02, nut03, nut04, nut05, nut06, nut07, nut09};
+    use cashu_core_lite::store::MemoryStore;
+    use cashu_core_lite::transport::MintClient;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Fake mint for the #125 ambiguity scenarios. `land_swap_then_drop`
+    /// simulates "mint processed the swap, response lost": post_swap
+    /// records every input secret as SPENT and still returns a Transport
+    /// error. `offline_check_state` makes NUT-07 unreachable (the #79
+    /// gate). Everything unused errors with Protocol.
+    #[derive(Clone)]
+    struct FakeMint {
+        spent_secrets: Rc<RefCell<Vec<String>>>,
+        land_swap_then_drop: bool,
+        offline_check_state: bool,
+    }
+
+    impl FakeMint {
+        fn new(land_swap_then_drop: bool, offline_check_state: bool) -> Self {
+            Self {
+                spent_secrets: Rc::new(RefCell::new(Vec::new())),
+                land_swap_then_drop,
+                offline_check_state,
+            }
+        }
+    }
+
+    fn unused<T>(_v: T) -> CashuError {
+        CashuError::Protocol(String::from("not used by this test"))
+    }
+
+    impl MintClient for FakeMint {
+        fn get_info(&mut self) -> Result<nut06::MintInfo, CashuError> {
+            Ok(nut06::MintInfo {
+                name: String::from("fake"),
+                pubkey: String::new(),
+                version: String::from("t"),
+                description: String::new(),
+                contact: Vec::new(),
+                nuts: Vec::new(),
+            })
+        }
+        fn get_keys(&mut self) -> Result<nut01::KeysResponse, CashuError> {
+            Ok(nut01::KeysResponse {
+                keysets: vec![nut01::KeySet {
+                    id: String::from("009a1f293253e41e"),
+                    unit: String::from("sat"),
+                    keys: Vec::new(),
+                }],
+            })
+        }
+        fn get_keysets(&mut self) -> Result<nut02::KeysetsResponse, CashuError> {
+            Ok(nut02::KeysetsResponse {
+                keysets: vec![nut02::KeysetInfo {
+                    id: String::from("009a1f293253e41e"),
+                    unit: String::from("sat"),
+                    active: true,
+                    input_fee_ppk: 0,
+                }],
+            })
+        }
+        fn post_mint_quote(
+            &mut self,
+            request: nut04::MintQuoteRequest,
+        ) -> Result<nut04::MintQuoteResponse, CashuError> {
+            Err(unused(request))
+        }
+        fn get_mint_quote(
+            &mut self,
+            quote_id: &str,
+        ) -> Result<nut04::MintQuoteResponse, CashuError> {
+            Err(unused(quote_id))
+        }
+        fn post_mint(
+            &mut self,
+            request: nut04::MintRequest,
+        ) -> Result<nut04::MintResponse, CashuError> {
+            Err(unused(request))
+        }
+        fn post_melt_quote(
+            &mut self,
+            request: nut05::MeltQuoteRequest,
+        ) -> Result<nut05::MeltQuoteResponse, CashuError> {
+            Err(unused(request))
+        }
+        fn get_melt_quote(
+            &mut self,
+            quote_id: &str,
+        ) -> Result<nut05::MeltQuoteResponse, CashuError> {
+            Err(unused(quote_id))
+        }
+        fn post_melt(
+            &mut self,
+            request: nut05::MeltRequest,
+        ) -> Result<nut05::MeltResponse, CashuError> {
+            Err(unused(request))
+        }
+        fn post_swap(
+            &mut self,
+            request: nut03::SwapRequest,
+        ) -> Result<nut03::SwapResponse, CashuError> {
+            if self.land_swap_then_drop {
+                // The mint PROCESSED the swap: inputs are spent server-side.
+                for input in &request.inputs {
+                    self.spent_secrets.borrow_mut().push(input.secret.clone());
+                }
+            }
+            // ...and the response is lost anyway.
+            Err(CashuError::Transport(String::from(
+                "response lost mid-flight",
+            )))
+        }
+        fn post_check_state(
+            &mut self,
+            request: nut07::CheckStateRequest,
+        ) -> Result<nut07::CheckStateResponse, CashuError> {
+            if self.offline_check_state {
+                return Err(CashuError::Transport(String::from("offline gate")));
+            }
+            let spent_ys: Vec<String> = self
+                .spent_secrets
+                .borrow()
+                .iter()
+                .filter_map(|s| {
+                    hash_to_curve(s.as_bytes())
+                        .ok()
+                        .map(|y| hex::encode(y.to_bytes()))
+                })
+                .collect();
+            let states = request
+                .ys
+                .iter()
+                .map(|y| nut07::ProofState {
+                    y: y.clone(),
+                    state: if spent_ys.contains(&hex::encode(y.to_bytes())) {
+                        String::from(nut07::state::SPENT)
+                    } else {
+                        String::from(nut07::state::UNSPENT)
+                    },
+                    witness: None,
+                })
+                .collect();
+            Ok(nut07::CheckStateResponse { states })
+        }
+        fn post_restore(
+            &mut self,
+            request: nut09::RestoreRequest,
+        ) -> Result<nut09::RestoreResponse, CashuError> {
+            Err(unused(request))
+        }
+    }
+
+    fn make_engine_proof(amount: u64, nonce: u8) -> nut00::Proof {
+        nut00::Proof {
+            amount,
+            id: String::from("009a1f293253e41e"),
+            secret: format!("e{nonce:02x}"),
+            c: cashu_core_lite::keypair::PublicKey::from_bytes(&[2u8; 33])
+                .expect("valid generator point"),
+            dleq: None,
+            witness: None,
+        }
+    }
+
+    fn engine_with(
+        mint: FakeMint,
+        proofs: Vec<nut00::Proof>,
+    ) -> WalletEngine<FakeMint, MemoryStore> {
+        let mut engine = WalletEngine::new(
+            "https://mint.example",
+            mint,
+            MemoryStore::new(),
+            [7u8; 32],
+            Vec::new(),
+        )
+        .expect("engine builds");
+        engine.connect().expect("fake mint connects");
+        engine.wallet.add_proofs(proofs).expect("fund wallet");
+        engine
+    }
+
+    #[test]
+    fn ambiguous_swap_never_reuses_spent_inputs() {
+        // #125 regression: the swap POST lands at the mint (inputs spent
+        // server-side) but its response is lost. The OLD code restored the
+        // inputs and handed them out in an offline token — dead ecash.
+        let mint = FakeMint::new(true, false);
+        let mut engine = engine_with(
+            mint.clone(),
+            vec![make_engine_proof(2, 1), make_engine_proof(1, 2)],
+        );
+        let result = engine.send_token(3, None);
+        assert!(
+            result.is_err(),
+            "must NOT build a token from mint-spent inputs"
+        );
+        assert!(
+            engine.wallet.proofs().is_empty(),
+            "reconcile must prune the spent inputs — no zombie balance"
+        );
+        assert!(
+            mint.spent_secrets.borrow().len() == 2,
+            "fake mint recorded both swap inputs as spent"
+        );
+    }
+
+    #[test]
+    fn transport_error_unspent_inputs_still_falls_back() {
+        // Swap transport error where the mint NEVER saw the request (its
+        // NUT-07 view says UNSPENT): the fallback stays available and the
+        // token is built from genuinely spendable proofs.
+        let mint = FakeMint::new(false, false);
+        let mut engine = engine_with(mint, vec![make_engine_proof(2, 1), make_engine_proof(1, 2)]);
+        let token = engine
+            .send_token(3, None)
+            .expect("fallback issues the token");
+        assert!(!token.is_empty());
+        assert!(
+            engine.wallet.proofs().is_empty(),
+            "send_token's post-encode removal is the single removal point"
+        );
+        assert_eq!(engine.pending.len(), 1, "pending send recorded");
+    }
+
+    #[test]
+    fn offline_gate_fallback_preserved() {
+        // The #79 contract: reconcile cannot reach the mint either — the
+        // request never left the device, reuse is safe, token issues.
+        let mint = FakeMint::new(false, true);
+        let mut engine = engine_with(mint, vec![make_engine_proof(4, 1)]);
+        let token = engine
+            .send_token(4, None)
+            .expect("#79 offline fallback still works");
+        assert!(!token.is_empty());
     }
 }
