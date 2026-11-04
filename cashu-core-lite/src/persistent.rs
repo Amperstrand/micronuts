@@ -244,15 +244,15 @@ where
         Ok(minted)
     }
 
-    /// Spend `amount` using proofs that sum EXACTLY to it — no swap, no
-    /// mint round-trip. Returns `None` when no combination exists.
-    /// Critical for pre-auth gated payments (micronuts#79): power-of-two
-    /// denominations make typical targets 3-proof sums (21 = 16+4+1), so
-    /// this searches any subset size, not just singles and pairs.
-    pub fn try_spend_exact(
-        &mut self,
-        amount: u64,
-    ) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+    /// Find proofs summing EXACTLY to `amount` — no swap, no mint
+    /// round-trip, and NO mutation: selection never removes or persists
+    /// (fund safety, micronuts#123 — the caller removes only after the
+    /// token encode succeeds, so an encode failure cannot strand removed
+    /// funds with no token and no pending record). Returns `None` when no
+    /// combination exists. Critical for pre-auth gated payments
+    /// (micronuts#79): power-of-two denominations make typical targets
+    /// 3-proof sums (21 = 16+4+1), so this searches any subset size.
+    pub fn find_exact(&self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
         #[cfg(not(feature = "std"))]
         use alloc::vec;
 
@@ -316,14 +316,13 @@ where
             return Ok(None);
         }
 
-        // Highest original index first so earlier removals stay valid.
-        let mut picked: Vec<usize> = chosen.iter().map(|&k| order[k]).collect();
-        picked.sort_unstable();
-        let mut spent = Vec::with_capacity(picked.len());
-        for idx in picked.into_iter().rev() {
-            spent.push(self.proofs.remove(idx));
-        }
-        self.persist()?;
+        // Non-mutating by contract (#123): return clones of the chosen
+        // proofs. The ONLY removal is send_token's post-encode
+        // remove_proofs — see the doc comment above.
+        let spent = chosen
+            .iter()
+            .map(|&k| self.proofs[order[k]].clone())
+            .collect();
         Ok(Some(spent))
     }
 
@@ -705,7 +704,7 @@ pub type VolatileWallet<T> = PersistentWallet<T, MemoryStore>;
 mod exact_spend_tests {
     use super::*;
 
-    /// Minimal MintClient stub — every method errors. `try_spend_exact`
+    /// Minimal MintClient stub — every method errors. `find_exact`
     /// never calls the mint (that is its entire point), so errors are
     /// never observed by these tests.
     struct StubTransport;
@@ -802,23 +801,28 @@ mod exact_spend_tests {
     /// exact-amount proofs with ZERO mint calls (the stub would panic
     /// if any were made).
     #[test]
-    fn try_spend_exact_single_proof() {
+    fn find_exact_single_proof() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1)]).unwrap();
-        let result = w.try_spend_exact(1).unwrap();
+        let result = w.find_exact(1).unwrap();
         assert!(
             result.is_some(),
             "1-sat proof must be found for 1-sat target"
         );
         assert_eq!(result.unwrap()[0].amount, 1);
+        assert_eq!(
+            w.proofs().len(),
+            1,
+            "#123: selection must not remove — the caller removes post-encode"
+        );
     }
 
     #[test]
-    fn try_spend_exact_pair() {
+    fn find_exact_pair() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1), make_proof(1, 2)])
             .unwrap();
-        let result = w.try_spend_exact(2).unwrap();
+        let result = w.find_exact(2).unwrap();
         assert!(
             result.is_some(),
             "two 1-sat proofs must combine for 2-sat target"
@@ -827,41 +831,48 @@ mod exact_spend_tests {
     }
 
     #[test]
-    fn try_spend_exact_none_when_no_match() {
+    fn find_exact_none_when_no_match() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(4, 1)]).unwrap();
-        let result = w.try_spend_exact(1).unwrap();
+        let result = w.find_exact(1).unwrap();
         assert!(result.is_none(), "4-sat proof alone cannot make exact 1");
     }
 
     #[test]
-    fn try_spend_exact_uses_and_removes_the_proof() {
+    fn find_exact_selects_without_removing() {
+        // #123 regression: the old try_spend_exact removed + persisted here,
+        // so a later token-encode failure lost the funds with no token and
+        // no pending record.
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)])
             .unwrap();
-        let spent = w.try_spend_exact(1).unwrap().expect("exact 1 found");
+        let spent = w.find_exact(1).unwrap().expect("exact 1 found");
         assert_eq!(spent.len(), 1);
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 4, "only the exact proof leaves the wallet");
+        assert_eq!(remaining, 5, "selection is non-mutating — nothing leaves");
     }
 
     /// The case pairs-only search missed (review finding on this PR): a
     /// 21-sat wallet in canonical power-of-two denominations needs all
     /// three proofs. This is the terminal demo's own invoice amount.
     #[test]
-    fn try_spend_exact_three_proof_power_of_two() {
+    fn find_exact_three_proof_power_of_two() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(16, 1), make_proof(4, 2), make_proof(1, 3)])
             .unwrap();
-        let spent = w.try_spend_exact(21).unwrap().expect("16+4+1 must combine");
+        let spent = w.find_exact(21).unwrap().expect("16+4+1 must combine");
         let sum: u64 = spent.iter().map(|p| p.amount).sum();
         assert_eq!(sum, 21);
         assert_eq!(spent.len(), 3);
-        assert!(w.proofs().is_empty(), "all three proofs leave the wallet");
+        assert_eq!(
+            w.proofs().len(),
+            3,
+            "#123: selection is non-mutating — all three stay until send removes"
+        );
     }
 
     #[test]
-    fn try_spend_exact_skips_duplicate_coin_subtrees() {
+    fn find_exact_skips_duplicate_coin_subtrees() {
         let mut w = wallet();
         w.add_proofs(vec![
             make_proof(1, 1),
@@ -870,12 +881,12 @@ mod exact_spend_tests {
             make_proof(2, 4),
         ])
         .unwrap();
-        let spent = w.try_spend_exact(3).unwrap().expect("2+1 must combine");
+        let spent = w.find_exact(3).unwrap().expect("2+1 must combine");
         let sum: u64 = spent.iter().map(|p| p.amount).sum();
         assert_eq!(sum, 3);
         assert_eq!(spent.len(), 2, "picks the 2-sat proof plus one 1-sat");
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 2, "1+1 sats stay");
+        assert_eq!(remaining, 5, "#123: non-mutating — the full 5 sats stay");
     }
 
     #[test]
@@ -883,6 +894,6 @@ mod exact_spend_tests {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(8, 1), make_proof(4, 2)])
             .unwrap();
-        assert!(w.try_spend_exact(21).unwrap().is_none());
+        assert!(w.find_exact(21).unwrap().is_none());
     }
 }
