@@ -21,6 +21,13 @@ on:
   schedule:
     - cron: "17 3 * * *" # 03:17 UTC — off the hour to miss cron rushes
   workflow_dispatch:
+    inputs:
+      force_lane:
+        description: "auto | selfhosted | skip — override the probe (human re-arm)"
+        required: false
+        default: auto
+        type: choice
+        options: [auto, selfhosted, skip]
 
 permissions:
   contents: read
@@ -108,6 +115,18 @@ jobs:
             echo "::notice::probe $repo: no legion-* job within 24h"
             return 1
           }
+          case "${{ inputs.force_lane || 'auto' }}" in
+            selfhosted)
+              echo '::notice::force_lane=selfhosted — human re-arm, probe bypassed'
+              echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
+              echo "fuzz_seconds=600" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+            skip)
+              echo '::notice::force_lane=skip — human override, probe bypassed'
+              echo 'lane=hosted' >> "$GITHUB_OUTPUT"
+              echo 'fuzz_seconds=0' >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
           if saw_legion "${{ github.repository }}" 15 && fleet_canary_alive; then
             echo 'lane=selfhosted' >> "$GITHUB_OUTPUT"
             echo 'fuzz_seconds=600' >> "$GITHUB_OUTPUT"
