@@ -464,7 +464,6 @@ fn mint_deterministic_batch_cannot_exceed_restore_window() {
 }
 
 #[test]
-#[test]
 fn mint_deterministic_persists_across_restart() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();
