@@ -121,11 +121,79 @@ pub fn decompose_amount(amount: u64) -> Vec<u64> {
     result
 }
 
+/// Decompose `amount` into denominations the mint's keyset actually has
+/// (repeats allowed), largest denomination first. Returns `None` when the
+/// keyset cannot represent the amount exactly — e.g. an odd amount when
+/// the keyset lacks the 1-unit key, or any positive amount for an empty
+/// denomination list. Callers MUST refuse to mint such amounts before
+/// posting NUT-04: the mint rejects unknown denominations only after the
+/// quote was created (issue #163).
+pub fn decompose_amount_for_keyset(amount: u64, denominations: &[u64]) -> Option<Vec<u64>> {
+    if amount == 0 {
+        return None;
+    }
+    let mut sorted: Vec<u64> = denominations.iter().copied().filter(|&d| d > 0).collect();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+
+    let mut result = Vec::new();
+    let mut remaining = amount;
+    while remaining > 0 {
+        let next = *sorted.iter().find(|&&d| d <= remaining)?;
+        result.push(next);
+        remaining -= next;
+    }
+    Some(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::vec;
+
+    #[test]
+    fn test_decompose_amount_for_keyset_splits_above_max_with_repeats() {
+        // issue #163: 300 against a 1..64 keyset must not emit 256 or 128
+        let denominations: Vec<u64> = (0..7).map(|exp| 1u64 << exp).collect();
+        let parts = decompose_amount_for_keyset(300, &denominations).unwrap();
+        assert_eq!(parts.iter().sum::<u64>(), 300);
+        assert!(
+            parts.iter().all(|p| denominations.contains(p)),
+            "{:?}",
+            parts
+        );
+        assert_eq!(parts, vec![64, 64, 64, 64, 32, 8, 4]);
+        // amounts above the keyset max are fine when repeats can cover them
+        assert_eq!(
+            decompose_amount_for_keyset(128, &denominations),
+            Some(vec![64, 64])
+        );
+    }
+
+    #[test]
+    fn test_decompose_amount_for_keyset_matches_power_of_two_when_full() {
+        for amount in [1u64, 2, 63, 64, 100, 127] {
+            let denominations: Vec<u64> = (0..7).map(|exp| 1u64 << exp).collect();
+            let parts = decompose_amount_for_keyset(amount, &denominations).unwrap();
+            assert_eq!(parts, decompose_amount(amount));
+        }
+    }
+
+    #[test]
+    fn test_decompose_amount_for_keyset_unrepresentable() {
+        let denominations: Vec<u64> = (0..7).map(|exp| 1u64 << exp).collect();
+        // no 1-unit denomination: odd amounts are unreachable
+        let evens: Vec<u64> = denominations.iter().copied().filter(|d| *d > 1).collect();
+        assert!(decompose_amount_for_keyset(3, &evens).is_none());
+        assert!(decompose_amount_for_keyset(1, &evens).is_none());
+        // even amounts still work
+        assert_eq!(decompose_amount_for_keyset(6, &evens), Some(vec![4, 2]));
+        // zero amount is not a mint
+        assert!(decompose_amount_for_keyset(0, &denominations).is_none());
+        // empty or zero-only denomination lists represent nothing
+        assert!(decompose_amount_for_keyset(1, &[]).is_none());
+        assert!(decompose_amount_for_keyset(1, &[0]).is_none());
+    }
 
     #[test]
     fn test_decompose_amount() {
