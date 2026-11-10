@@ -49,6 +49,7 @@ use crate::nuts::nut04;
 use crate::nuts::nut05;
 use crate::nuts::nut09;
 use crate::nuts::nut13;
+use crate::nuts::nut29;
 use crate::store::{MemoryStore, ProofStore, StoreError};
 use crate::wallet::{PendingOutput, Wallet};
 use minicbor::{Decode, Encode};
@@ -230,13 +231,20 @@ where
             return Err(CashuError::InvalidAmount);
         }
         let keyset_denominations: Vec<u64> = mint_keys.keys.iter().map(|k| k.amount).collect();
-        let denominations = nut00::decompose_amount_for_keyset(amount, &keyset_denominations)
-            .ok_or_else(|| {
-                CashuError::AmountNotRepresentable(format!(
-                    "amount {} cannot be split into keyset {} denominations {:?}",
-                    amount, mint_keys.id, keyset_denominations
-                ))
-            })?;
+        let denominations = nut00::decompose_amount_for_keyset(
+            amount,
+            &keyset_denominations,
+            nut29::MAX_BATCH_OUTPUTS,
+        )
+        .ok_or_else(|| {
+            CashuError::AmountNotRepresentable(format!(
+                "amount {} cannot be split into keyset {} denominations {:?} within {} outputs",
+                amount,
+                mint_keys.id,
+                keyset_denominations,
+                nut29::MAX_BATCH_OUTPUTS
+            ))
+        })?;
 
         let (outputs, pending) = self.deterministic_outputs(&denominations, keyset_id)?;
         self.counter = self.counter.saturating_add(pending.len() as u32);
