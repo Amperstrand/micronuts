@@ -49,7 +49,6 @@ use crate::nuts::nut04;
 use crate::nuts::nut05;
 use crate::nuts::nut09;
 use crate::nuts::nut13;
-use crate::nuts::nut29;
 use crate::store::{MemoryStore, ProofStore, StoreError};
 use crate::wallet::{PendingOutput, Wallet};
 use minicbor::{Decode, Encode};
@@ -226,7 +225,11 @@ where
         // Keyset-aware split (issue #163): a blind power-of-two split can
         // emit denominations the mint has no key for, which fails only
         // AFTER the quote was created. Split within the keyset, or refuse
-        // before the NUT-04 POST.
+        // before the NUT-04 POST. The output budget is RESTORE_HEADROOM,
+        // not the mint batch limit: restore() scans counter+HEADROOM, so
+        // a deterministic batch larger than the headroom would leave
+        // signed-but-unpersisted outputs outside the recovery window
+        // (codex P1, PR #164) — every accepted batch must be recoverable.
         if amount == 0 {
             return Err(CashuError::InvalidAmount);
         }
@@ -234,15 +237,12 @@ where
         let denominations = nut00::decompose_amount_for_keyset(
             amount,
             &keyset_denominations,
-            nut29::MAX_BATCH_OUTPUTS,
+            RESTORE_HEADROOM as usize,
         )
         .ok_or_else(|| {
             CashuError::AmountNotRepresentable(format!(
-                "amount {} cannot be split into keyset {} denominations {:?} within {} outputs",
-                amount,
-                mint_keys.id,
-                keyset_denominations,
-                nut29::MAX_BATCH_OUTPUTS
+                "amount {} cannot be split into keyset {} denominations {:?} within the {}-output recovery window — mint it in smaller batches",
+                amount, mint_keys.id, keyset_denominations, RESTORE_HEADROOM
             ))
         })?;
 

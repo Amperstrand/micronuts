@@ -434,6 +434,37 @@ fn wallet_mint_tokens_amount_above_keyset_max_splits_within_keyset() {
 }
 
 #[test]
+fn mint_deterministic_batch_cannot_exceed_restore_window() {
+    // codex P1 (PR #164): 4160 sats against the 1..64 mock keyset needs 65
+    // outputs — one past RESTORE_HEADROOM (64). A crash after signing but
+    // before persist would leave output index counter+64 outside the
+    // restore scan: silently unrecoverable funds. Such a batch must be
+    // refused up front; the largest recoverable batch still mints.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium);
+    let err = w
+        .mint_deterministic("quote-4160", 4160, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        matches!(err, CashuError::AmountNotRepresentable(_)),
+        "expected AmountNotRepresentable, got {:?}",
+        err
+    );
+
+    // 64 x 64 = exactly the window: accepted, 64 outputs, fully covered
+    // by counter..counter+RESTORE_HEADROOM after a crash.
+    let minted = w
+        .mint_deterministic("quote-4096", 4096, KEYSET_ID, &keyset)
+        .unwrap();
+    assert_eq!(minted, 4096);
+    assert_eq!(w.proof_count(), 64);
+}
+
+#[test]
+#[test]
 fn mint_deterministic_persists_across_restart() {
     let mock = MockMint::new();
     let keyset = mock.keys.clone();
