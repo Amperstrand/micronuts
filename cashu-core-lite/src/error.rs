@@ -74,6 +74,10 @@ pub enum CashuError {
     /// A NUT-29 batch request contained duplicate quote IDs.
     #[n(20)]
     BatchQuoteNotUnique,
+    /// The amount cannot be represented by the keyset's denominations
+    /// (no valid split exists, so the mint request is refused pre-POST).
+    #[n(21)]
+    AmountNotRepresentable(#[n(0)] String),
 }
 
 impl fmt::Display for CashuError {
@@ -100,6 +104,9 @@ impl fmt::Display for CashuError {
             Self::BatchTooLarge => write!(f, "batch too large"),
             Self::TooManyOutputs => write!(f, "too many outputs"),
             Self::BatchQuoteNotUnique => write!(f, "batch contains duplicate quote ids"),
+            Self::AmountNotRepresentable(msg) => {
+                write!(f, "amount not representable by keyset: {}", msg)
+            }
         }
     }
 }

@@ -31,6 +31,8 @@
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
+use alloc::format;
+#[cfg(not(feature = "std"))]
 use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -220,10 +222,29 @@ where
         keyset_id: &str,
         mint_keys: &nut01::KeySet,
     ) -> Result<u64, CashuError> {
-        let denominations = nut00::decompose_amount(amount);
-        if denominations.is_empty() {
+        // Keyset-aware split (issue #163): a blind power-of-two split can
+        // emit denominations the mint has no key for, which fails only
+        // AFTER the quote was created. Split within the keyset, or refuse
+        // before the NUT-04 POST. The output budget is RESTORE_HEADROOM,
+        // not the mint batch limit: restore() scans counter+HEADROOM, so
+        // a deterministic batch larger than the headroom would leave
+        // signed-but-unpersisted outputs outside the recovery window
+        // (codex P1, PR #164) — every accepted batch must be recoverable.
+        if amount == 0 {
             return Err(CashuError::InvalidAmount);
         }
+        let keyset_denominations: Vec<u64> = mint_keys.keys.iter().map(|k| k.amount).collect();
+        let denominations = nut00::decompose_amount_for_keyset(
+            amount,
+            &keyset_denominations,
+            RESTORE_HEADROOM as usize,
+        )
+        .ok_or_else(|| {
+            CashuError::AmountNotRepresentable(format!(
+                "amount {} cannot be split into keyset {} denominations {:?} within the {}-output recovery window — mint it in smaller batches",
+                amount, mint_keys.id, keyset_denominations, RESTORE_HEADROOM
+            ))
+        })?;
 
         let (outputs, pending) = self.deterministic_outputs(&denominations, keyset_id)?;
         self.counter = self.counter.saturating_add(pending.len() as u32);

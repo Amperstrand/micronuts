@@ -552,6 +552,9 @@ fn cashu_error_to_response(err: &CashuError) -> Response {
         CashuError::BatchTooLarge => (StatusCode::BAD_REQUEST, "BATCH_TOO_LARGE"),
         CashuError::TooManyOutputs => (StatusCode::BAD_REQUEST, "TOO_MANY_OUTPUTS"),
         CashuError::BatchQuoteNotUnique => (StatusCode::BAD_REQUEST, "BATCH_QUOTE_NOT_UNIQUE"),
+        CashuError::AmountNotRepresentable(_) => {
+            (StatusCode::BAD_REQUEST, "AMOUNT_NOT_REPRESENTABLE")
+        }
         CashuError::Protocol(_) => (StatusCode::INTERNAL_SERVER_ERROR, "PROTOCOL_ERROR"),
         CashuError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CRYPTO_ERROR"),
         CashuError::Transport(_) => (StatusCode::INTERNAL_SERVER_ERROR, "TRANSPORT_ERROR"),
