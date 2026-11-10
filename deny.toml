@@ -40,6 +40,12 @@ ignore = [
   # (2026-10-21) RUSTSEC-2026-0381 ignore REMOVED: the ureq 3 migration
   # (ureq 2.12.1 -> 3.4.x) dropped webpki-roots 0.26.x from the graph —
   # ureq 3's rustls TLS uses webpki-roots 1.x (patched in 1.0.10).
+  # (2026-11-10) pin-utils 0.1.0: unmaintained (archived upstream after
+  # 0.1.1; RUSTSEC-2026-0441). Pulled by slint via spin_on (slint-build /
+  # slint-macros of the wallet UI) — same slint chain as paste/rustybuzz/
+  # ttf-parser above; not ours to swap inside slint's macro stack.
+  # Unmaintained-only, not a vulnerability.
+  "RUSTSEC-2026-0441",
 ]
 
 [bans]
