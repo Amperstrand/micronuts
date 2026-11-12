@@ -500,17 +500,32 @@ mod send_p2pk_shape_tests {
         let lit = r#"["P2PK",{"nonce":"a","data":"DATA","tags":[["sigflag","SIG_INPUTS"]]}]"#
             .replace("DATA", data);
         let fmt = shape("a", data);
-        eprintln!("lit parses: {}  fmt parses: {}", Secret::parse(&lit).is_some(), Secret::parse(&fmt).is_some());
-        eprintln!("equal: {}  len lit={} fmt={}", lit == fmt, lit.len(), fmt.len());
+        eprintln!(
+            "lit parses: {}  fmt parses: {}",
+            Secret::parse(&lit).is_some(),
+            Secret::parse(&fmt).is_some()
+        );
+        eprintln!(
+            "equal: {}  len lit={} fmt={}",
+            lit == fmt,
+            lit.len(),
+            fmt.len()
+        );
         if lit != fmt {
             for (i, (a, b)) in lit.bytes().zip(fmt.bytes()).enumerate() {
-                if a != b { eprintln!("first diff at {i}: lit={a:#x} fmt={b:#x}"); break; }
+                if a != b {
+                    eprintln!("first diff at {i}: lit={a:#x} fmt={b:#x}");
+                    break;
+                }
             }
         }
         // Length sweep: pinpoints a parser length limit if present.
         for nlen in [1usize, 8, 16, 24, 31, 32, 33, 64] {
             let probe = shape(&"a".repeat(nlen), data);
-            eprintln!("nonce len {nlen}: parses={}", Secret::parse(&probe).is_some());
+            eprintln!(
+                "nonce len {nlen}: parses={}",
+                Secret::parse(&probe).is_some()
+            );
         }
         let parsed = Secret::parse(&secret)
             .unwrap_or_else(|| panic!("secret did not parse as a condition: {secret}"));
@@ -518,8 +533,15 @@ mod send_p2pk_shape_tests {
         let identity = derive_identity(&[9u8; 32]).unwrap();
         let w = witness_for_secret(
             &secret,
-            &UnlockContext { identity: &identity, preimage: None, now: 1_000_000_000 },
+            &UnlockContext {
+                identity: &identity,
+                preimage: None,
+                now: 1_000_000_000,
+            },
         );
-        assert!(matches!(w, Err(ConditionError::NotOurLock)), "foreign lock must NOT be witnessable: {w:?}");
+        assert!(
+            matches!(w, Err(ConditionError::NotOurLock)),
+            "foreign lock must NOT be witnessable: {w:?}"
+        );
     }
 }

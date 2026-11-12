@@ -253,7 +253,6 @@ impl<T: MintClient> Wallet<T> {
         let mut pending = Vec::with_capacity(amounts.len());
 
         for (&amount, secret_hex) in amounts.iter().zip(secrets.iter()) {
-
             let mut blinder_bytes = [0u8; 32];
             rng.fill_bytes(&mut blinder_bytes);
             let blinder = SecretKey::from_slice(&blinder_bytes)
