@@ -20,8 +20,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use micronuts_wallet_core::engine::{HistoryEntry, PendingSend, WalletEngine};
 use cashu_core_lite::transport::MintClient;
+use micronuts_wallet_core::engine::{HistoryEntry, PendingSend, WalletEngine};
 use micronuts_wallet_core::mint_wire::{JsonTransport, WireMintClient};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -68,7 +68,11 @@ impl JsonTransport for UreqTransport {
         }
     }
 
-    fn post_json(&self, path: &str, body: &Value) -> Result<Value, cashu_core_lite::error::CashuError> {
+    fn post_json(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> Result<Value, cashu_core_lite::error::CashuError> {
         let resp = ureq::post(&self.resolve(path))
             .timeout(std::time::Duration::from_secs(60))
             .send_json(body.clone());
@@ -184,7 +188,9 @@ impl Daemon {
         }
         let accepted = self.accepted.lock().unwrap().clone();
         if !self.allow_untrusted && !accepted.contains(&canonical) {
-            return Err(format!("mint {canonical} is not in the accepted mints list"));
+            return Err(format!(
+                "mint {canonical} is not in the accepted mints list"
+            ));
         }
         let store_path = self.dir.join(format!(
             "proofs-{}.bin",
@@ -194,7 +200,12 @@ impl Daemon {
                 .collect::<String>()
         ));
         let mut store = FileStore { path: store_path };
-        let client = WireMintClient::with_transport(&canonical, UreqTransport { base: canonical.clone() });
+        let client = WireMintClient::with_transport(
+            &canonical,
+            UreqTransport {
+                base: canonical.clone(),
+            },
+        );
         let (history, pending) = {
             let p = self.persisted.lock().unwrap();
             match p.mints.get(&canonical) {
@@ -205,10 +216,13 @@ impl Daemon {
         let engine =
             WalletEngine::with_pending(&canonical, client, store, self.seed, history, pending)
                 .map_err(|e| format!("engine for {canonical}: {e:?}"))?;
-        self.mints
-            .lock()
-            .unwrap()
-            .insert(canonical.clone(), MintSlot { engine, recovered: false });
+        self.mints.lock().unwrap().insert(
+            canonical.clone(),
+            MintSlot {
+                engine,
+                recovered: false,
+            },
+        );
         Ok(canonical)
     }
 
@@ -227,6 +241,19 @@ impl Daemon {
         }
         let mut mints = self.mints.lock().unwrap();
         let slot = mints.get_mut(canonical).ok_or("slot vanished")?;
+        // Crash-journal first (the dirty flag): a derivation range was
+        // exposed to the mint without its proofs confirmed — NUT-09
+        // restore re-fetches them before anything derives again (a
+        // re-derivation would trip mint 10002 and brick the range).
+        let journal_recovered = slot
+            .engine
+            .recover_if_needed()
+            .map_err(|e| format!("recovery (crash journal) failed, funds ops refused: {e:?}"))?;
+        if journal_recovered > 0 {
+            eprintln!(
+                "micronuts-walletd: {canonical}: crash journal recovered {journal_recovered} proof(s) via NUT-09"
+            );
+        }
         slot.engine
             .check_all_pending()
             .map_err(|e| format!("recovery (pending sends) failed, funds ops refused: {e:?}"))?;
@@ -286,10 +313,20 @@ struct Response {
 
 impl Response {
     fn ok(id: u64, result: Value) -> Self {
-        Response { id, ok: true, result: Some(result), error: None }
+        Response {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        }
     }
     fn err(id: u64, error: String) -> Self {
-        Response { id, ok: false, result: None, error: Some(error) }
+        Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(error),
+        }
     }
 }
 
@@ -326,20 +363,25 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let res = mints.values_mut().next().map(|slot| {
                 slot.engine
                     .inspect_token(s)
-                    .map(|insp| serde_json::json!({
-                        "token": s,
-                        "mint": insp.summary.mint,
-                        "amount": insp.summary.amount,
-                        "fee": insp.fee,
-                        "spent": insp.spent,
-                        "pending": insp.pending,
-                    }))
+                    .map(|insp| {
+                        serde_json::json!({
+                            "token": s,
+                            "mint": insp.summary.mint,
+                            "amount": insp.summary.amount,
+                            "fee": insp.fee,
+                            "spent": insp.spent,
+                            "pending": insp.pending,
+                        })
+                    })
                     .map_err(|e| format!("{e:?}"))
             });
             match res {
                 Some(Ok(v)) => (Response::ok(req.id, v), false),
                 Some(Err(e)) => (Response::err(req.id, format!("decode_token: {e}")), false),
-                None => (Response::err(req.id, "decode_token: no open mint".into()), false),
+                None => (
+                    Response::err(req.id, "decode_token: no open mint".into()),
+                    false,
+                ),
             }
         }
 
@@ -359,7 +401,10 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                     };
                     (Response::ok(req.id, serde_json::json!(b)), false)
                 }
-                Err(e) => (Response::err(req.id, format!("get_balance_by_mint: {e}")), false),
+                Err(e) => (
+                    Response::err(req.id, format!("get_balance_by_mint: {e}")),
+                    false,
+                ),
             }
         }
 
@@ -376,12 +421,18 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let s = p_str(p, "token");
             let mut mints = d.mints.lock().unwrap();
             let res = mints.values_mut().next().map(|slot| {
-                slot.engine.inspect_token(s).map(|i| i.fee).map_err(|e| format!("{e:?}"))
+                slot.engine
+                    .inspect_token(s)
+                    .map(|i| i.fee)
+                    .map_err(|e| format!("{e:?}"))
             });
             match res {
                 Some(Ok(f)) => (Response::ok(req.id, serde_json::json!(f)), false),
                 Some(Err(e)) => (Response::err(req.id, format!("swap_fee_sats: {e}")), false),
-                None => (Response::err(req.id, "swap_fee_sats: no open mint".into()), false),
+                None => (
+                    Response::err(req.id, "swap_fee_sats: no open mint".into()),
+                    false,
+                ),
             }
         }
 
@@ -407,7 +458,12 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let mut mints = d.mints.lock().unwrap();
             let slot = match mints.get_mut(&c) {
                 Some(s) => s,
-                None => return (Response::err(req.id, "check_state: slot gone".into()), false),
+                None => {
+                    return (
+                        Response::err(req.id, "check_state: slot gone".into()),
+                        false,
+                    )
+                }
             };
             match slot.engine.check_token_state(s) {
                 Ok(states) => {
@@ -423,7 +479,13 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                     if any_spent {
                         (Response::ok(req.id, serde_json::json!(true)), false)
                     } else if ambiguous {
-                        (Response::err(req.id, "check_state: pending proof state — ambiguous".into()), false)
+                        (
+                            Response::err(
+                                req.id,
+                                "check_state: pending proof state — ambiguous".into(),
+                            ),
+                            false,
+                        )
                     } else {
                         (Response::ok(req.id, serde_json::json!(false)), false)
                     }
@@ -464,13 +526,21 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let mint = p_str(p, "mint_url");
             let c = match d.slot_for(mint) {
                 Ok(c) => c,
-                Err(e) => return (Response::err(req.id, format!("request_mint_quote: {e}")), false),
+                Err(e) => {
+                    return (
+                        Response::err(req.id, format!("request_mint_quote: {e}")),
+                        false,
+                    )
+                }
             };
             let mut mints = d.mints.lock().unwrap();
             let slot = mints.get_mut(&c).unwrap();
             match slot.engine.mint_via_invoice(amount) {
                 Ok(q) => {
-                    mint_quote_amounts().lock().unwrap().insert(q.quote.clone(), (amount, c.clone()));
+                    mint_quote_amounts()
+                        .lock()
+                        .unwrap()
+                        .insert(q.quote.clone(), (amount, c.clone()));
                     (
                         Response::ok(
                             req.id,
@@ -485,7 +555,10 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                         false,
                     )
                 }
-                Err(e) => (Response::err(req.id, format!("request_mint_quote: {e:?}")), false),
+                Err(e) => (
+                    Response::err(req.id, format!("request_mint_quote: {e:?}")),
+                    false,
+                ),
             }
         }
 
@@ -501,7 +574,12 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             };
             let c = match d.slot_for(&mint) {
                 Ok(c) => c,
-                Err(e) => return (Response::err(req.id, format!("mint_quote_state: {e}")), false),
+                Err(e) => {
+                    return (
+                        Response::err(req.id, format!("mint_quote_state: {e}")),
+                        false,
+                    )
+                }
             };
             let mut mints = d.mints.lock().unwrap();
             let slot = mints.get_mut(&c).unwrap();
@@ -510,7 +588,10 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                     Response::ok(req.id, serde_json::json!(if q.paid { 1 } else { 0 })),
                     false,
                 ),
-                Err(e) => (Response::err(req.id, format!("mint_quote_state: {e:?}")), false),
+                Err(e) => (
+                    Response::err(req.id, format!("mint_quote_state: {e:?}")),
+                    false,
+                ),
             }
         }
 
@@ -535,7 +616,12 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let amt = if amount > 0 {
                 amount
             } else {
-                mint_quote_amounts().lock().unwrap().get(qid).map(|(a, _)| *a).unwrap_or(0)
+                mint_quote_amounts()
+                    .lock()
+                    .unwrap()
+                    .get(qid)
+                    .map(|(a, _)| *a)
+                    .unwrap_or(0)
             };
             let mut mints = d.mints.lock().unwrap();
             let slot = mints.get_mut(&c).unwrap();
@@ -567,10 +653,13 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                 Ok(tok) => {
                     drop(mints);
                     d.sync_persisted(&c);
-                    (Response::ok(
-                        req.id,
-                        serde_json::json!({ "token": tok, "mint": c, "amount": amount }),
-                    ), false)
+                    (
+                        Response::ok(
+                            req.id,
+                            serde_json::json!({ "token": tok, "mint": c, "amount": amount }),
+                        ),
+                        false,
+                    )
                 }
                 Err(e) => (Response::err(req.id, format!("send_p2pk: {e:?}")), false),
             }
@@ -592,10 +681,13 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                 Ok(tok) => {
                     drop(mints);
                     d.sync_persisted(&c);
-                    (Response::ok(
-                        req.id,
-                        serde_json::json!({ "token": tok, "mint": c, "amount": amount }),
-                    ), false)
+                    (
+                        Response::ok(
+                            req.id,
+                            serde_json::json!({ "token": tok, "mint": c, "amount": amount }),
+                        ),
+                        false,
+                    )
                 }
                 Err(e) => (Response::err(req.id, format!("send: {e:?}")), false),
             }
@@ -604,10 +696,13 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
         "send_with_overpayment" => {
             // The minimal core composes exact sends only; overpayment
             // tolerance is a cdk-walletd capability. Honest refusal.
-            (Response::err(
-                req.id,
-                "send_with_overpayment: not implemented by micronuts backend".into(),
-            ), false)
+            (
+                Response::err(
+                    req.id,
+                    "send_with_overpayment: not implemented by micronuts backend".into(),
+                ),
+                false,
+            )
         }
 
         "drain" => {
@@ -629,10 +724,13 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                 Ok(tok) => {
                     drop(mints);
                     d.sync_persisted(&c);
-                    (Response::ok(
-                        req.id,
-                        serde_json::json!({ "token": tok, "mint": c, "amount": bal }),
-                    ), false)
+                    (
+                        Response::ok(
+                            req.id,
+                            serde_json::json!({ "token": tok, "mint": c, "amount": bal }),
+                        ),
+                        false,
+                    )
                 }
                 Err(e) => (Response::err(req.id, format!("drain: {e:?}")), false),
             }
@@ -643,7 +741,12 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             let mint = p_str(p, "mint_url");
             let c = match d.slot_for(mint) {
                 Ok(c) => c,
-                Err(e) => return (Response::err(req.id, format!("request_melt_quote: {e}")), false),
+                Err(e) => {
+                    return (
+                        Response::err(req.id, format!("request_melt_quote: {e}")),
+                        false,
+                    )
+                }
             };
             let mut mints = d.mints.lock().unwrap();
             let slot = mints.get_mut(&c).unwrap();
@@ -664,7 +767,10 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                         false,
                     )
                 }
-                Err(e) => (Response::err(req.id, format!("request_melt_quote: {e:?}")), false),
+                Err(e) => (
+                    Response::err(req.id, format!("request_melt_quote: {e:?}")),
+                    false,
+                ),
             }
         }
 
@@ -700,17 +806,23 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
                     drop(mints);
                     d.sync_persisted(&c);
                     let paid = outcome.paid;
-                    (Response::ok(
-                        req.id,
-                        serde_json::json!({ "quote_id": qid, "paid": paid, "preimage": "" }),
-                    ), false)
+                    (
+                        Response::ok(
+                            req.id,
+                            serde_json::json!({ "quote_id": qid, "paid": paid, "preimage": "" }),
+                        ),
+                        false,
+                    )
                 }
                 Err(e) => (Response::err(req.id, format!("melt: {e:?}")), false),
             }
         }
 
         "melt_to_lightning" => (
-            Response::err(req.id, "melt_to_lightning: not implemented by micronuts backend".into()),
+            Response::err(
+                req.id,
+                "melt_to_lightning: not implemented by micronuts backend".into(),
+            ),
             false,
         ),
 
@@ -729,12 +841,12 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
             }
             d.save_persisted();
             match d.slot_for(&c) {
-                Ok(_) => (Response::ok(req.id, serde_json::json!({"accepted": c})), false),
+                Ok(_) => (
+                    Response::ok(req.id, serde_json::json!({"accepted": c})),
+                    false,
+                ),
                 Err(e) => (
-                    Response::ok(
-                        req.id,
-                        serde_json::json!({"accepted": c, "warning": e}),
-                    ),
+                    Response::ok(req.id, serde_json::json!({"accepted": c, "warning": e})),
                     false,
                 ),
             }
@@ -764,7 +876,10 @@ fn dispatch(d: &Daemon, req: &Request) -> (Response, bool) {
 
         "shutdown" => (Response::ok(req.id, serde_json::json!({})), true),
 
-        other => (Response::err(req.id, format!("not implemented: {other}")), false),
+        other => (
+            Response::err(req.id, format!("not implemented: {other}")),
+            false,
+        ),
     }
 }
 
@@ -789,7 +904,11 @@ fn mint_quote_amounts() -> &'static Mutex<HashMap<String, (u64, String)>> {
 
 fn peer_uid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     let fd = stream.as_raw_fd();
-    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut cred = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
     let rc = unsafe {
         libc::getsockopt(

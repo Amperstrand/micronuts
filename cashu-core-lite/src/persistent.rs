@@ -73,6 +73,12 @@ struct Envelope {
     /// loading another seed's proofs.
     #[n(3)]
     seed_id: [u8; 8],
+    /// Crash journal bit: true = a derivation range was reserved and
+    /// exposed to the mint while the resulting proofs are NOT confirmed
+    /// persisted. None = pre-journal blob (never dirty). On load, true
+    /// means the wallet must run restore (NUT-09) before any money op.
+    #[n(4)]
+    dirty: Option<bool>,
 }
 
 /// Non-secret seed fingerprint: the seed itself never enters the blob.
@@ -105,12 +111,14 @@ fn encode_envelope(
     counter: u32,
     proofs: &[nut00::Proof],
     seed_id: [u8; 8],
+    dirty: bool,
 ) -> Result<Vec<u8>, CashuError> {
     let cbor = minicbor::to_vec(Envelope {
         version: ENVELOPE_VERSION,
         counter,
         proofs: proofs.to_vec(),
         seed_id,
+        dirty: Some(dirty),
     })
     .map_err(|_| CashuError::Storage(String::from("envelope encode failed")))?;
 
@@ -123,7 +131,10 @@ fn encode_envelope(
 
 /// `None` means "nothing valid stored" — corrupted, foreign, or seed-
 /// mismatched blobs are treated as a fresh wallet, never a panic.
-fn decode_envelope(bytes: &[u8], expected_seed_id: [u8; 8]) -> Option<(u32, Vec<nut00::Proof>)> {
+fn decode_envelope(
+    bytes: &[u8],
+    expected_seed_id: [u8; 8],
+) -> Option<(u32, Vec<nut00::Proof>, bool)> {
     if bytes.len() < ENVELOPE_MAGIC.len() + 4 || bytes[..4] != ENVELOPE_MAGIC {
         return None;
     }
@@ -136,7 +147,11 @@ fn decode_envelope(bytes: &[u8], expected_seed_id: [u8; 8]) -> Option<(u32, Vec<
     if envelope.version != ENVELOPE_VERSION || envelope.seed_id != expected_seed_id {
         return None;
     }
-    Some((envelope.counter, envelope.proofs))
+    Some((
+        envelope.counter,
+        envelope.proofs,
+        envelope.dirty.unwrap_or(false),
+    ))
 }
 
 fn store_error(e: StoreError) -> CashuError {
@@ -159,6 +174,10 @@ where
     seed_id: [u8; 8],
     counter: u32,
     proofs: Vec<nut00::Proof>,
+    /// Crash journal: a reserved+exposed derivation range exists whose
+    /// proofs are not confirmed persisted. True => restore() before any
+    /// money op (see needs_recovery()).
+    dirty: bool,
 }
 
 impl<T, S> PersistentWallet<T, S>
@@ -176,9 +195,9 @@ where
         seed: [u8; 32],
     ) -> Result<Self, CashuError> {
         let seed_id = seed_fingerprint(&seed);
-        let (counter, proofs) = match store.load().map_err(store_error)? {
-            None => (0, Vec::new()),
-            Some(bytes) => decode_envelope(&bytes, seed_id).unwrap_or((0, Vec::new())),
+        let (counter, proofs, dirty) = match store.load().map_err(store_error)? {
+            None => (0, Vec::new(), false),
+            Some(bytes) => decode_envelope(&bytes, seed_id).unwrap_or((0, Vec::new(), false)),
         };
         Ok(Self {
             inner: Wallet::new(mint_url, transport),
@@ -187,7 +206,18 @@ where
             seed_id,
             counter,
             proofs,
+            dirty,
         })
+    }
+
+    /// True when the persisted blob carries an unresolved reservation: a
+    /// derivation range was exposed to the mint and the resulting proofs
+    /// were never confirmed saved. Callers MUST run [`Self::restore`]
+    /// (NUT-09) before any money operation — the mint may hold issued
+    /// signatures for the reserved outputs, and re-deriving that range
+    /// triggers duplicate-output refusals (mint error 10002).
+    pub fn needs_recovery(&self) -> bool {
+        self.dirty
     }
 
     /// Total unspent balance across stored proofs.
@@ -228,6 +258,9 @@ where
         let (outputs, pending) = self.deterministic_outputs(&denominations, keyset_id)?;
         self.counter = self.counter.saturating_add(pending.len() as u32);
 
+        // #266: the reserved range hits disk BEFORE the wire exposes it.
+        self.reserve_persisted()?;
+
         let response = self.inner.transport.post_mint(nut04::MintRequest {
             quote: String::from(quote_id),
             outputs,
@@ -240,7 +273,7 @@ where
         let minted: u64 = proofs.iter().map(|p| p.amount).sum();
         self.verify_fresh(&proofs, mint_keys)?;
         self.proofs.extend(proofs);
-        self.persist()?;
+        self.persist_clean()?;
         Ok(minted)
     }
 
@@ -391,6 +424,9 @@ where
         let (blanks, pending_blanks) = self.deterministic_outputs(&blank_amounts, keyset_id)?;
         self.counter = self.counter.saturating_add(pending_blanks.len() as u32);
 
+        // #266: the reserved range hits disk BEFORE the wire exposes it.
+        self.reserve_persisted()?;
+
         let response = self.inner.transport.post_melt(nut05::MeltRequest {
             quote: String::from(quote_id),
             inputs: selected.clone(),
@@ -539,6 +575,9 @@ where
         let (outputs, pending) = self.deterministic_outputs(new_amounts, keyset_id)?;
         self.counter = self.counter.saturating_add(pending.len() as u32);
 
+        // #266: the reserved range hits disk BEFORE the wire exposes it.
+        self.reserve_persisted()?;
+
         let response = self
             .inner
             .transport
@@ -549,7 +588,7 @@ where
             .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
         self.verify_fresh(&proofs, mint_keys)?;
         self.proofs.extend(proofs.iter().cloned());
-        self.persist()?;
+        self.persist_clean()?;
         Ok(proofs)
     }
 
@@ -571,12 +610,9 @@ where
         if new_amounts.is_empty() || secrets.len() != new_amounts.len() {
             return Err(CashuError::InvalidAmount);
         }
-        let (outputs, pending) = self.inner.create_blinded_outputs_with_secrets(
-            new_amounts,
-            secrets,
-            keyset_id,
-            rng,
-        )?;
+        let (outputs, pending) =
+            self.inner
+                .create_blinded_outputs_with_secrets(new_amounts, secrets, keyset_id, rng)?;
         let response = self
             .inner
             .transport
@@ -586,7 +622,7 @@ where
             .unblind_to_proofs(&pending, &response.signatures, mint_keys)?;
         self.verify_fresh(&proofs, mint_keys)?;
         self.proofs.extend(proofs.iter().cloned());
-        self.persist()?;
+        self.persist_clean()?;
         Ok(proofs)
     }
 
@@ -679,7 +715,14 @@ where
         if let Some(m) = max_idx {
             self.counter = self.counter.max(m + 1);
         }
+        // Restore is itself the journal's resolution path: whatever the
+        // reservation pointed at has now been swept (signatures fetched
+        // or provably absent for this range), so the dirty bit clears
+        // whenever anything is written.
         if added > 0 {
+            self.persist_clean()?;
+        } else {
+            self.dirty = false;
             self.persist()?;
         }
         Ok(added)
@@ -719,8 +762,26 @@ where
     }
 
     fn persist(&mut self) -> Result<(), CashuError> {
-        let blob = encode_envelope(self.counter, &self.proofs, self.seed_id)?;
+        let blob = encode_envelope(self.counter, &self.proofs, self.seed_id, self.dirty)?;
         self.store.save(&blob).map_err(store_error)
+    }
+
+    /// The crash-journal reservation: call AFTER deriving outputs and
+    /// advancing the counter, BEFORE the transport call that exposes
+    /// them. One extra atomic write per money operation — the price of
+    /// the #266 counter-before-wire rule. A crash after this point
+    /// leaves dirty=true on disk, and the next load forces NUT-09
+    /// restore before any money op.
+    fn reserve_persisted(&mut self) -> Result<(), CashuError> {
+        self.dirty = true;
+        self.persist()
+    }
+
+    /// The confirming persist: proofs are in, the reservation is
+    /// resolved, the journal bit clears in the same atomic write.
+    fn persist_clean(&mut self) -> Result<(), CashuError> {
+        self.dirty = false;
+        self.persist()
     }
 }
 

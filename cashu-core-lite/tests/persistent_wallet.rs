@@ -27,6 +27,10 @@ struct MockMint {
     keys: nut01::KeySet,
     privkeys: BTreeMap<u64, SecretKey>,
     signed: Rc<RefCell<BTreeMap<[u8; 33], nut00::BlindSignature>>>,
+    /// Fault knob: when true, post_swap SIGNS AND RECORDS every output
+    /// (the mint processed the request) but the response never arrives
+    /// — the #257/#480 crash window from the mint side.
+    fail_swap: Rc<std::cell::Cell<bool>>,
     /// Test hook: when set, post_melt reports PENDING/unpaid.
     melt_pending: Rc<std::cell::Cell<bool>>,
     /// Test hook: mint-side NUT-12 behavior (default Valid).
@@ -83,6 +87,7 @@ impl MockMint {
             signed: Rc::new(RefCell::new(BTreeMap::new())),
             melt_pending: Rc::new(std::cell::Cell::new(false)),
             dleq_mode: Rc::new(std::cell::Cell::new(0)),
+            fail_swap: Rc::new(std::cell::Cell::new(false)),
         }
     }
 
@@ -250,6 +255,13 @@ impl MintClient for MockMint {
                 .borrow_mut()
                 .insert(output.b.to_bytes(), sig.clone());
             signatures.push(sig);
+        }
+        if self.fail_swap.get() {
+            // The mint HAS processed and signed; the caller never sees
+            // the response (connection died mid-flight).
+            return Err(CashuError::Protocol(String::from(
+                "connection reset mid-response",
+            )));
         }
         Ok(nut03::SwapResponse { signatures })
     }
@@ -707,4 +719,71 @@ fn mint_rejects_missing_dleq_and_persists_nothing() {
 
     let restarted = wallet_with(&mock, store);
     assert_eq!(restarted.balance(), 0);
+}
+
+/// The #257/#480 crash window, pinned: the mint signs the swap outputs
+/// but the response never arrives and the wallet "dies" (is dropped)
+/// before the confirming persist. The journal reservation must already
+/// be on disk (counter advanced, dirty=true), and the recovery path is
+/// NUT-09 restore — never re-deriving the range (mint 10002).
+#[test]
+fn crash_window_reservation_survives_and_restores() {
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    // Clean funds first: 63 sat.
+    let mut w = wallet_with(&mock, medium.clone());
+    w.mint_deterministic("q1", 63, KEYSET_ID, &keyset).unwrap();
+    assert!(!w.needs_recovery());
+
+    // The crash swap: mint signs + records, response dies.
+    let selected = w.spend(63).unwrap();
+    mock.fail_swap.set(true);
+    let result = w.swap_deterministic(selected, &[32, 16, 8, 4, 2, 1], KEYSET_ID, &keyset);
+    assert!(result.is_err(), "the faulted swap must fail");
+    assert!(
+        w.needs_recovery(),
+        "the reservation must be journaled before the wire call"
+    );
+    drop(w); // the crash: nothing else persists
+
+    // Restart: the medium carries counter+dirty, not the proofs.
+    let mut restarted = wallet_with(&mock, medium.clone());
+    assert!(
+        restarted.needs_recovery(),
+        "dirty flag must survive the restart"
+    );
+    assert_eq!(restarted.balance(), 0, "the proofs were never confirmed");
+    // The recovery path: NUT-09 restore re-fetches the mint's signatures.
+    // `added` counts PROOFS, not sats. NOTE (pre-existing restore
+    // property, out of scope here): a headroom sweep also resurrects
+    // signatures for already-confirmed outputs whose proofs were spent
+    // — ghost proofs that NUT-07 rejects at actual spend time, visible
+    // then, never silent. The JOURNAL's guarantees are what we pin:
+    // the faulted range is recovered, the reservation resolves, and the
+    // next derivation does not collide.
+    let added = restarted.restore(KEYSET_ID, &keyset).unwrap();
+    assert!(
+        added >= 6,
+        "the faulted swap's outputs are among the recovered (added={added})"
+    );
+    assert!(
+        restarted.balance() >= 63,
+        "the faulted swap's value is in the wallet (balance={})",
+        restarted.balance()
+    );
+    assert!(
+        !restarted.needs_recovery(),
+        "restore resolves the reservation"
+    );
+
+    // Post-recovery: a further mint works with NO duplicate-output
+    // refusal (the counter is past the journaled range). Uses mint, not
+    // swap, so ghost proofs cannot fail the input leg.
+    let minted = restarted
+        .mint_deterministic("q2", 63, KEYSET_ID, &keyset)
+        .expect("no 10002: the counter moved past the journaled range");
+    assert_eq!(minted, 63);
+    assert!(!restarted.needs_recovery());
 }

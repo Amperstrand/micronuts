@@ -162,6 +162,23 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
         Ok(())
     }
 
+    /// Startup crash-journal recovery: when the persisted blob carries an
+    /// unresolved reservation (a derivation range was exposed to the mint
+    /// and its proofs were never confirmed saved — the dirty flag), sweep
+    /// the range via NUT-09 restore BEFORE any money operation. The mint
+    /// may hold issued signatures for those outputs; re-deriving the range
+    /// instead would trip duplicate-output refusals (mint 10002). Returns
+    /// the number of recovered proofs (0 when no reservation existed).
+    pub fn recover_if_needed(&mut self) -> Result<u64, CashuError> {
+        self.ensure_connected()?;
+        if !self.wallet.needs_recovery() {
+            return Ok(0);
+        }
+        let keyset_id = self.keyset_id.clone();
+        let keys = self.keys.clone();
+        self.wallet.restore(&keyset_id, &keys)
+    }
+
     fn ensure_connected(&mut self) -> Result<(), CashuError> {
         if self.keyset_id.is_empty() {
             // Lazy connect — protocol parity with cdk-walletd (the
@@ -442,9 +459,7 @@ impl<T: MintClient + Clone, S: ProofStore> WalletEngine<T, S> {
             return Err(CashuError::InvalidAmount);
         }
         if recipient_pubkey_hex.len() != 66
-            || !recipient_pubkey_hex
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
+            || !recipient_pubkey_hex.chars().all(|c| c.is_ascii_hexdigit())
         {
             return Err(CashuError::Protocol(format!(
                 "send_p2pk: expected 33-byte compressed pubkey hex (66 chars), got {}",
