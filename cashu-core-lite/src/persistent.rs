@@ -666,7 +666,11 @@ where
                 .map_err(|_| CashuError::Crypto(String::from("blind_message failed")))?
                 .blinded;
             by_blinded.insert(hex::encode(blinded.to_bytes()), (idx, blinder, secret_hex));
-            outputs.push(blinded);
+            outputs.push(nut00::BlindedMessage {
+                amount: 0,
+                id: String::from(keyset_id),
+                b: blinded,
+            });
         }
 
         let response = self

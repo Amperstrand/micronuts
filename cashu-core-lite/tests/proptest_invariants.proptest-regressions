@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7334f9fc34980f1f899d6eabfb5209efa9726235b2dd0fcaa823ff3ec0d6d6a5 # shrinks to a = SecretKey([REDACTED]), r = SecretKey([REDACTED]), other = SecretKey([REDACTED]), msg = [214, 185, 205, 51, 110, 69, 36, 142, 17, 39, 32]

@@ -333,9 +333,9 @@ impl MintClient for DemoMintClient {
             .filter_map(|y| {
                 inner
                     .signed
-                    .get(&y.to_bytes())
+                    .get(&y.b.to_bytes())
                     .map(|signature| nut09::RestoreOutput {
-                        y: *y,
+                        y: y.b,
                         signature: signature.clone(),
                     })
             })

@@ -281,9 +281,9 @@ impl MintClient for MockMint {
         let outputs = request
             .outputs
             .iter()
-            .filter_map(|b| {
-                signed.get(&b.to_bytes()).map(|sig| nut09::RestoreOutput {
-                    y: *b,
+            .filter_map(|m| {
+                signed.get(&m.b.to_bytes()).map(|sig| nut09::RestoreOutput {
+                    y: m.b,
                     signature: sig.clone(),
                 })
             })

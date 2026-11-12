@@ -20,9 +20,14 @@ use minicbor::{Decode, Encode};
 // NUT #09: Mints must store the `BlindedMessage` and the corresponding `BlindSignature` in their database every time they issue a `BlindSignature`. Wallets provide the `BlindedMessage` for which they request the `BlindSignature`. Mints only respond with a `BlindSignature`, if they have previously signed the `BlindedMessage`.
 // NUT #09: "outputs": <Array[BlindedMessages]>
 pub struct RestoreRequest {
-    /// Blinded messages `B'` to restore (the spec's `outputs` list).
+    /// Blinded messages to restore (the spec's `outputs` list). Full
+    /// BlindedMessage structs — mints validate `id` as a keyset ID
+    /// (Amperstrand/micronuts#165: a bare B' hex list is rejected at
+    /// deserialize). `amount` is unknown at restore time (0 is
+    /// accepted); the mint matches on `B_` and the response carries the
+    /// true amounts.
     #[n(0)]
-    pub outputs: Vec<PublicKey>,
+    pub outputs: Vec<crate::nuts::nut00::BlindedMessage>,
 }
 
 /// A restored output with its blind signature (NUT-09).

@@ -794,22 +794,34 @@ fn parse_restore_request(body: &Value) -> Result<nut09::RestoreRequest, Response
         .ok_or_else(|| bad_request("outputs", "missing or not an array"))?;
     let mut ys = Vec::with_capacity(outputs.len());
     for item in outputs {
-        if let Some(s) = item.as_str() {
-            ys.push(parse_public_key_from_hex(s)?);
-        } else if let Some(obj) = item.as_object() {
-            // Accept a BlindedMessage-shaped object: forward its `B_` as the Y.
-            if let Some(b_hex) = obj.get("B_").and_then(|v| v.as_str()) {
-                ys.push(parse_public_key_from_hex(b_hex)?);
-            } else if let Some(y_hex) = obj.get("Y").and_then(|v| v.as_str()) {
-                ys.push(parse_public_key_from_hex(y_hex)?);
-            } else {
-                return Err(bad_request(
-                    "outputs",
-                    "expected hex string or {\"B_\": ...} / {\"Y\": ...} object",
-                ));
-            }
+        // NUT-09 requests carry BlindedMessage structs (#165); bare hex
+        // B'/Y strings stay accepted for back-compat with old callers.
+        if let Some(obj) = item.as_object() {
+            let b_hex = obj
+                .get("B_")
+                .or_else(|| obj.get("Y"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    bad_request("outputs", "expected {\"B_\": ...} / {\"Y\": ...} object")
+                })?;
+            let id = obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            ys.push(nut00::BlindedMessage {
+                amount: obj.get("amount").and_then(|v| v.as_u64()).unwrap_or(0),
+                id,
+                b: parse_public_key_from_hex(b_hex)?,
+            });
+        } else if let Some(s) = item.as_str() {
+            ys.push(nut00::BlindedMessage {
+                amount: 0,
+                id: String::new(),
+                b: parse_public_key_from_hex(s)?,
+            });
         } else {
-            return Err(bad_request("outputs", "expected hex string or object"));
+            return Err(bad_request("outputs", "expected object or hex string"));
         }
     }
     Ok(nut09::RestoreRequest { outputs: ys })

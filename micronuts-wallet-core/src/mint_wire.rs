@@ -218,12 +218,17 @@ impl<T: JsonTransport> MintClient for WireMintClient<T> {
         &mut self,
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError> {
-        // NUT-09 spec: flat parallel arrays — outputs[i] (B_ hex) pairs with
-        // signatures[i]. The adapter emits exactly this shape.
-        let outputs: Vec<String> = request
+        // NUT-09 request shape (Amperstrand/micronuts#165): `outputs` is an
+        // array of BlindedMessage STRUCTS ({"amount","id","B_"}), not hex
+        // strings — cdk-mintd (and every CDK mint) rejects the flat-hex
+        // form at deserialize. The mint matches on B' only, so amount is
+        // unknown-at-restore (0) and the id is filled best-effort; the
+        // response carries the true amounts. (Keep in sync with the
+        // micronuts-wallet twin of this adapter.)
+        let outputs: Vec<_> = request
             .outputs
             .iter()
-            .map(|y| hex::encode(y.to_bytes()))
+            .map(blinded_message_to_json)
             .collect();
         let body = json!({ "outputs": outputs });
         let response = self.transport.post_json(&self.url("/v1/restore"), &body)?;
@@ -239,9 +244,19 @@ impl<T: JsonTransport> MintClient for WireMintClient<T> {
         }
         let mut parsed = Vec::with_capacity(ys.len());
         for (y, signature) in ys.iter().zip(signatures) {
+            // The response's outputs are BlindedMessage structs (the B_
+            // field), matching the request shape; bare hex stays accepted
+            // for mints that still answer the flat form.
             let y_hex = y
                 .as_str()
-                .ok_or_else(|| protocol("restore response: outputs entries must be hex strings"))?;
+                .or_else(|| {
+                    y.as_object()
+                        .and_then(|o| o.get("B_"))
+                        .and_then(|v| v.as_str())
+                })
+                .ok_or_else(|| {
+                    protocol("restore response: outputs entries must be B_ hex or objects")
+                })?;
             parsed.push(nut09::RestoreOutput {
                 y: point_from_hex(y_hex)?,
                 signature,

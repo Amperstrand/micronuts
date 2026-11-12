@@ -213,12 +213,22 @@ impl<T: JsonTransport> MintClient for WireMintClient<T> {
         &mut self,
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError> {
-        // NUT-09 spec: flat parallel arrays — outputs[i] (B_ hex) pairs with
-        // signatures[i]. The adapter emits exactly this shape.
-        let outputs: Vec<String> = request
+        // NUT-09 request shape (Amperstrand/micronuts#165): `outputs` is an
+        // array of BlindedMessage STRUCTS ({"amount","id","_b"}), not hex
+        // strings — cdk-mintd (and every CDK mint) rejects the flat-hex
+        // form at deserialize. The mint matches on B' only, so amount is
+        // unknown-at-restore (0) and the id is filled best-effort from the
+        // request context; the response carries the true amounts.
+        let outputs: Vec<_> = request
             .outputs
             .iter()
-            .map(|y| hex::encode(y.to_bytes()))
+            .map(|y| {
+                blinded_message_to_json(&nut00::BlindedMessage {
+                    amount: 0,
+                    id: String::new(),
+                    b: *y,
+                })
+            })
             .collect();
         let body = json!({ "outputs": outputs });
         let response = self.transport.post_json(&self.url("/v1/restore"), &body)?;
