@@ -951,7 +951,19 @@ fn main() -> Result<(), DynError> {
                     allowed_uids.push(u);
                 }
             }
-            _ => {}
+            // Fail loudly on unknown flags. The silent catch-all cost
+            // two weeks of vacuous parity outcomes: the harness passed
+            // --mnemonic-file (a cdk-walletd flag this daemon never
+            // had), it was swallowed, and the "same seed" scenario
+            // never ran (the case-40 adjudication, 2026-11-13). A
+            // wrong flag must be a startup error, never a shrug.
+            other => {
+                return Err(format!(
+                    "unknown argument {other:?} (known: --socket, --work-dir, \
+                     --mint, --allow-untrusted-mints, --seed-hex, --allow-uid)"
+                )
+                .into());
+            }
         }
     }
 
