@@ -960,11 +960,24 @@ fn main() -> Result<(), DynError> {
 
     let mut persisted = Daemon::load_or_init(&dir)?;
     if persisted.seed_hex.is_empty() {
-        // Fresh random seed (hex, 32 bytes).
-        let mut seed = [0u8; 32];
-        getrandom_fallback(&mut seed)?;
-        persisted.seed_hex = hex(&seed);
-        eprintln!("micronuts-walletd: generated seed {}", persisted.seed_hex);
+        // Load-or-create (the respawn-seed doctrine): an explicitly
+        // provided --seed-hex seeds a FRESH store; an existing store
+        // always wins (regenerating on respawn would re-expose
+        // derivation ranges). No provided seed → fresh random.
+        if let Some(provided) = seed_hex.as_ref().filter(|h| !h.is_empty()) {
+            // validate before accepting: 32 bytes of hex
+            hex_to_32(provided)?;
+            persisted.seed_hex = provided.to_lowercase();
+            eprintln!(
+                "micronuts-walletd: loaded provided seed {}",
+                persisted.seed_hex
+            );
+        } else {
+            let mut seed = [0u8; 32];
+            getrandom_fallback(&mut seed)?;
+            persisted.seed_hex = hex(&seed);
+            eprintln!("micronuts-walletd: generated seed {}", persisted.seed_hex);
+        }
     }
     for m in &mints {
         let c = Daemon::canonical(m)?;
