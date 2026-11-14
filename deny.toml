@@ -4,21 +4,20 @@
 
 [advisories]
 ignore = [
-  # crypto-bigint 0.5.5 / RUSTSEC-2026-0387: timing variability in
-  # constant-time ops. Patched line is 0.6.x, reachable only via the
-  # elliptic-curve 0.14 / k256 0.14 major bump (wallet crypto stack
-  # surgery — firmware pins k256 ^0.13). Tracked in micronuts#154;
-  # remove this entry when that migration lands.
-  "RUSTSEC-2026-0387",
+  # (2026-11-14) RUSTSEC-2026-0387 ignore REMOVED: the k256 0.13 -> 0.14
+  # migration landed (micronuts#154 acceptance) — crypto-bigint 0.7.11
+  # (patched, >=0.7.6) is the only crypto-bigint in every lockfile; the
+  # microfips git dep re-pinned to e6dcfb0 (its k256 0.14 bump, PR #214).
   # bare-metal v0.2.5: unmaintained (archived upstream). Pulled by
   # cortex-m 0.7.x, which the embassy-stm32 ecosystem pins — no safe
   # upgrade in-tree. Replacement (critical-section) already used
   # elsewhere in the tree; drops out with the next embassy bump.
   "RUSTSEC-2026-0110",
-  # embassy-usb-driver 0.2.x: unmaintained. Pulled by the vendored
-  # embassy fork; folds into the newer embassy-usb line the fork does
-  # not track yet.
-  "RUSTSEC-2026-0173",
+  # (2026-11-14) RUSTSEC-2026-0173 ignore REMOVED: stale. The entry's
+  # comment named embassy-usb-driver, but 0173 is proc-macro-error2 —
+  # which is not in this dependency graph at all (cargo-deny warned
+  # "no crate matched advisory criteria" on every run). No embassy-usb
+  # advisory currently matches the tree either; nothing to re-add.
   # paste 1.0.15: unmaintained (author archived it; pastey is the
   # drop-in fork). Transitive dep of the slint toolchain pulled in by
   # micronuts-wallet — not ours to swap inside slint's macro stack.
@@ -144,7 +143,7 @@ allow = ["LGPL-2.1-or-later"]
 crate = "r-efi"
 
 [[licenses.clarify]]
-# The Amperstrand/microfips git dep (rev b20859b) ships a top-level MIT
+# The Amperstrand/microfips git dep (rev e6dcfb0) ships a top-level MIT
 # LICENSE and declares `license = "MIT"` in its workspace root manifest,
 # but the four member crates consumed here lack per-crate license fields
 # — clarify from upstream's own declaration rather than failing them as

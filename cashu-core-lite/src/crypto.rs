@@ -7,7 +7,7 @@ use crate::keypair::{PublicKey, SecretKey};
 use crate::nuts::nut12::DleqError;
 
 #[cfg(feature = "std")]
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 
 const DOMAIN_SEPARATOR: &[u8; 28] = b"Secp256k1_HashToCurve_Cashu_";
 
@@ -76,12 +76,24 @@ pub fn blind_message(
     let r_scalar = match blinder {
         Some(sk) => sk.to_scalar(),
         #[cfg(feature = "std")]
-        None => Scalar::generate_vartime(&mut OsRng),
+        None => {
+            // Byte-identical to k256 0.13's Scalar::generate_vartime (and
+            // 0.14's generate_biased_from_rng): 64 CSPRNG bytes reduced
+            // mod n — kept on our rand_core 0.6 OsRng to avoid a second
+            // rand_core major crossing the crate API.
+            use k256::elliptic_curve::ff::FromUniformBytes;
+            let mut buf = [0u8; 64];
+            OsRng.fill_bytes(&mut buf);
+            Scalar::from_uniform_bytes(&buf)
+        }
         #[cfg(not(feature = "std"))]
         None => panic!("blinder required for no_std"),
     };
 
-    let r_sk = k256::SecretKey::new(r_scalar.into());
+    let r_sk = k256::elliptic_curve::NonZeroScalar::new(r_scalar)
+        .into_option()
+        .map(k256::SecretKey::from)
+        .ok_or(HashToCurveError)?;
     let r_pk = r_sk.public_key();
     let r_projective: ProjectivePoint = r_pk.into();
 

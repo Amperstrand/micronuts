@@ -13,8 +13,8 @@ use std::vec::Vec;
 
 use core::ops::Deref;
 use k256::{
-    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
-    EncodedPoint, ProjectivePoint, PublicKey as K256PublicKey, SecretKey as K256SecretKey,
+    elliptic_curve::sec1::{FromSec1Point, ToSec1Point},
+    ProjectivePoint, PublicKey as K256PublicKey, SecretKey as K256SecretKey,
 };
 use minicbor::{
     decode::Error as DecodeError,
@@ -34,8 +34,8 @@ impl PublicKey {
     }
 
     pub fn from_bytes(compressed: &[u8; 33]) -> Option<Self> {
-        let encoded = EncodedPoint::from_bytes(compressed).ok()?;
-        K256PublicKey::from_encoded_point(&encoded)
+        let encoded = k256::Sec1Point::from_bytes(compressed).ok()?;
+        K256PublicKey::from_sec1_point(&encoded)
             .into_option()
             .map(Self)
     }
@@ -45,7 +45,7 @@ impl PublicKey {
     }
 
     pub fn to_sec1_bytes(&self) -> Vec<u8> {
-        self.0.to_encoded_point(false).as_bytes().to_vec()
+        self.0.to_sec1_point(false).as_bytes().to_vec()
     }
 
     /// Return the compressed SEC1 encoding.
@@ -53,14 +53,14 @@ impl PublicKey {
     /// This mirrors the upstream `cashu` crate's `PublicKey::to_bytes()` helper
     /// and makes interop/adaptation tests straightforward.
     pub fn to_bytes(&self) -> [u8; 33] {
-        let encoded = self.0.to_encoded_point(true);
+        let encoded = self.0.to_sec1_point(true);
         let mut bytes = [0u8; 33];
         bytes.copy_from_slice(encoded.as_bytes());
         bytes
     }
 
-    pub fn to_encoded_point(&self, compress: bool) -> EncodedPoint {
-        self.0.to_encoded_point(compress)
+    pub fn to_encoded_point(&self, compress: bool) -> k256::Sec1Point {
+        self.0.to_sec1_point(compress)
     }
 
     pub fn as_affine(&self) -> k256::AffinePoint {
@@ -70,7 +70,7 @@ impl PublicKey {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let encoded = self.0.to_encoded_point(true);
+        let encoded = self.0.to_sec1_point(true);
         let hex_str = encode_hex(encoded.as_bytes());
         write!(f, "PublicKey({})", hex_str)
     }
