@@ -1078,7 +1078,7 @@ mod tests {
                 .ys
                 .iter()
                 .map(|y| nut07::ProofState {
-                    y: y.clone(),
+                    y: *y,
                     state: if spent_ys.contains(&hex::encode(y.to_bytes())) {
                         String::from(nut07::state::SPENT)
                     } else {
