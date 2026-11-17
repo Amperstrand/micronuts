@@ -9,10 +9,12 @@ ignore = [
   # upgrade in-tree. Replacement (critical-section) already used
   # elsewhere in the tree; drops out with the next embassy bump.
   "RUSTSEC-2026-0110",
-  # embassy-usb-driver 0.2.x: unmaintained. Pulled by the vendored
-  # embassy fork; folds into the newer embassy-usb line the fork does
-  # not track yet.
-  "RUSTSEC-2026-0173",
+  # (2026-11-17) RUSTSEC-2026-0173 ignore REMOVED: the branch's graph
+  # no longer carries embassy-usb-driver 0.2.x (cargo-deny:
+  # "no crate matched advisory criteria" — deny FAILED on the
+  # unmatched entry). If the vendored embassy fork re-pins it, CI will
+  # re-raise the unmaintained advisory; re-add the ignore with the
+  # original reason then.
   # paste 1.0.15: unmaintained (author archived it; pastey is the
   # drop-in fork). Transitive dep of the slint toolchain pulled in by
   # micronuts-wallet — not ours to swap inside slint's macro stack.
