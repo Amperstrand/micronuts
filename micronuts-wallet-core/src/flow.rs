@@ -161,6 +161,36 @@ impl TokenInspection {
     }
 }
 
+/// Generation guard for the receive auto-inspect pipeline: every token
+/// edit (keystroke, paste, scan, clear) bumps the generation; an
+/// inspection result whose generation is no longer current must not
+/// publish over newer input state (stale prefix classification or a
+/// cleared field). ops#54.
+#[derive(Debug)]
+pub struct InspectionGate(std::sync::atomic::AtomicU64);
+
+impl InspectionGate {
+    pub const fn new() -> Self {
+        Self(std::sync::atomic::AtomicU64::new(0))
+    }
+
+    /// Called on every token edit. Returns this edit's generation.
+    pub fn begin(&self) -> u64 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+
+    /// True only if no newer edit has begun since `gen` was issued.
+    pub fn is_current(&self, gen: u64) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed) == gen
+    }
+}
+
+impl Default for InspectionGate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Receive ecash: scan/paste → inspect → review → receiving → received.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceiveEcashPhase {
@@ -429,6 +459,42 @@ mod tests {
         .user_line();
         assert!(line.contains("no fee"), "{line}");
         assert!(!line.contains("0 sat"), "{line}");
+    }
+
+    #[test]
+    fn stale_prefix_result_cannot_publish_after_terminal() {
+        // Fast-typing window (ops#54): generation A is a partial prefix
+        // whose inspection resolves late; generation B is the full token.
+        // A's result must not publish over B's.
+        let gate = InspectionGate::new();
+        let a = gate.begin();
+        let b = gate.begin();
+        assert!(gate.is_current(b));
+        assert!(!gate.is_current(a));
+    }
+
+    #[test]
+    fn cleared_input_invalidates_pending_inspection() {
+        // Clear window (ops#54): the empty-input branch bumps the gate,
+        // so an already-queued prefix inspection cannot publish
+        // "failed"+invalid-token over the cleared field.
+        let gate = InspectionGate::new();
+        let a = gate.begin();
+        let c = gate.begin();
+        assert!(!gate.is_current(a));
+        assert!(gate.is_current(c));
+    }
+
+    #[test]
+    fn generations_are_unique_and_monotonic() {
+        let gate = InspectionGate::new();
+        let mut prev = 0;
+        for _ in 0..4 {
+            let gen = gate.begin();
+            assert!(gen > prev);
+            prev = gen;
+        }
+        assert!(gate.is_current(prev));
     }
 
     #[test]
