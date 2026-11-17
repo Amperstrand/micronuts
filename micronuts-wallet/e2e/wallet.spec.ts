@@ -103,14 +103,19 @@ test("receive ecash: typing a token auto-inspects into a review state", async ({
     { delay: 5 },
   );
 
-  // The review machinery runs by itself: state must leave "input" and
-  // land on the foreign-mint failure wording (no auto-spend possible —
-  // there is no confirmation to press).
+  // The review machinery runs by itself: typing must land on the
+  // foreign-mint failure wording (no auto-spend possible — there is no
+  // confirmation to press). Poll the LINE, not the state: every partial
+  // keystroke past the "cashuB" prefix also classifies as a token and
+  // lands "failed" + the invalid-token line mid-typing (the #159 flake —
+  // the state poll matched a transient partial inspection before the
+  // final full-token one landed). The foreign-mint wording is the
+  // terminal, unambiguous signal.
   await expect
-    .poll(() => state(page).then((s) => s.receiveState), { timeout: 15_000 })
-    .toBe("failed");
+    .poll(() => state(page).then((s) => s.receiveLine ?? ""), { timeout: 15_000 })
+    .toContain("different mint");
   const s = await state(page);
-  expect(s.receiveLine).toContain("different mint");
+  expect(s.receiveState).toBe("failed");
 });
 
 test("send ecash with empty balance fails honestly, not silently", async ({
