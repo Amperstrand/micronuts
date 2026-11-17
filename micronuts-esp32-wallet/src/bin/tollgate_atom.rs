@@ -5,7 +5,8 @@
 //! State machine: SCAN → FOUND → JOIN → VALIDATE → PAY → MONITOR →
 //! rescan. Every phase transition prints a PRTA line for the rig:
 //! `TG_FOUND` / `TG_AD_VALID` / `TG_PAID` / `TG_INTERNET` /
-//! `TG_DISCONNECTED`.
+//! `TG_DISCONNECTED` / `TG_AD_MINT_MISMATCH` (a payable-network ad whose
+//! mint differs from the wallet's — never paid, rescan; #122).
 //!
 //! Token funding is USB-serial only (no camera): paste
 //! `token <cashuA...>` (or `receive <...>`) at 115200 baud — the UART
@@ -128,14 +129,6 @@ fn main() -> anyhow::Result<()> {
     let mut engine =
         WalletEngine::new(MINT, transport, engine_store, seed_buf, Vec::new())
             .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?;
-    // The mint is reachable on the home network at boot: connect here so
-    // keyset_id is populated — receive/send enforce ensure_connected and
-    // would otherwise fail after every reboot until a manual connect
-    // (review debt micronuts#82, r4151018840). Best-effort: an offline
-    // boot still runs; restored proofs just cannot move yet.
-    if let Err(e) = engine.connect() {
-        println!("tollgate_atom: mint connect failed ({e:?}) — receive/pay disabled until the mint is reachable");
-    }
     println!(
         "tollgate_atom: mint={MINT} balance={} sats — fund with `token <cashu-token>`",
         engine_balance(&engine)
@@ -219,33 +212,34 @@ fn main() -> anyhow::Result<()> {
                 match tollgate.discover(&wifi) {
                     Ok(_) => match tollgate.ad_valid() {
                         Ok(ad) => {
-                            price_sats = ad.price_sats.unwrap_or(0);
-                            if let Some(ad_mint) = &ad.mint_url {
-                                if ad_mint != MINT {
-                                    // Paying a foreign-mint gate hands over
-                                    // tokens this wallet can never refill:
-                                    // reject the ad instead of warn-and-pay
-                                    // (review debt micronuts#82, r4151018845).
-                                    println!(
-                                        "tollgate_atom: ad mint {ad_mint} != wallet mint {MINT} — rejecting"
-                                    );
-                                    prta("DISCONNECTED");
-                                    phase = Phase::Scan;
-                                    continue;
+                            // (#122) A mint we do not wallet for means the
+                            // advertised backend cannot redeem our tokens —
+                            // paying would compose a token from MINT, lose
+                            // the proofs to the HTTP rejection (no pending-
+                            // send recovery on this flow), and strand valid
+                            // funds. Not payable: rescan, distinct PRTA.
+                            if matches!(ad.mint_url.as_deref(), Some(m) if m != MINT) {
+                                println!(
+                                    "tollgate_atom: ad mint {} != wallet mint {MINT} — not payable, rescanning",
+                                    ad.mint_url.as_deref().unwrap_or("?")
+                                );
+                                prta("AD_MINT_MISMATCH");
+                                phase = Phase::Scan;
+                            } else {
+                                price_sats = ad.price_sats.unwrap_or(0);
+                                println!(
+                                    "tollgate_atom: ad valid — gw {} {price_sats} sats/step",
+                                    ad.gateway
+                                );
+                                prta("AD_VALID");
+                                match tollgate.usage() {
+                                    Ok(Some((remaining, total))) if remaining > 0 => {
+                                        leds.set_meter(remaining, total);
+                                        prta("INTERNET");
+                                        phase = Phase::Monitor;
+                                    }
+                                    _ => phase = Phase::Pay,
                                 }
-                            }
-                            println!(
-                                "tollgate_atom: ad valid — gw {} {price_sats} sats/step",
-                                ad.gateway
-                            );
-                            prta("AD_VALID");
-                            match tollgate.usage() {
-                                Ok(Some((remaining, total))) if remaining > 0 => {
-                                    leds.set_meter(remaining, total);
-                                    prta("INTERNET");
-                                    phase = Phase::Monitor;
-                                }
-                                _ => phase = Phase::Pay,
                             }
                         }
                         Err(e) => {

@@ -15,7 +15,7 @@ minicbor = { version = "0.25", default-features = false, features = ["alloc", "d
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-k256 = "0.13"
+k256 = "0.14"
 ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
 serde_json = "1"
 sha2 = "0.10"

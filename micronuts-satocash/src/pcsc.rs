@@ -55,7 +55,7 @@ impl CardTransport for PcscTransport {
         p2: u8,
         data: &[u8],
     ) -> Result<(Vec<u8>, u16), Error> {
-        let cmd = crate::encode_apdu(cla, ins, p1, p2, data);
+        let cmd = crate::encode_apdu(cla, ins, p1, p2, data)?;
 
         let mut resp = [0; MAX_RESP];
         let r = self

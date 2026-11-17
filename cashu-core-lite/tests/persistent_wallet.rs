@@ -16,6 +16,7 @@ use cashu_core_lite::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut
 use cashu_core_lite::persistent::PersistentWallet;
 use cashu_core_lite::store::{MemoryStore, ProofStore, StoreError};
 use cashu_core_lite::transport::MintClient;
+use rand_core::RngCore;
 
 const KEYSET_ID: &str = "015ba18a8adcd02e715a58358eb618da4a4b3791151a4bee5e968bb88406ccf76a";
 
@@ -266,7 +267,7 @@ impl MintClient for MockMint {
         request: nut09::RestoreRequest,
     ) -> Result<nut09::RestoreResponse, CashuError> {
         let signed = self.signed.borrow();
-        let outputs = request
+        let mut outputs = request
             .outputs
             .iter()
             .filter_map(|b| {
@@ -275,7 +276,15 @@ impl MintClient for MockMint {
                     signature: sig.clone(),
                 })
             })
-            .collect();
+            .collect::<Vec<_>>();
+        // The dleq_mode hook also governs REPLAYED signatures: a mint that
+        // omits witnesses on restore (#136) must be testable even when the
+        // originals were signed honestly.
+        if self.dleq_mode.get() == 1 {
+            for out in &mut outputs {
+                out.signature.dleq = None;
+            }
+        }
         Ok(nut09::RestoreResponse { outputs })
     }
 }
@@ -314,6 +323,144 @@ fn medium_with(blob: &[u8]) -> SharedStore {
     let medium = SharedStore::new();
     medium.0.borrow_mut().save(blob).unwrap();
     medium
+}
+
+/// Deterministic RngCore: a byte stream of 1, 2, 3, ... (mod 0x7f, never
+/// 0) so every 32-byte draw is a valid secp256k1 scalar. Lets the plain
+/// (non-deterministic) Wallet mint path run against the mock mint without
+/// pulling in a rand implementation.
+struct CountingRng(u8);
+
+impl rand_core::RngCore for CountingRng {
+    fn next_u32(&mut self) -> u32 {
+        self.next_u64() as u32
+    }
+    fn next_u64(&mut self) -> u64 {
+        let mut v = 0u64;
+        for byte in self.fill_slice8().iter() {
+            v = (v << 8) | *byte as u64;
+        }
+        v
+    }
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        for slot in dest.iter_mut() {
+            self.0 = (self.0 % 0x7e) + 1;
+            *slot = self.0;
+        }
+    }
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl CountingRng {
+    fn fill_slice8(&mut self) -> [u8; 8] {
+        let mut buf = [0u8; 8];
+        self.fill_bytes(&mut buf);
+        buf
+    }
+}
+
+#[test]
+fn mint_amount_above_keyset_max_splits_within_keyset() {
+    // micronuts#163: 128 exceeds the mock keyset max (64). The blind
+    // power-of-two split produced a single 128-sat output the mint cannot
+    // sign — quote consumed, then KeysetNotFound after the NUT-04 POST.
+    // The split must use only denominations the keyset actually has.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium);
+    let minted = w
+        .mint_deterministic("quote-128", 128, KEYSET_ID, &keyset)
+        .unwrap();
+    assert_eq!(minted, 128);
+    let amounts: Vec<u64> = w.proofs().iter().map(|p| p.amount).collect();
+    assert!(
+        amounts.iter().all(|&a| a <= 64),
+        "every output must use a keyset denomination: {:?}",
+        amounts
+    );
+    assert_eq!(amounts.iter().sum::<u64>(), 128);
+}
+
+#[test]
+fn mint_unrepresentable_amount_fails_before_post() {
+    // Keyset without the 1-sat denomination cannot represent 3 exactly.
+    // The wallet must reject BEFORE posting NUT-04 (the mint must never
+    // be contacted — a failed POST after quote creation strands it).
+    let mock = MockMint::new();
+    let mut keyset = mock.keys.clone();
+    keyset.keys.retain(|k| k.amount > 1);
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium);
+    let err = w
+        .mint_deterministic("quote-3", 3, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        matches!(err, CashuError::AmountNotRepresentable(_)),
+        "expected AmountNotRepresentable, got {:?}",
+        err
+    );
+    assert!(
+        mock.signed.borrow().is_empty(),
+        "no output may be posted for an unrepresentable amount"
+    );
+}
+
+#[test]
+fn wallet_mint_tokens_amount_above_keyset_max_splits_within_keyset() {
+    // Same contract through the plain Wallet::mint_tokens path.
+    use cashu_core_lite::wallet::Wallet;
+
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let mut wallet = Wallet::new("https://mint.example", mock.clone());
+    let mut rng = CountingRng(0);
+
+    let proofs = wallet
+        .mint_tokens("quote-300", 300, KEYSET_ID, &keyset, &mut rng)
+        .unwrap();
+    let amounts: Vec<u64> = proofs.iter().map(|p| p.amount).collect();
+    assert!(
+        amounts.iter().all(|&a| mock.privkeys.contains_key(&a)),
+        "every output must use a keyset denomination: {:?}",
+        amounts
+    );
+    assert_eq!(amounts.iter().sum::<u64>(), 300);
+}
+
+#[test]
+fn mint_deterministic_batch_cannot_exceed_restore_window() {
+    // codex P1 (PR #164): 4160 sats against the 1..64 mock keyset needs 65
+    // outputs — one past RESTORE_HEADROOM (64). A crash after signing but
+    // before persist would leave output index counter+64 outside the
+    // restore scan: silently unrecoverable funds. Such a batch must be
+    // refused up front; the largest recoverable batch still mints.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let medium = SharedStore::new();
+
+    let mut w = wallet_with(&mock, medium);
+    let err = w
+        .mint_deterministic("quote-4160", 4160, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        matches!(err, CashuError::AmountNotRepresentable(_)),
+        "expected AmountNotRepresentable, got {:?}",
+        err
+    );
+
+    // 64 x 64 = exactly the window: accepted, 64 outputs, fully covered
+    // by counter..counter+RESTORE_HEADROOM after a crash.
+    let minted = w
+        .mint_deterministic("quote-4096", 4096, KEYSET_ID, &keyset)
+        .unwrap();
+    assert_eq!(minted, 4096);
+    assert_eq!(w.proof_count(), 64);
 }
 
 #[test]
@@ -685,6 +832,69 @@ fn swap_rejects_tampered_dleq_and_persists_nothing() {
         restarted.balance(),
         0,
         "nothing persisted: a crash can no longer store unverified proofs"
+    );
+}
+
+#[test]
+fn melt_change_rejects_tampered_dleq_and_persists_nothing() {
+    // (#136) The NUT-08 change gate: a paid melt whose change witness is
+    // tampered fails closed BEFORE any mutation — nothing enters RAM
+    // state, nothing persists, the invariant mint/swap uphold now holds
+    // for melt too.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+    let store = SharedStore::new();
+
+    let mut w = wallet_with(&mock, store.clone());
+    w.mint_deterministic("q1", 32, KEYSET_ID, &keyset).unwrap();
+    let before = w.balance();
+
+    mock.dleq_mode.set(2); // corrupt the melt change witness
+    let err = w
+        .melt_deterministic("melt-1", 30, 2, KEYSET_ID, &keyset)
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("NUT-12"),
+        "expected a NUT-12 error, got: {err}"
+    );
+    assert_eq!(
+        w.balance(),
+        before,
+        "unverified change never entered RAM state"
+    );
+
+    let restarted = wallet_with(&mock, store);
+    assert_eq!(
+        restarted.balance(),
+        before,
+        "nothing persisted: no unverified change on crash-reload"
+    );
+}
+
+#[test]
+fn restore_rejects_missing_dleq_and_persists_nothing() {
+    // (#136) The restore gate: signatures returned without a NUT-12
+    // witness never reach RAM state or the store — a crash-reload can
+    // no longer resurrect unverified proofs.
+    let mock = MockMint::new();
+    let keyset = mock.keys.clone();
+
+    let mut original = wallet_with(&mock, SharedStore::new());
+    original
+        .mint_deterministic("quote-1", 63, KEYSET_ID, &keyset)
+        .unwrap();
+
+    mock.dleq_mode.set(1); // the mint omits witnesses on restore
+    let mut lost = wallet_with(&mock, SharedStore::new());
+    let err = lost.restore(KEYSET_ID, &keyset).unwrap_err();
+    assert!(
+        err.to_string().contains("dleq"),
+        "expected a dleq error, got: {err}"
+    );
+    assert_eq!(
+        lost.balance(),
+        0,
+        "unverified restored proofs never entered RAM state"
     );
 }
 

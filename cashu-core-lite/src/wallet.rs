@@ -7,6 +7,8 @@
 //! Crypto operations (blinding, unblinding) use functions from `crate::crypto`.
 
 #[cfg(not(feature = "std"))]
+use alloc::format;
+#[cfg(not(feature = "std"))]
 use alloc::string::{String, ToString};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -17,7 +19,7 @@ use crate::crypto::{blind_message, hash_to_curve, unblind_signature};
 use crate::error::CashuError;
 use crate::keypair::SecretKey;
 use crate::nuts::nut12::ProofDleq;
-use crate::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07};
+use crate::nuts::{nut00, nut01, nut02, nut03, nut04, nut05, nut06, nut07, nut29};
 use crate::transport::MintClient;
 
 /// Internal record kept while minting/swapping.
@@ -101,8 +103,28 @@ impl<T: MintClient> Wallet<T> {
         mint_keys: &nut01::KeySet,
         rng: &mut dyn RngCore,
     ) -> Result<Vec<nut00::Proof>, CashuError> {
-        // NUT-00: decompose amount into power-of-two denominations
-        let denominations = nut00::decompose_amount(amount);
+        // NUT-00: split into denominations the keyset can actually sign.
+        // A blind power-of-two split can emit amounts the mint has no key
+        // for (e.g. 256 against a 1..128 keyset), which the mint rejects
+        // only AFTER the quote was created — fail before the NUT-04 POST
+        // instead (issue #163). Output count is bounded by the mint's
+        // per-request output budget so repeated small denominations can't
+        // grow the split linearly with the amount.
+        let keyset_denominations: Vec<u64> = mint_keys.keys.iter().map(|k| k.amount).collect();
+        let denominations = nut00::decompose_amount_for_keyset(
+            amount,
+            &keyset_denominations,
+            nut29::MAX_BATCH_OUTPUTS,
+        )
+        .ok_or_else(|| {
+            CashuError::AmountNotRepresentable(format!(
+                "amount {} cannot be split into keyset {} denominations {:?} within {} outputs",
+                amount,
+                mint_keys.id,
+                keyset_denominations,
+                nut29::MAX_BATCH_OUTPUTS
+            ))
+        })?;
 
         // Generate blinded outputs
         let (blinded_messages, pending) =

@@ -31,9 +31,9 @@
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
 #[cfg(not(feature = "std"))]
-use alloc::string::String;
+use alloc::format;
 #[cfg(not(feature = "std"))]
-use alloc::vec;
+use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
@@ -163,64 +163,6 @@ where
     proofs: Vec<nut00::Proof>,
 }
 
-/// Exact-subset DFS over sorted-descending amounts, bounded: the node cap
-/// is enforced at EVERY expansion (`>=`, plus a loop-level guard) — an `==`
-/// check unwinds exactly one level while the parent keeps iterating past
-/// the cap, wedging an embedded wallet on fragmented proof sets
-/// (review debt micronuts#82, r4226624677). Returns the chosen index
-/// subset (indices into `amounts`) and the node count (for tests).
-fn select_exact_subset(amounts: &[u64], target: u64, cap: u32) -> (Option<Vec<usize>>, u32) {
-    // Suffix sums (saturating) prune branches whose whole tail cannot
-    // reach `remaining`.
-    let mut suffix = vec![0u64; amounts.len() + 1];
-    for k in (0..amounts.len()).rev() {
-        suffix[k] = suffix[k + 1].saturating_add(amounts[k]);
-    }
-
-    fn dfs(
-        amounts: &[u64],
-        suffix: &[u64],
-        start: usize,
-        remaining: u64,
-        chosen: &mut Vec<usize>,
-        nodes: &mut u32,
-        cap: u32,
-    ) -> bool {
-        if remaining == 0 {
-            return true;
-        }
-        if *nodes >= cap || suffix[start] < remaining {
-            return false;
-        }
-        let mut last: Option<u64> = None;
-        for i in start..amounts.len() {
-            if *nodes >= cap {
-                return false;
-            }
-            let coin = amounts[i];
-            if last == Some(coin) {
-                continue;
-            }
-            last = Some(coin);
-            if coin > remaining {
-                continue;
-            }
-            *nodes += 1;
-            chosen.push(i);
-            if dfs(amounts, suffix, i + 1, remaining - coin, chosen, nodes, cap) {
-                return true;
-            }
-            chosen.pop();
-        }
-        false
-    }
-
-    let mut chosen: Vec<usize> = Vec::new();
-    let mut nodes: u32 = 0;
-    let found = dfs(amounts, &suffix, 0, target, &mut chosen, &mut nodes, cap);
-    (found.then_some(chosen), nodes)
-}
-
 impl<T, S> PersistentWallet<T, S>
 where
     T: crate::transport::MintClient,
@@ -280,10 +222,29 @@ where
         keyset_id: &str,
         mint_keys: &nut01::KeySet,
     ) -> Result<u64, CashuError> {
-        let denominations = nut00::decompose_amount(amount);
-        if denominations.is_empty() {
+        // Keyset-aware split (issue #163): a blind power-of-two split can
+        // emit denominations the mint has no key for, which fails only
+        // AFTER the quote was created. Split within the keyset, or refuse
+        // before the NUT-04 POST. The output budget is RESTORE_HEADROOM,
+        // not the mint batch limit: restore() scans counter+HEADROOM, so
+        // a deterministic batch larger than the headroom would leave
+        // signed-but-unpersisted outputs outside the recovery window
+        // (codex P1, PR #164) — every accepted batch must be recoverable.
+        if amount == 0 {
             return Err(CashuError::InvalidAmount);
         }
+        let keyset_denominations: Vec<u64> = mint_keys.keys.iter().map(|k| k.amount).collect();
+        let denominations = nut00::decompose_amount_for_keyset(
+            amount,
+            &keyset_denominations,
+            RESTORE_HEADROOM as usize,
+        )
+        .ok_or_else(|| {
+            CashuError::AmountNotRepresentable(format!(
+                "amount {} cannot be split into keyset {} denominations {:?} within the {}-output recovery window — mint it in smaller batches",
+                amount, mint_keys.id, keyset_denominations, RESTORE_HEADROOM
+            ))
+        })?;
 
         let (outputs, pending) = self.deterministic_outputs(&denominations, keyset_id)?;
         self.counter = self.counter.saturating_add(pending.len() as u32);
@@ -304,15 +265,15 @@ where
         Ok(minted)
     }
 
-    /// Select proofs that sum EXACTLY to `amount` — no swap, no mint
-    /// round-trip, and (review debt micronuts#82, r4226624672)
-    /// NON-MUTATING: the proofs stay in the wallet; the caller removes
-    /// them at its send commit (after the token encodes). Returns `None`
-    /// when no combination exists. Critical for pre-auth gated payments
+    /// Find proofs summing EXACTLY to `amount` — no swap, no mint
+    /// round-trip, and NO mutation: selection never removes or persists
+    /// (fund safety, micronuts#123 — the caller removes only after the
+    /// token encode succeeds, so an encode failure cannot strand removed
+    /// funds with no token and no pending record). Returns `None` when no
+    /// combination exists. Critical for pre-auth gated payments
     /// (micronuts#79): power-of-two denominations make typical targets
-    /// 3-proof sums (21 = 16+4+1), so this searches any subset size, not
-    /// just singles and pairs.
-    pub fn try_spend_exact(&self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
+    /// 3-proof sums (21 = 16+4+1), so this searches any subset size.
+    pub fn find_exact(&self, amount: u64) -> Result<Option<Vec<nut00::Proof>>, CashuError> {
         #[cfg(not(feature = "std"))]
         use alloc::vec;
 
@@ -335,22 +296,58 @@ where
         // the node cap the search gives up and the caller falls back to
         // the swap path — exactly the pre-this-function behavior.
         const NODE_CAP: u32 = 100_000;
-        let (found, _nodes) = select_exact_subset(&amounts, amount, NODE_CAP);
-        let Some(chosen) = found else {
-            return Ok(None);
-        };
 
-        // Review debt micronuts#82 (r4226624672): selection used to remove
-        // + persist here, so a later encode failure left the caller with no
-        // token and no funds while offline. The proofs stay in the wallet;
-        // send_token's remove_proofs at the commit step is the single
-        // removal point.
-        Ok(Some(
-            chosen
-                .iter()
-                .map(|&k| self.proofs[order[k]].clone())
-                .collect(),
-        ))
+        fn dfs(
+            amounts: &[u64],
+            suffix: &[u64],
+            start: usize,
+            remaining: u64,
+            chosen: &mut Vec<usize>,
+            nodes: &mut u32,
+        ) -> bool {
+            if remaining == 0 {
+                return true;
+            }
+            // (#124) `>=`, never `==`: once a parent loop pushes the count
+            // PAST the cap, an equality check can never fire again and a
+            // fragmented no-solution set expands unboundedly.
+            if *nodes >= NODE_CAP || suffix[start] < remaining {
+                return false;
+            }
+            let mut last: Option<u64> = None;
+            for i in start..amounts.len() {
+                let coin = amounts[i];
+                if last == Some(coin) {
+                    continue;
+                }
+                last = Some(coin);
+                if coin > remaining {
+                    continue;
+                }
+                *nodes += 1;
+                chosen.push(i);
+                if dfs(amounts, suffix, i + 1, remaining - coin, chosen, nodes) {
+                    return true;
+                }
+                chosen.pop();
+            }
+            false
+        }
+
+        let mut chosen: Vec<usize> = Vec::new();
+        let mut nodes: u32 = 0;
+        if !dfs(&amounts, &suffix, 0, amount, &mut chosen, &mut nodes) {
+            return Ok(None);
+        }
+
+        // Non-mutating by contract (#123): return clones of the chosen
+        // proofs. The ONLY removal is send_token's post-encode
+        // remove_proofs — see the doc comment above.
+        let spent = chosen
+            .iter()
+            .map(|&k| self.proofs[order[k]].clone())
+            .collect();
+        Ok(Some(spent))
     }
 
     /// Select and remove proofs covering `amount` (largest-first, may
@@ -435,10 +432,15 @@ where
             });
         }
 
-        self.proofs.retain(|p| !selected.contains(p));
-
-        // Unblind NUT-08 change: signatures zip to blanks by index
-        // (mint-chosen amounts; mint key looked up per signature amount).
+        // (#136) Unblind NUT-08 change into a LOCAL buffer and gate it
+        // through verify_fresh BEFORE any mutation: nothing enters RAM
+        // state — and nothing persists — until every proof verifies (the
+        // invariant mint/swap already uphold). A tampered/missing change
+        // witness fails closed here with the wallet untouched; the inputs
+        // being spent at the mint is recovered by NUT-07 reconcile.
+        // Signatures zip to blanks by index (mint-chosen amounts; mint
+        // key looked up per signature amount).
+        let mut change_proofs: Vec<nut00::Proof> = Vec::new();
         let mut change_sats = 0u64;
         if let Some(change) = response.change.as_ref() {
             for (pending, sig) in pending_blanks.iter().zip(change.iter()) {
@@ -451,7 +453,7 @@ where
                 let c = unblind_signature(&sig.c, &pending.blinder, mint_pubkey)
                     .map_err(|_| CashuError::Crypto(String::from("change unblind failed")))?;
                 change_sats += sig.amount;
-                self.proofs.push(nut00::Proof {
+                change_proofs.push(nut00::Proof {
                     amount: sig.amount,
                     id: sig.id.clone(),
                     secret: String::from_utf8(pending.secret.clone())
@@ -468,6 +470,10 @@ where
                 });
             }
         }
+        self.verify_fresh(&change_proofs, mint_keys)?;
+
+        self.proofs.retain(|p| !selected.contains(p));
+        self.proofs.extend(change_proofs);
 
         self.persist()?;
         Ok(MeltOutcome {
@@ -631,6 +637,11 @@ where
         let mut added: u64 = 0;
         let mut max_idx: Option<u32> = None;
 
+        // (#136) Restored proofs buffer locally and pass verify_fresh
+        // BEFORE any mutation — same nothing-persists-unverified invariant
+        // as mint/swap (a crash-reload must never resurrect unverified
+        // proofs into the wallet).
+        let mut restored: Vec<nut00::Proof> = Vec::new();
         for out in response.outputs {
             let key = hex::encode(out.y.to_bytes());
             let Some(&(idx, ref blinder, ref secret_hex)) = by_blinded.get(&key) else {
@@ -650,7 +661,7 @@ where
             let c = unblind_signature(&out.signature.c, blinder, mint_pubkey)
                 .map_err(|_| CashuError::Crypto(String::from("unblind failed")))?;
 
-            self.proofs.push(nut00::Proof {
+            restored.push(nut00::Proof {
                 amount: out.signature.amount,
                 id: out.signature.id.clone(),
                 secret: secret_hex.clone(),
@@ -664,7 +675,9 @@ where
             added += 1;
             max_idx = Some(max_idx.map_or(idx, |m: u32| m.max(idx)));
         }
+        self.verify_fresh(&restored, mint_keys)?;
 
+        self.proofs.extend(restored);
         if let Some(m) = max_idx {
             self.counter = self.counter.max(m + 1);
         }
@@ -731,7 +744,7 @@ pub type VolatileWallet<T> = PersistentWallet<T, MemoryStore>;
 mod exact_spend_tests {
     use super::*;
 
-    /// Minimal MintClient stub — every method errors. `try_spend_exact`
+    /// Minimal MintClient stub — every method errors. `find_exact`
     /// never calls the mint (that is its entire point), so errors are
     /// never observed by these tests.
     struct StubTransport;
@@ -828,23 +841,28 @@ mod exact_spend_tests {
     /// exact-amount proofs with ZERO mint calls (the stub would panic
     /// if any were made).
     #[test]
-    fn try_spend_exact_single_proof() {
+    fn find_exact_single_proof() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1)]).unwrap();
-        let result = w.try_spend_exact(1).unwrap();
+        let result = w.find_exact(1).unwrap();
         assert!(
             result.is_some(),
             "1-sat proof must be found for 1-sat target"
         );
         assert_eq!(result.unwrap()[0].amount, 1);
+        assert_eq!(
+            w.proofs().len(),
+            1,
+            "#123: selection must not remove — the caller removes post-encode"
+        );
     }
 
     #[test]
-    fn try_spend_exact_pair() {
+    fn find_exact_pair() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1), make_proof(1, 2)])
             .unwrap();
-        let result = w.try_spend_exact(2).unwrap();
+        let result = w.find_exact(2).unwrap();
         assert!(
             result.is_some(),
             "two 1-sat proofs must combine for 2-sat target"
@@ -853,49 +871,70 @@ mod exact_spend_tests {
     }
 
     #[test]
-    fn try_spend_exact_none_when_no_match() {
+    fn find_exact_none_when_no_match() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(4, 1)]).unwrap();
-        let result = w.try_spend_exact(1).unwrap();
+        let result = w.find_exact(1).unwrap();
         assert!(result.is_none(), "4-sat proof alone cannot make exact 1");
     }
 
     #[test]
-    fn try_spend_exact_selection_stays_in_wallet_until_commit() {
-        // Contract flipped by the micronuts#82 review-debt fix
-        // (r4226624672): selection is NON-mutating — removing the proofs
-        // at selection time destroyed them when the later token encode
-        // failed. Removal belongs to send_token's commit step.
+    fn find_exact_selects_without_removing() {
+        // #123 regression: the old try_spend_exact removed + persisted here,
+        // so a later token-encode failure lost the funds with no token and
+        // no pending record.
         let mut w = wallet();
         w.add_proofs(vec![make_proof(1, 1), make_proof(4, 2)])
             .unwrap();
-        let spent = w.try_spend_exact(1).unwrap().expect("exact 1 found");
+        let spent = w.find_exact(1).unwrap().expect("exact 1 found");
         assert_eq!(spent.len(), 1);
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 5, "selection leaves both proofs in the wallet");
+        assert_eq!(remaining, 5, "selection is non-mutating — nothing leaves");
     }
 
     /// The case pairs-only search missed (review finding on this PR): a
     /// 21-sat wallet in canonical power-of-two denominations needs all
     /// three proofs. This is the terminal demo's own invoice amount.
     #[test]
-    fn try_spend_exact_three_proof_power_of_two() {
+    fn find_exact_three_proof_power_of_two() {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(16, 1), make_proof(4, 2), make_proof(1, 3)])
             .unwrap();
-        let spent = w.try_spend_exact(21).unwrap().expect("16+4+1 must combine");
+        let spent = w.find_exact(21).unwrap().expect("16+4+1 must combine");
         let sum: u64 = spent.iter().map(|p| p.amount).sum();
         assert_eq!(sum, 21);
         assert_eq!(spent.len(), 3);
         assert_eq!(
             w.proofs().len(),
             3,
-            "non-mutating selection: all three proofs stay until commit"
+            "#123: selection is non-mutating — all three stay until send removes"
+        );
+    }
+
+    /// (#124) The node cap must be an upper BOUND: with the old `== NODE_CAP`
+    /// check, a count pushed past the cap by a parent loop never matched
+    /// again and a large fragmented no-solution set expanded exponentially.
+    /// This test completing promptly IS the regression proof (the buggy
+    /// version effectively hangs on 2^40 subsets).
+    #[test]
+    fn find_exact_node_cap_bounds_fragmented_no_solution_sets() {
+        let mut w = wallet();
+        let fragmented: Vec<nut00::Proof> = (0..40).map(|i| make_proof(2, i)).collect();
+        w.add_proofs(fragmented).unwrap();
+        let started = std::time::Instant::now();
+        let result = w.find_exact(3).unwrap(); // odd target, even proofs: no subset exists
+        assert!(
+            result.is_none(),
+            "odd target of even proofs has no exact subset"
+        );
+        assert!(
+            started.elapsed().as_secs() < 5,
+            "search must stay bounded by NODE_CAP, not the subset lattice"
         );
     }
 
     #[test]
-    fn try_spend_exact_skips_duplicate_coin_subtrees() {
+    fn find_exact_skips_duplicate_coin_subtrees() {
         let mut w = wallet();
         w.add_proofs(vec![
             make_proof(1, 1),
@@ -904,38 +943,12 @@ mod exact_spend_tests {
             make_proof(2, 4),
         ])
         .unwrap();
-        let spent = w.try_spend_exact(3).unwrap().expect("2+1 must combine");
+        let spent = w.find_exact(3).unwrap().expect("2+1 must combine");
         let sum: u64 = spent.iter().map(|p| p.amount).sum();
         assert_eq!(sum, 3);
         assert_eq!(spent.len(), 2, "picks the 2-sat proof plus one 1-sat");
         let remaining: u64 = w.proofs().iter().map(|p| p.amount).sum();
-        assert_eq!(remaining, 5, "non-mutating selection: nothing removed yet");
-    }
-
-    /// r4226624677: the node cap must hold at every expansion. With the
-    /// old `==` check, reaching exactly CAP unwound one level while the
-    /// parent kept iterating — the search blew straight through the cap.
-    #[test]
-    fn exact_subset_search_enforces_node_cap() {
-        // Even coins, odd target: unreachable but NOT suffix-pruned — the
-        // full tree must be explored, so the cap has to stop it for real.
-        // An `==` check unwinds exactly one level while the parent keeps
-        // iterating distinct siblings, blowing far past the cap.
-        let amounts: Vec<u64> = (2..=24).step_by(2).collect();
-        let (_picked, nodes) = select_exact_subset(&amounts, 97, 10);
-        assert!(
-            nodes <= 10,
-            "cap must stop expansion at every level: {nodes} nodes explored (cap 10)"
-        );
-    }
-
-    #[test]
-    fn exact_subset_search_still_finds_within_cap() {
-        let amounts = vec![16, 8, 4, 2, 1];
-        let (picked, _nodes) = select_exact_subset(&amounts, 21, 100_000);
-        let picked = picked.expect("16+4+1 must combine for 21");
-        let sum: u64 = picked.iter().map(|&k| amounts[k]).sum();
-        assert_eq!(sum, 21);
+        assert_eq!(remaining, 5, "#123: non-mutating — the full 5 sats stay");
     }
 
     #[test]
@@ -943,6 +956,6 @@ mod exact_spend_tests {
         let mut w = wallet();
         w.add_proofs(vec![make_proof(8, 1), make_proof(4, 2)])
             .unwrap();
-        assert!(w.try_spend_exact(21).unwrap().is_none());
+        assert!(w.find_exact(21).unwrap().is_none());
     }
 }

@@ -42,9 +42,12 @@ esptool.py --chip esp32 elf2image \
   --flash-mode dio --flash-freq 40m --flash-size 4MB \
   ~/.cargo-target/xtensa-esp32-espidf/release/micronuts-esp32-wallet
 
-# Flash (M5Stick factory offset — check your partition table):
+# Flash (factory offset per THIS crate's partitions.csv — the 128 KiB NVS
+# at 0x9000..0x29000 means 0x10000/0x20000 now land INSIDE NVS and would
+# wipe wallet + RF-cal state; those addresses belong only to the older
+# 2MB bench layout, HANDOFF-2026-09-19):
 esptool.py --chip esp32 --port /dev/ttyUSB? \
-  write_flash 0x10000 micronuts-esp32-wallet.bin
+  write_flash 0x30000 micronuts-esp32-wallet.bin
 ```
 
 ## The take flow (identical to the CYD)

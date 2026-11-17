@@ -68,14 +68,15 @@ impl core::fmt::Display for ConditionError {
 /// reduced to a BIP-340 signing scalar.
 pub fn derive_identity(seed: &[u8; 32]) -> Result<SigningKey, ConditionError> {
     let scalar = hmac_sha256(seed, IDENTITY_LABEL);
-    SigningKey::from_bytes(&scalar).map_err(|_| ConditionError::DerivationFailed)
+    SigningKey::from_bytes(&k256::FieldBytes::from(scalar))
+        .map_err(|_| ConditionError::DerivationFailed)
 }
 
 /// The lock-facing public key: 33-byte compressed hex, the format NUT-11
 /// `data` and the `pubkeys`/`refund` tags use.
 pub fn p2pk_pubkey_hex(identity: &SigningKey) -> String {
     let public: k256::PublicKey = identity.verifying_key().into();
-    hex::encode(k256::EncodedPoint::from(&public).as_bytes())
+    hex::encode(k256::Sec1Point::from(&public).as_bytes())
 }
 
 /// Everything a witness may depend on when unlocking one proof.
@@ -185,8 +186,26 @@ fn htlc_witness(
 
 fn sign_identity(identity: &SigningKey, secret: &str) -> Result<String, ConditionError> {
     let digest: [u8; 32] = Sha256::digest(secret.as_bytes()).into();
+    // signature 3.0 dropped `sign_prehash_with_aux_rand`; this zero-source
+    // RNG reproduces the previous fixed all-zero BIP-340 aux rand exactly.
+    struct ZeroAuxRng;
+    impl k256::schnorr::signature::rand_core::TryRng for ZeroAuxRng {
+        type Error = core::convert::Infallible;
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Ok(0)
+        }
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Ok(0)
+        }
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            dst.fill(0);
+            Ok(())
+        }
+    }
+    impl k256::schnorr::signature::rand_core::TryCryptoRng for ZeroAuxRng {}
+    use k256::schnorr::signature::hazmat::RandomizedPrehashSigner;
     let signature: Signature = identity
-        .sign_prehash_with_aux_rand(&digest, &[0u8; 32])
+        .sign_prehash_with_rng(&mut ZeroAuxRng, &digest)
         .map_err(|_| ConditionError::SigningFailed)?;
     Ok(hex::encode(signature.to_bytes()))
 }

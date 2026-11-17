@@ -224,7 +224,9 @@ mod tests {
             p2: u8,
             data: &[u8],
         ) -> Result<(Vec<u8>, u16), Error> {
-            let cmd = crate::encode_apdu(cla, i, p1, p2, data);
+            let Ok(cmd) = crate::encode_apdu(cla, i, p1, p2, data) else {
+                return Err(Error::Sw(0x6700));
+            };
             for (want, resp, sw) in &self.script {
                 if *want == cmd {
                     return Ok((resp.clone(), *sw));
@@ -235,7 +237,7 @@ mod tests {
     }
 
     fn apdu(ins: u8, p1: u8, p2: u8, data: &[u8]) -> Vec<u8> {
-        crate::encode_apdu(0xB0, ins, p1, p2, data)
+        crate::encode_apdu(0xB0, ins, p1, p2, data).expect("test apdu within Lc")
     }
 
     /// Wallet ladder on a scripted applet: the encodings the card expects,

@@ -33,6 +33,12 @@ slint::include_modules!();
 const QR_SCALE: usize = 6;
 const QR_QUIET_ZONE: usize = 4;
 
+/// Receive auto-inspect generation guard (ops#54): every token edit
+/// bumps it; inspection results publish only while their generation is
+/// current, so stale prefix results or post-clear jobs cannot overwrite
+/// newer input state. All bumps and checks run on the event-loop thread.
+static RECEIVE_INSPECT_GATE: flow::InspectionGate = flow::InspectionGate::new();
+
 #[cfg(not(target_arch = "wasm32"))]
 type Transport = HttpMintClient;
 #[cfg(not(target_arch = "wasm32"))]
@@ -1003,6 +1009,7 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
         // Auto-inspect: input arriving (typing, paste, scan) drives the
         // review machinery by itself — "Check" is not a user verb.
         logic.on_token_edited(move |token: slint::SharedString| {
+            let gen = RECEIVE_INSPECT_GATE.begin();
             let token = token.to_string();
             if token.trim().is_empty() {
                 let _ = weak.upgrade_in_event_loop(|ui| {
@@ -1020,7 +1027,7 @@ fn wire_callbacks(ui: &MainWindow, dispatcher: Dispatcher) {
                 // Not a token (yet, while typing) — no mint chatter.
                 return;
             }
-            inspect_for_review(&weak, &tx, token);
+            inspect_for_review(&weak, &tx, token, gen);
         });
     }
 
@@ -1485,7 +1492,9 @@ fn set_busy(weak: &Weak<MainWindow>) {
 
 /// Inspect a token and drive the receive-review state from the semantic
 /// phases (UX contract: inspection is wallet machinery, not a button).
-fn inspect_for_review(weak: &Weak<MainWindow>, tx: &Dispatcher, token: String) {
+/// The result publishes only while `gen` is still the current edit
+/// generation (ops#54).
+fn inspect_for_review(weak: &Weak<MainWindow>, tx: &Dispatcher, token: String, gen: u64) {
     let weak = weak.clone();
     let tx = tx.clone();
     let _ = weak.upgrade_in_event_loop(|ui| {
@@ -1518,6 +1527,9 @@ fn inspect_for_review(weak: &Weak<MainWindow>, tx: &Dispatcher, token: String) {
             _ => "input",
         };
         let _ = weak.upgrade_in_event_loop(move |ui| {
+            if !RECEIVE_INSPECT_GATE.is_current(gen) {
+                return;
+            }
             let logic = ui.global::<WalletLogic>();
             logic.set_receive_ecash_state(state.into());
             logic.set_receive_review_line(line.into());
@@ -1538,7 +1550,9 @@ pub fn route_scanned(weak: &Weak<MainWindow>, tx: Dispatcher, text: String) {
             ScannedPayload::CashuToken { token } => {
                 logic.set_token_in(token.clone().into());
                 ui.invoke_navigate(Page::Receive);
-                inspect_for_review(&ui.as_weak(), &tx, token);
+                // A scan supersedes any pending typing inspections.
+                let gen = RECEIVE_INSPECT_GATE.begin();
+                inspect_for_review(&ui.as_weak(), &tx, token, gen);
             }
             ScannedPayload::LightningInvoice { invoice } => {
                 logic.set_invoice_in(invoice.clone().into());

@@ -26,7 +26,7 @@ impl CardTransport for Recording {
         p2: u8,
         data: &[u8],
     ) -> Result<(Vec<u8>, u16), Error> {
-        let cmd = enc(cla, ins, p1, p2, data);
+        let cmd = enc(cla, ins, p1, p2, data)?;
         self.script.get(&cmd).cloned().ok_or(Error::Sw(0x6D00))
     }
 }

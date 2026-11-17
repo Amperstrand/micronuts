@@ -321,8 +321,12 @@ pub fn prove_dleq(
         Some(n) => n,
         #[cfg(feature = "std")]
         None => {
-            SecretKey::from_slice(&k256::Scalar::generate_vartime(&mut rand_core::OsRng).to_bytes())
-                .map_err(|_| ())?
+            use k256::elliptic_curve::ff::{FromUniformBytes, PrimeField};
+            use rand_core::{OsRng, RngCore};
+            let mut buf = [0u8; 64];
+            OsRng.fill_bytes(&mut buf);
+            let rho = k256::Scalar::from_uniform_bytes(&buf);
+            SecretKey::from_slice(&rho.to_repr()).map_err(|_| ())?
         }
         #[cfg(not(feature = "std"))]
         None => panic!("nonce required for no_std"),

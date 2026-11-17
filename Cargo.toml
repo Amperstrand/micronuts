@@ -20,7 +20,7 @@ repository = "https://github.com/Amperstrand/micronuts"
 authors = ["Michael Fairman <mfairman@tegimeki.com>"]
 
 [workspace.dependencies]
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+k256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
 sha2 = { version = "0.10", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 

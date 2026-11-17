@@ -37,7 +37,14 @@ pub const CLA_SATOCASH: u8 = 0xB0;
 /// this applet counts Le as incoming data; import_mint case-4 is
 /// 6700). The 6-byte zero-data form (bare Lc=0 before Le) is 6700 AND
 /// wedges the nucula board card-session — never emitted.
-pub fn encode_apdu(cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> Vec<u8> {
+/// Encode a short-APDU. Rejects payloads above 255 bytes: the one-byte
+/// Lc would silently wrap while the full payload is still appended,
+/// producing an invalid APDU (#148 — reachable via export_proofs with
+/// 127+ indices).
+pub fn encode_apdu(cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> Result<Vec<u8>, Error> {
+    if data.len() > 255 {
+        return Err(Error::Malformed("apdu data exceeds short-Lc field (255)"));
+    }
     let mut cmd = Vec::with_capacity(5 + data.len());
     cmd.extend_from_slice(&[cla, ins, p1, p2]);
     if data.is_empty() {
@@ -46,7 +53,7 @@ pub fn encode_apdu(cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> Vec<u8> {
         cmd.push(data.len() as u8);
         cmd.extend_from_slice(data);
     }
-    cmd
+    Ok(cmd)
 }
 
 /// Card status words beyond ISO 7816 the applet defines (Satocash.java).
@@ -156,8 +163,10 @@ impl SatocashStatus {
     }
 
     pub fn parse(r: &[u8]) -> Result<Self, Error> {
-        if r.len() < 22 {
-            return Err(Error::Malformed("status shorter than 22 bytes"));
+        if r.len() < 25 {
+            // reads go through r[24] (spent_proofs); 22–24-byte responses
+            // previously panicked instead of returning Malformed (#147)
+            return Err(Error::Malformed("status shorter than 25 bytes"));
         }
         Ok(Self {
             protocol_version: (r[0], r[1]),
@@ -299,7 +308,7 @@ mod tests {
             p2: u8,
             data: &[u8],
         ) -> Result<(Vec<u8>, u16), Error> {
-            let cmd = crate::encode_apdu(cla, i, p1, p2, data);
+            let cmd = crate::encode_apdu(cla, i, p1, p2, data)?;
             self.seen.push(cmd.clone());
             for (want, resp, sw) in &self.script {
                 if *want == cmd {
@@ -401,7 +410,32 @@ mod tests {
     fn short_status_is_malformed() {
         assert_eq!(
             SatocashStatus::parse(&[0; 10]),
-            Err(Error::Malformed("status shorter than 22 bytes"))
+            Err(Error::Malformed("status shorter than 25 bytes"))
+        );
+    }
+}
+
+#[cfg(test)]
+mod parse_hardening_tests {
+    use super::*;
+
+    #[test]
+    fn status_parse_rejects_22_to_24_byte_truncations() {
+        for len in [21usize, 22, 23, 24] {
+            let r = vec![0u8; len];
+            let res = SatocashStatus::parse(&r);
+            assert!(res.is_err(), "len {len} must be Malformed, not panic or Ok");
+        }
+    }
+
+    #[test]
+    fn encode_apdu_rejects_oversized_payloads() {
+        let data = vec![0xABu8; 256];
+        let res = encode_apdu(0xB0, 0x3C, 0x00, 0x00, &data);
+        assert!(res.is_err(), "256-byte data must be refused, not wrapped");
+        assert!(
+            encode_apdu(0xB0, 0x3C, 0x00, 0x00, &[0u8; 255]).is_ok(),
+            "255-byte data stays encodable"
         );
     }
 }
