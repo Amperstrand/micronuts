@@ -45,6 +45,10 @@ ignore = [
   # ttf-parser above; not ours to swap inside slint's macro stack.
   # Unmaintained-only, not a vulnerability.
   "RUSTSEC-2026-0441",
+  # (2026-11-17) chrono 0.4.45 unmaintained (RUSTSEC-2026-0543): upstream
+  # archive event; no maintained 0.4.x drop-in. Wallet UI time formatting
+  # only. Revisit when a fork (or 0.5) becomes the ecosystem default.
+  "RUSTSEC-2026-0543",
 ]
 
 [bans]
