@@ -129,6 +129,15 @@ fn main() -> anyhow::Result<()> {
     let mut engine =
         WalletEngine::new(MINT, transport, engine_store, seed_buf, Vec::new())
             .map_err(|e| anyhow::anyhow!("engine: {e:?}"))?;
+    // The mint is reachable on the home network at boot: connect here so
+    // keyset_id is populated — receive/send enforce ensure_connected and
+    // would otherwise fail after every reboot until a manual connect
+    // (review debt micronuts#82, r4151018840; re-lands fcf6c0b44 from #152,
+    // dropped in its merge-main step). Best-effort: an offline boot still
+    // runs; restored proofs just cannot move yet.
+    if let Err(e) = engine.connect() {
+        println!("tollgate_atom: mint connect failed ({e:?}) — receive/pay disabled until the mint is reachable");
+    }
     println!(
         "tollgate_atom: mint={MINT} balance={} sats — fund with `token <cashu-token>`",
         engine_balance(&engine)
