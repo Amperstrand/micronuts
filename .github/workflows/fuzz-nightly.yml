@@ -19,7 +19,7 @@ name: Fuzz Nightly
 
 on:
   schedule:
-    - cron: "17 3 * * *" # 03:17 UTC — off the hour to miss cron rushes
+    - cron: '47 3 * * *' # 03:17 UTC — off the hour to miss cron rushes
   workflow_dispatch:
     inputs:
       force_lane:
